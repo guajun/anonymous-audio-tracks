@@ -8,11 +8,14 @@ import pytest
 
 from aat.encoders import (
     CheckpointIndex,
+    CheckpointProvenance,
     EncoderCheckpointError,
     audio_config_from_checkpoint,
     check_disk_space,
     check_state_dict_coverage,
+    discover_checkpoint_provenance,
     header_encoder_bytes,
+    merge_checkpoint_provenance,
     normalize_encoder_keys,
     plan_encoder_shards,
 )
@@ -142,3 +145,49 @@ def test_audited_layout_constants_are_internally_consistent():
     assert AUT_PARAM_COUNT == 647_927_168
     assert AUT_ENCODER_TENSOR_BYTES == 1_295_854_336
     assert AUT_CHECKPOINT_SHARD_COUNT == 15
+
+
+def test_discover_provenance_reads_hf_local_dir_metadata(tmp_path):
+    metadata_dir = tmp_path / ".cache" / "huggingface" / "download"
+    metadata_dir.mkdir(parents=True)
+    revision = "a" * 40
+    # Older hub versions: commit hash / etag / mtime lines.
+    (metadata_dir / "config.json.metadata").write_text(
+        revision + "\n" + "b" * 64 + "\n1.0\n", encoding="utf-8"
+    )
+    provenance = discover_checkpoint_provenance(tmp_path)
+    assert provenance.revision == revision
+    assert provenance.source == "hf-metadata"
+    assert provenance.model_id == ""
+
+    # Newer hub versions write JSON.
+    (metadata_dir / "config.json.metadata").write_text(
+        json.dumps({"commit_hash": "c" * 40}), encoding="utf-8"
+    )
+    assert discover_checkpoint_provenance(tmp_path).revision == "c" * 40
+
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    assert discover_checkpoint_provenance(empty).source == "unverified"
+
+
+def test_discover_provenance_rejects_mixed_revisions(tmp_path):
+    metadata_dir = tmp_path / ".cache" / "huggingface" / "download"
+    metadata_dir.mkdir(parents=True)
+    (metadata_dir / "a.metadata").write_text("a" * 40 + "\n", encoding="utf-8")
+    (metadata_dir / "b.metadata").write_text("b" * 40 + "\n", encoding="utf-8")
+    with pytest.raises(EncoderCheckpointError, match="mixes revisions"):
+        discover_checkpoint_provenance(tmp_path)
+
+
+def test_merge_provenance_prefers_explicit_and_rejects_conflicts():
+    discovered = CheckpointProvenance(revision="a" * 40, source="hf-metadata")
+    assert merge_checkpoint_provenance(discovered) == discovered
+    merged = merge_checkpoint_provenance(discovered, model_id="local/test")
+    assert merged.model_id == "local/test"
+    assert merged.revision == "a" * 40
+    assert merged.source == "explicit"
+    explicit = merge_checkpoint_provenance(discovered, revision="a" * 40)
+    assert explicit.source == "explicit"
+    with pytest.raises(EncoderCheckpointError, match="local download metadata"):
+        merge_checkpoint_provenance(discovered, revision="c" * 40)

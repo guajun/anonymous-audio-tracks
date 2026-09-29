@@ -18,6 +18,7 @@ import pytest
 from aat.encoders import (
     AUT_SAMPLE_RATE,
     FAKE_FEATURE_DIM,
+    EncoderInputError,
     FakeAutEncoder,
     aut_output_length,
     compare_aligned_tokens,
@@ -112,6 +113,7 @@ def test_aligned_independent_windows_reproduce_full_slice_for_local_encoder(enco
         # edge, unlike the interior frames of the full track.  This is exactly
         # the boundary effect the real probe quantifies.
         assert comparison["max_abs_diff"] > 0.0
+        assert comparison["elementwise_mae"] > 0.0
         interior = np.zeros(26, dtype=bool)
         interior[2:24] = True
         interior_comparison = compare_aligned_tokens(reference, candidate.subset(interior))
@@ -121,6 +123,7 @@ def test_aligned_independent_windows_reproduce_full_slice_for_local_encoder(enco
         # real encoder's attention context makes this only approximate and is
         # measured by the probe instead.
         assert interior_comparison["max_abs_diff"] == 0.0
+        assert interior_comparison["elementwise_mae"] == 0.0
 
 
 def test_misaligned_window_changes_grid_and_features(encoder):
@@ -169,6 +172,32 @@ def test_profile_feature_document_is_protocol_valid(encoder, tmp_path):
 def test_short_audio_below_stft_minimum_is_rejected(encoder):
     with pytest.raises(Exception, match="minimum"):
         encoder.extract(np.zeros(120, dtype=np.float32))
+
+
+def test_equal_rate_endpoint_validity_is_half_open(encoder):
+    audio = _signal(2.0)
+    valid = np.zeros(audio.size, dtype=bool)
+    valid[:1319] = True
+    first = encoder.extract_windows(
+        audio[None, :], window_start_seconds=np.array([0.0]), valid_samples=valid[None, :]
+    )
+    assert not first.valid[0, 0]
+    valid[1319] = True
+    second = encoder.extract_windows(
+        audio[None, :], window_start_seconds=np.array([0.0]), valid_samples=valid[None, :]
+    )
+    assert second.valid[0, 0]
+
+
+def test_noncontiguous_validity_is_rejected(encoder):
+    audio = _signal(1.0)
+    valid = np.zeros(audio.size, dtype=bool)
+    valid[100:200] = True
+    valid[300:400] = True
+    with pytest.raises(EncoderInputError, match="contiguous"):
+        encoder.extract_windows(
+            audio[None, :], window_start_seconds=np.array([0.0]), valid_samples=valid[None, :]
+        )
 
 
 def test_importing_encoders_does_not_import_torch_or_transformers():

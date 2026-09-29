@@ -50,6 +50,7 @@ try:  # installed package (uv sync)
         CheckpointIndex,
         check_disk_space,
         compare_aligned_tokens,
+        discover_checkpoint_provenance,
         plan_encoder_shards,
     )
     from aat.windowing import extract_windows_at_times
@@ -67,6 +68,7 @@ except ModuleNotFoundError:  # standalone checkout
         CheckpointIndex,
         check_disk_space,
         compare_aligned_tokens,
+        discover_checkpoint_provenance,
         plan_encoder_shards,
     )
     from aat.windowing import extract_windows_at_times
@@ -104,11 +106,12 @@ def _median(values: list[float]) -> float:
 
 
 def _edge_interior(comparison: dict, *, n_edge: int = 8) -> dict:
-    """Split per-token differences into window-edge and interior tokens."""
+    """Split per-token MAE/max/cosine into window-edge and interior tokens."""
 
-    diffs = comparison["per_token_max_abs_diff"]
+    mae_values = comparison["per_token_mae"]
+    max_values = comparison["per_token_max_abs_diff"]
     cosines = comparison["per_token_cosine"]
-    count = len(diffs)
+    count = len(max_values)
     n_edge = min(n_edge, count // 2)
     edge_indices = list(range(0, n_edge)) + list(range(count - n_edge, count))
     interior_indices = [i for i in range(count) if i not in set(edge_indices)]
@@ -128,8 +131,10 @@ def _edge_interior(comparison: dict, *, n_edge: int = 8) -> dict:
     return {
         "edge_tokens": len(edge_indices),
         "interior_tokens": len(interior_indices),
-        "edge_mean_abs_diff": _mean([diffs[i] for i in edge_indices]),
-        "interior_mean_abs_diff": _mean([diffs[i] for i in interior_indices]),
+        "edge_mean_mae": _mean([mae_values[i] for i in edge_indices]),
+        "interior_mean_mae": _mean([mae_values[i] for i in interior_indices]),
+        "edge_mean_token_max_abs": _mean([max_values[i] for i in edge_indices]),
+        "interior_mean_token_max_abs": _mean([max_values[i] for i in interior_indices]),
         "edge_min_cosine": _min([cosines[i] for i in edge_indices]),
         "interior_min_cosine": _min([cosines[i] for i in interior_indices]),
     }
@@ -324,9 +329,16 @@ def run_probe(args: argparse.Namespace, report: dict) -> None:
         device=device,
         dtype=args.dtype,
         attn_implementation=args.attn_implementation,
+        model_id=args.model_id,
+        revision=args.revision,
     )
     load_seconds = time.perf_counter() - start
     load_report = encoder.load_report.to_dict()
+    if load_report["revision_source"] != "explicit" or load_report["revision"] != args.revision:
+        raise SystemExit(
+            "loaded weights are not tied to the requested revision: "
+            f"{load_report['revision']!r} / {load_report['revision_source']!r}"
+        )
     if load_report["tensor_count"] != AUT_TENSOR_COUNT:
         raise SystemExit(
             f"loaded {load_report['tensor_count']} tensors, audited checkpoint has {AUT_TENSOR_COUNT}"
@@ -354,9 +366,11 @@ def run_probe(args: argparse.Namespace, report: dict) -> None:
         load["peak_reserved_after_load_bytes"] = int(torch.cuda.max_memory_reserved())
     report["load"] = load
 
-    # 1) smoke forward at several lengths (real weights)
+    # 1) smoke forward at several lengths (real weights), including the 8 s
+    # attention-block boundary: 104 tokens = eight full 1 s chunks; 8.1 s
+    # exceeds one block.
     smoke = []
-    for seconds in (0.5, 1.0, 2.0, 2.5, 8.0):
+    for seconds in (0.5, 1.0, 2.0, 2.5, 8.0, 8.1, 16.0):
         audio = synthetic_signal(seconds)
         item = encoder.extract(audio, AUT_SAMPLE_RATE)
         timing = _timed(encoder, audio, repeats=args.repeats, warmup=args.warmup, device=device, torch=torch)
@@ -380,6 +394,23 @@ def run_probe(args: argparse.Namespace, report: dict) -> None:
             }
         )
     report["forward"] = {"smoke": smoke}
+    report["forward"]["preprocessing_snapshot"] = encoder.extract(
+        synthetic_signal(0.5)
+    ).preprocessing
+
+    discovered = discover_checkpoint_provenance(args.model_dir)
+    if discovered.revision and discovered.revision != args.revision:
+        raise SystemExit(
+            "local download metadata records revision "
+            f"{discovered.revision!r} but the probe requested {args.revision!r}"
+        )
+    report["checkpoint"]["local_download_metadata"] = {
+        "revision": discovered.revision or None,
+        "source": discovered.source,
+        "matches_requested_revision": (
+            discovered.revision == args.revision if discovered.revision else None
+        ),
+    }
 
     # 2) 44.1 kHz input end to end (renderer rate), non-zero origin, padding
     from aat.encoders import prepare_audio

@@ -27,13 +27,14 @@ import numpy as np
 
 from .checkpoint import (
     AUT_INDEX_FILENAME,
-    AUT_MODEL_ID,
     AUT_PREPROCESSOR_FILENAME,
-    AUT_REVISION,
     AUT_TENSOR_PREFIX,
     CheckpointIndex,
+    CheckpointProvenance,
     audio_config_from_checkpoint,
     check_state_dict_coverage,
+    discover_checkpoint_provenance,
+    merge_checkpoint_provenance,
     normalize_encoder_keys,
     plan_encoder_shards,
 )
@@ -43,13 +44,14 @@ from .grid import (
     AUT_MEL_BINS,
     AUT_MEL_HOP_SAMPLES,
     AUT_MIN_AUDIO_SAMPLES,
+    AUT_N_WINDOW,
     AUT_N_FFT,
     AUT_SAMPLE_RATE,
     aut_output_length,
     aut_token_grid,
     token_valid_mask,
 )
-from .resample import prepare_audio
+from .resample import prepare_audio, real_region_after_resample
 
 #: The single upstream class this issue instantiates.
 AUT_ENCODER_CLASS_NAME = "Qwen3OmniMoeAudioEncoder"
@@ -57,7 +59,10 @@ AUT_ENCODER_CLASS_NAME = "Qwen3OmniMoeAudioEncoder"
 #: ``qwen3_omni_moe`` and Whisper feature-extraction sources are byte-identical
 #: in 4.57.0 and 4.57.1 (``modeling_qwen3_omni_moe.py`` sha256
 #: ``809eaeb4d40cb0e59965a85b5f85ddc07e9ab7b6cdae84972c711f8cdadec296``).
+#: The real loader refuses other versions so the attention-mask hook cannot
+#: silently bind to incompatible upstream internals.
 AUT_TRANSFORMERS_VERSION = "4.57.1"
+AUT_TRANSFORMERS_AUDITED = ("4.57.0", "4.57.1")
 #: Official mel preprocessor class (declared by the checkpoint preprocessor config).
 AUT_MEL_CLASS_NAME = "WhisperFeatureExtractor"
 
@@ -136,10 +141,17 @@ class MelConfig:
 
 @dataclass
 class EncoderLoadReport:
-    """What was actually loaded, for the probe and for review."""
+    """What was actually loaded, for the probe and for review.
 
-    model_id: str = AUT_MODEL_ID
-    revision: str = AUT_REVISION
+    ``model_id``/``revision`` are only populated from explicit caller input or
+    verified ``hf_hub_download`` metadata; they default to empty/unverified so
+    a locally supplied checkpoint cannot falsely attest the audited default
+    revision.
+    """
+
+    model_id: str = ""
+    revision: str = ""
+    revision_source: str = "unverified"
     class_name: str = AUT_ENCODER_CLASS_NAME
     transformers_version: str = ""
     torch_version: str = ""
@@ -228,6 +240,61 @@ def load_audio_encoder_config(model_dir: Path | str) -> Any:
     return Qwen3OmniMoeAudioEncoderConfig(**dict(audio_config))
 
 
+def validate_encoder_class_and_grid(model: Any) -> None:
+    """Validate the pinned class/layout assumptions behind the fixed token grid.
+
+    The grid in :mod:`aat.encoders.grid` hard-codes ``n_window=50`` (100-frame
+    chunks, 13 tokens each) and three kernel-3/stride-2/padding-1 convolutions.
+    A checkpoint with other settings would silently produce wrong frame times,
+    so extraction is refused unless these assumptions hold.
+    """
+
+    class_name = type(model).__name__
+    if class_name != AUT_ENCODER_CLASS_NAME:
+        raise EncoderCheckpointError(
+            f"loaded class {class_name!r} is not the audited {AUT_ENCODER_CLASS_NAME!r}"
+        )
+    if "qwen3_omni_moe" not in type(model).__module__:
+        raise EncoderCheckpointError(
+            f"loaded class module {type(model).__module__!r} is not the audited qwen3_omni_moe module"
+        )
+    if not hasattr(model, "_prepare_attention_mask"):
+        raise EncoderCheckpointError(
+            "upstream encoder has no _prepare_attention_mask; the audited version "
+            f"{AUT_TRANSFORMERS_VERSION} is required for the block attention mask"
+        )
+    config = model.config
+    if int(getattr(config, "n_window", -1)) != AUT_N_WINDOW:
+        raise EncoderCheckpointError(
+            f"encoder n_window={getattr(config, 'n_window', None)!r} but the token grid "
+            f"assumes {AUT_N_WINDOW}; refusing to emit wrong frame times"
+        )
+    if int(getattr(config, "num_mel_bins", -1)) != AUT_MEL_BINS:
+        raise EncoderCheckpointError(
+            f"encoder num_mel_bins={getattr(config, 'num_mel_bins', None)!r} but the audited "
+            f"preprocessor uses {AUT_MEL_BINS}"
+        )
+    if len(model.layers) != int(getattr(config, "encoder_layers", -1)):
+        raise EncoderCheckpointError(
+            f"encoder has {len(model.layers)} layers but the config declares "
+            f"{getattr(config, 'encoder_layers', None)!r}"
+        )
+    for name in ("conv2d1", "conv2d2", "conv2d3"):
+        convolution = getattr(model, name, None)
+        if convolution is None:
+            raise EncoderCheckpointError(f"audited encoder layout requires {name}")
+        if (
+            tuple(convolution.kernel_size) != (3, 3)
+            or tuple(convolution.stride) != (2, 2)
+            or tuple(convolution.padding) != (1, 1)
+        ):
+            raise EncoderCheckpointError(
+                f"{name} must be kernel 3 / stride 2 / padding 1 for the grid maths; "
+                f"got kernel={tuple(convolution.kernel_size)} "
+                f"stride={tuple(convolution.stride)} padding={tuple(convolution.padding)}"
+            )
+
+
 def load_filtered_audio_encoder(
     model_dir: Path | str,
     shard_paths: Sequence[Path | str],
@@ -235,6 +302,7 @@ def load_filtered_audio_encoder(
     device: str = "cpu",
     dtype: str | None = None,
     attn_implementation: str = "sdpa",
+    provenance: CheckpointProvenance | None = None,
 ) -> tuple[Any, EncoderLoadReport]:
     """Instantiate the encoder class and load only its audited tensors."""
 
@@ -242,6 +310,15 @@ def load_filtered_audio_encoder(
     directory = Path(model_dir)
     index = CheckpointIndex.load(directory / AUT_INDEX_FILENAME)
     plan = plan_encoder_shards(index)
+
+    import transformers  # noqa: PLC0415
+
+    if transformers.__version__ not in AUT_TRANSFORMERS_AUDITED:
+        raise EncoderCheckpointError(
+            f"installed transformers {transformers.__version__!r} is outside the audited "
+            f"set {AUT_TRANSFORMERS_AUDITED}; refusing to bind the attention-mask hook "
+            "to unaudited internals"
+        )
 
     provided = {Path(path).name: Path(path) for path in shard_paths}
     missing_shards = [name for name in plan.shards if name not in provided]
@@ -257,6 +334,7 @@ def load_filtered_audio_encoder(
 
     config._attn_implementation = attn_implementation
     model = Qwen3OmniMoeAudioEncoder(config)
+    validate_encoder_class_and_grid(model)
 
     from safetensors import safe_open  # noqa: PLC0415
 
@@ -293,7 +371,11 @@ def load_filtered_audio_encoder(
 
     import transformers  # noqa: PLC0415
 
+    resolved_provenance = provenance or CheckpointProvenance()
     report = EncoderLoadReport(
+        model_id=resolved_provenance.model_id,
+        revision=resolved_provenance.revision,
+        revision_source=resolved_provenance.source,
         transformers_version=transformers.__version__,
         torch_version=torch.__version__,
         param_count=int(sum(p.numel() for p in model.parameters())),
@@ -308,39 +390,22 @@ def load_filtered_audio_encoder(
     return model, report
 
 
-def _real_region_after_resample(
-    valid_samples: np.ndarray,
-    source_rate: int,
-    target_rate: int,
-    n_out: int,
-) -> tuple[int, int] | None:
-    """Map the contiguous real-sample span of a window onto the resampled axis."""
-
-    indices = np.flatnonzero(valid_samples)
-    if indices.size == 0:
-        return None
-    start, stop = int(indices[0]), int(indices[-1]) + 1
-    ratio = target_rate / source_rate
-    start_out = int(np.ceil(start * ratio))
-    stop_out = int(np.floor(stop * ratio)) + 1
-    start_out = max(0, min(start_out, n_out))
-    stop_out = max(start_out, min(stop_out, n_out))
-    return start_out, stop_out
-
-
 class AutEncoder:
     """Independent AuT feature extractor: 16 kHz audio in, tokens + mask + times out.
 
     ``transformers``' sdpa/eager attention paths ignore the ``cu_seqlens`` that
-    the standalone encoder computes and whose only purpose is the ~8.32 s
-    block-diagonal attention.  In the upstream ``Qwen3OmniMoeAudioEncoder``
-    ``forward`` the documented ``_prepare_attention_mask`` helper is never
-    called, so the sdpa path silently runs *unmasked global* attention (and a
-    batched forward leaks context between samples).  ``masked_attention=True``
-    (the default) injects that block-diagonal mask into every encoder layer
-    through a documented ``forward_pre_hook``, reproducing the flash-attention
-    varlen semantics.  ``masked_attention=False`` keeps the upstream unmasked
-    sdpa behaviour for comparison in the probe.
+    the standalone encoder computes and whose only purpose is the block-diagonal
+    attention over eight consecutive 1 s chunks (8.0 s of audio, 104 tokens).
+    In the upstream ``Qwen3OmniMoeAudioEncoder.forward`` the documented
+    ``_prepare_attention_mask`` helper is never called, so the sdpa path
+    silently runs *unmasked global* attention (and a batched forward leaks
+    context between samples).  ``masked_attention=True`` (the default) injects
+    that block-diagonal mask into every encoder layer through a documented
+    ``forward_pre_hook``, reproducing the intended flash-attention varlen
+    behaviour.  This is an approximation of FA2's ragged varlen path (upstream
+    calls it an approximation too); no FA2 comparison was performed here.
+    ``masked_attention=False`` keeps the upstream unmasked sdpa behaviour for
+    comparison in the probe.
     """
 
     def __init__(
@@ -381,18 +446,23 @@ class AutEncoder:
         device: str = "cpu",
         dtype: str | None = None,
         attn_implementation: str = "sdpa",
+        model_id: str | None = None,
+        revision: str | None = None,
     ) -> "AutEncoder":
         directory = Path(model_dir)
         index = CheckpointIndex.load(directory / AUT_INDEX_FILENAME)
         plan = plan_encoder_shards(index)
         if shard_paths is None:
             shard_paths = [directory / name for name in plan.shards]
+        discovered = discover_checkpoint_provenance(directory)
+        provenance = merge_checkpoint_provenance(discovered, model_id=model_id, revision=revision)
         model, report = load_filtered_audio_encoder(
             directory,
             shard_paths,
             device=device,
             dtype=dtype,
             attn_implementation=attn_implementation,
+            provenance=provenance,
         )
         feature_extractor, mel_config = load_mel_feature_extractor(directory)
         report.mel_config = {
@@ -456,7 +526,13 @@ class AutEncoder:
                 return args, kwargs
             if "mask" not in cache:
                 hidden_states, cu_seqlens = args[0], args[1]
-                cache["mask"] = model._prepare_attention_mask(hidden_states, cu_seqlens)
+                mask = model._prepare_attention_mask(hidden_states, cu_seqlens)
+                if mask is None:  # pragma: no cover - guard for upstream changes
+                    raise EncoderCheckpointError(
+                        "upstream _prepare_attention_mask returned None for a non-FA2 "
+                        "backend; refusing to run unmasked global attention"
+                    )
+                cache["mask"] = mask
                 cache["cu_seqlens"] = cu_seqlens
             kwargs["attention_mask"] = cache["mask"]
             return args, kwargs
@@ -551,7 +627,7 @@ class AutEncoder:
             layer="final" if layer is None else f"layers.{layer}",
             model_id=self.load_report.model_id,
             revision=self.load_report.revision,
-            preprocessing=self._preprocessing_snapshot(),
+            preprocessing=self._preprocessing_snapshot(extraction_mode="single_buffer"),
             sample_rate=AUT_SAMPLE_RATE,
         )
 
@@ -588,7 +664,7 @@ class AutEncoder:
         regions: list[tuple[int, int]] = []
         for index in range(window_array.shape[0]):
             samples = prepare_audio(window_array[index], sample_rate)
-            region = _real_region_after_resample(
+            region = real_region_after_resample(
                 valid_array[index], int(sample_rate), AUT_SAMPLE_RATE, samples.shape[0]
             )
             if region is None:
@@ -627,12 +703,30 @@ class AutEncoder:
             layer="final" if layer is None else f"layers.{layer}",
             model_id=self.load_report.model_id,
             revision=self.load_report.revision,
+            preprocessing=self._preprocessing_snapshot(extraction_mode="independent_windows"),
         )
 
-    def _preprocessing_snapshot(self) -> dict[str, Any]:
+    def _preprocessing_snapshot(self, *, extraction_mode: str) -> dict[str, Any]:
         return {
-            "model_id": self.load_report.model_id,
-            "revision": self.load_report.revision,
+            "model": {
+                "model_id": self.load_report.model_id,
+                "revision": self.load_report.revision,
+                "revision_source": self.load_report.revision_source,
+                "transformers_version": self.load_report.transformers_version,
+            },
+            "attention": {
+                "mode": "block_diagonal" if self.masked_attention else "unmasked_global",
+                "backend": self.load_report.attn_implementation,
+            },
+            "compute": {
+                "device": self.load_report.device,
+                "dtype": self.load_report.dtype,
+            },
+            "resampling": {
+                "target_rate": AUT_SAMPLE_RATE,
+                "method": "windowed_sinc_blackman",
+                "taps": 16,
+            },
             "mel_feature_extractor": AUT_MEL_CLASS_NAME,
             "mel": {
                 "feature_size": self.mel_config.feature_size,
@@ -642,8 +736,12 @@ class AutEncoder:
                 "dither": self.mel_config.dither,
                 "padding_value": self.mel_config.padding_value,
             },
-            "chunk_mel_frames": 100,
-            "token_center_step_seconds": 0.08,
+            "grid": {
+                "chunk_mel_frames": 100,
+                "tokens_per_full_chunk": 13,
+                "token_center_step_seconds": 0.08,
+            },
+            "extraction_mode": extraction_mode,
         }
 
     # -- introspection ------------------------------------------------------ #

@@ -216,9 +216,14 @@ class AutWindowBatch:
     ``features`` is ``(N, T, D)``, ``valid`` is ``(N, T)`` and ``frame_times``
     is ``(N, T)`` (absolute original-track seconds; may be negative for windows
     that start before the track origin).  All windows share one mel length and
-    therefore one :class:`TokenGrid`; each window is its own encoder sample and
-    the AuT attention blocks never cross sample boundaries, so this is
-    equivalent to running the windows one by one (verified in the real probe).
+    therefore one :class:`TokenGrid`; each window is its own encoder sample.
+
+    With the default block-diagonal attention mask a batched forward is
+    equivalent to per-window forwards only **numerically**: measured fp32
+    maximum difference is 2.6e-4 and bf16 reaches 0.039 because GEMM/kernel
+    shapes differ with batch composition.  It is not a bitwise guarantee, and
+    without the mask (``masked_attention=False``) batching leaks context across
+    samples.  Use a fixed batch policy for reproducible features.
     """
 
     features: np.ndarray
@@ -229,6 +234,7 @@ class AutWindowBatch:
     layer: str = "final"
     model_id: str = ""
     revision: str = ""
+    preprocessing: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         features = _as_features_array(self.features, ndim=3)
@@ -249,6 +255,8 @@ class AutWindowBatch:
         starts = np.asarray(self.window_start_seconds, dtype=np.float64)
         if starts.shape != (n,) or not np.all(np.isfinite(starts)):
             raise EncoderError(f"window_start_seconds: expected finite float64 {(n,)}, got {starts.shape}")
+        if not isinstance(self.preprocessing, Mapping):
+            raise EncoderError("preprocessing: expected a mapping")
         object.__setattr__(self, "valid", valid)
         object.__setattr__(self, "frame_times", times)
         object.__setattr__(self, "window_start_seconds", starts)
@@ -266,7 +274,7 @@ class AutWindowBatch:
         return int(self.features.shape[2])
 
     def window(self, index: int) -> AutFeatures:
-        """One window as :class:`AutFeatures` (grid shared, times shifted)."""
+        """One window as :class:`AutFeatures` (grid and provenance preserved)."""
 
         return AutFeatures.build(
             features=self.features[index],
@@ -276,6 +284,7 @@ class AutWindowBatch:
             layer=self.layer,
             model_id=self.model_id,
             revision=self.revision,
+            preprocessing=self.preprocessing,
             sample_rate=AUT_SAMPLE_RATE,
         )
 
@@ -284,12 +293,27 @@ def compare_aligned_tokens(
     candidate: AutFeatures,
     *,
     atol_seconds: float = 1e-9,
+    valid_only: bool = False,
 ) -> dict[str, Any]:
-    """Compare tokens of two extractions at identical absolute frame times.
+    """Compare two extractions at identical absolute frame times.
 
-    Returns summary statistics; the caller decides what counts as equal.  Rows
-    of ``candidate`` whose time has no counterpart in ``reference`` are
-    reported as ``unmatched`` instead of being silently dropped.
+    Matching is by absolute frame time (nearest within ``atol_seconds``), never
+    by array index.  Metrics are computed on every matched element:
+
+    - ``elementwise_mae``: mean of ``|a - b|`` over all matched elements;
+    - ``mean_token_mae`` / ``max_token_mae``: mean/max over tokens of each
+      token's elementwise MAE;
+    - ``mean_token_max_abs``: mean over tokens of each token's max |diff|
+      (kept explicitly under this name; it is *not* an MAE);
+    - ``max_abs_diff``: global maximum elementwise |diff|;
+    - per-token cosine similarity.
+
+    Valid-token handling: a matched pair is invalid when either side's ``valid``
+    mask is ``False``.  With ``valid_only=False`` (default) invalid pairs are
+    still compared and counted in ``invalid_matched_tokens``; with
+    ``valid_only=True`` they are excluded from all statistics and counted in
+    ``masked_out_tokens``.  An empty reference (or candidate) is handled
+    gracefully: no matched tokens and ``None`` statistics, never an exception.
     """
 
     if reference.feature_dim != candidate.feature_dim:
@@ -298,38 +322,78 @@ def compare_aligned_tokens(
         )
     ref_times = reference.frame_times
     cand_times = candidate.frame_times
-    matched_candidate = np.zeros(cand_times.shape[0], dtype=bool)
-    diffs: list[float] = []
-    cosines: list[float] = []
+    per_token_mae: list[float | None] = []
     per_token_max_abs: list[float | None] = []
     per_token_cosine: list[float | None] = []
+    matched = 0
+    invalid_matched = 0
+    masked_out = 0
+    elementwise_sum = 0.0
+    elementwise_count = 0
+    global_max: float | None = None
+
     for i, time in enumerate(cand_times):
-        distance = np.abs(ref_times - time)
-        j = int(np.argmin(distance))
-        if distance[j] > atol_seconds:
+        if ref_times.size == 0:
+            per_token_mae.append(None)
             per_token_max_abs.append(None)
             per_token_cosine.append(None)
             continue
-        matched_candidate[i] = True
+        distance = np.abs(ref_times - time)
+        j = int(np.argmin(distance))
+        if distance[j] > atol_seconds:
+            per_token_mae.append(None)
+            per_token_max_abs.append(None)
+            per_token_cosine.append(None)
+            continue
+        ref_valid = bool(reference.valid[j])
+        cand_valid = bool(candidate.valid[i])
+        if valid_only and not (ref_valid and cand_valid):
+            masked_out += 1
+            per_token_mae.append(None)
+            per_token_max_abs.append(None)
+            per_token_cosine.append(None)
+            continue
+        matched += 1
+        if not (ref_valid and cand_valid):
+            invalid_matched += 1
         a = reference.features[j].astype(np.float64)
         b = candidate.features[i].astype(np.float64)
-        token_diff = float(np.max(np.abs(a - b)))
+        diff = np.abs(a - b)
+        token_mae = float(diff.mean()) if diff.size else 0.0
+        token_max_abs = float(diff.max()) if diff.size else 0.0
+        global_max = token_max_abs if global_max is None else max(global_max, token_max_abs)
+        elementwise_sum += float(diff.sum())
+        elementwise_count += int(diff.size)
         denominator = float(np.linalg.norm(a) * np.linalg.norm(b))
         token_cosine = float(np.dot(a, b) / denominator) if denominator > 0.0 else float("nan")
-        diffs.append(token_diff)
-        cosines.append(token_cosine)
-        per_token_max_abs.append(token_diff)
+        per_token_mae.append(token_mae)
+        per_token_max_abs.append(token_max_abs)
         per_token_cosine.append(token_cosine)
+
+    maes = [value for value in per_token_mae if value is not None]
+    cosine_values = [value for value in per_token_cosine if value is not None]
+    total_candidate = int(cand_times.shape[0])
     return {
         "reference_tokens": reference.token_count,
         "candidate_tokens": candidate.token_count,
-        "matched_tokens": int(matched_candidate.sum()),
-        "unmatched_candidate_tokens": int((~matched_candidate).sum()),
-        "max_abs_diff": max(diffs) if diffs else None,
-        "mean_abs_diff": float(np.mean(diffs)) if diffs else None,
-        "min_cosine": min(cosines) if cosines else None,
-        "mean_cosine": float(np.mean(cosines)) if cosines else None,
+        "matched_tokens": matched,
+        "unmatched_candidate_tokens": total_candidate - matched - masked_out,
+        "masked_out_tokens": masked_out,
+        "invalid_matched_tokens": invalid_matched,
+        "valid_only": bool(valid_only),
+        "elementwise_mae": (elementwise_sum / elementwise_count) if elementwise_count else None,
+        "mean_token_mae": float(np.mean(maes)) if maes else None,
+        "max_token_mae": max(maes) if maes else None,
+        "mean_token_max_abs": (
+            float(np.mean([value for value in per_token_max_abs if value is not None]))
+            if matched
+            else None
+        ),
+        "max_abs_diff": global_max,
+        "min_cosine": min(cosine_values) if cosine_values else None,
+        "mean_cosine": float(np.mean(cosine_values)) if cosine_values else None,
         "candidate_frame_times": [float(t) for t in cand_times],
+        "per_token_mae": per_token_mae,
         "per_token_max_abs_diff": per_token_max_abs,
         "per_token_cosine": per_token_cosine,
     }

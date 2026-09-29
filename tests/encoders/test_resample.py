@@ -7,7 +7,14 @@ import math
 import numpy as np
 import pytest
 
-from aat.encoders import AUT_SAMPLE_RATE, EncoderInputError, prepare_audio, resample_audio
+from aat.encoders import (
+    AUT_SAMPLE_RATE,
+    EncoderInputError,
+    prepare_audio,
+    real_region_after_resample,
+    resample_audio,
+    resample_kernel_half_width,
+)
 
 
 def _tone(frequency: float, seconds: float, rate: int, amplitude: float = 0.5) -> np.ndarray:
@@ -83,3 +90,33 @@ def test_prepare_audio_resamples_44k1_to_16k():
     assert out.dtype == np.float32
     assert out.shape[0] == math.floor(0.25 * AUT_SAMPLE_RATE + 0.5)
     assert np.all(np.isfinite(out))
+
+
+def test_resample_kernel_half_width_matches_filter_support():
+    assert resample_kernel_half_width(16000, 16000) == 0
+    assert resample_kernel_half_width(44100, 16000) == 45  # ceil(16 * 44100/16000)
+    assert resample_kernel_half_width(22050, 16000) == 23
+
+
+def test_real_region_same_rate_is_half_open():
+    valid = np.zeros(4000, dtype=bool)
+    valid[500:1001] = True
+    assert real_region_after_resample(valid, 16000, 16000, 4000) == (500, 1001)
+    endpoint = np.zeros(4000, dtype=bool)
+    endpoint[:1319] = True
+    assert real_region_after_resample(endpoint, 16000, 16000, 4000) == (0, 1319)
+    assert real_region_after_resample(np.zeros(10, dtype=bool), 16000, 16000, 10) is None
+
+
+def test_real_region_44k_non_integral_boundary_uses_kernel_margin():
+    valid = np.zeros(44100, dtype=bool)
+    valid[1001:2000] = True  # both borders interior to the buffer
+    region = real_region_after_resample(valid, 44100, 16000, 16000)
+    assert region == (380, 710)
+
+
+def test_real_region_rejects_non_boolean_or_non_contiguous():
+    with pytest.raises(EncoderInputError, match="contiguous"):
+        real_region_after_resample(np.array([1, 0, 1, 1], dtype=bool), 16000, 16000, 4)
+    with pytest.raises(EncoderInputError, match="boolean"):
+        real_region_after_resample(np.ones(4, dtype=np.int8), 16000, 16000, 4)

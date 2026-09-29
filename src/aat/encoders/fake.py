@@ -33,7 +33,7 @@ from .grid import (
     aut_token_grid,
     token_valid_mask,
 )
-from .resample import prepare_audio
+from .resample import prepare_audio, real_region_after_resample
 
 #: Feature dimension of the fake; deliberately different from the real 2048.
 FAKE_FEATURE_DIM = 16
@@ -99,12 +99,34 @@ class FakeAutEncoder:
             out[i] = stats @ self._projection + positional.astype(np.float32)
         return out
 
+    def _snapshot(self, *, extraction_mode: str) -> dict[str, Any]:
+        return {
+            "backend": "fake-frame-energy",
+            "feature_dim": self.feature_dim,
+            "model_id": self.model_id,
+            "revision": self.revision,
+            "attention": {"mode": "not_applicable", "backend": "numpy-local"},
+            "resampling": {
+                "target_rate": AUT_SAMPLE_RATE,
+                "method": "windowed_sinc_blackman",
+                "taps": 16,
+            },
+            "grid": {
+                "chunk_mel_frames": 100,
+                "tokens_per_full_chunk": 13,
+                "token_center_step_seconds": 0.08,
+            },
+            "extraction_mode": extraction_mode,
+        }
+
     def _extract_one(
         self,
         audio: np.ndarray,
         buffer_origin_seconds: float,
         real_start: int,
         real_stop: int,
+        *,
+        extraction_mode: str,
     ) -> AutFeatures:
         if audio.shape[0] < AUT_MIN_AUDIO_SAMPLES:
             raise EncoderInputError(
@@ -123,7 +145,7 @@ class FakeAutEncoder:
             layer="final",
             model_id=self.model_id,
             revision=self.revision,
-            preprocessing={"backend": "fake-frame-energy", "feature_dim": self.feature_dim},
+            preprocessing=self._snapshot(extraction_mode=extraction_mode),
             sample_rate=AUT_SAMPLE_RATE,
         )
 
@@ -137,7 +159,13 @@ class FakeAutEncoder:
         origin_seconds: float = 0.0,
     ) -> AutFeatures:
         samples = prepare_audio(audio, sample_rate)
-        return self._extract_one(samples, float(origin_seconds), 0, samples.shape[0])
+        return self._extract_one(
+            samples,
+            float(origin_seconds),
+            0,
+            samples.shape[0],
+            extraction_mode="single_buffer",
+        )
 
     def extract_windows(
         self,
@@ -169,17 +197,22 @@ class FakeAutEncoder:
         rows: list[AutFeatures] = []
         for index in range(window_array.shape[0]):
             samples = prepare_audio(window_array[index], sample_rate)
-            real = valid_array[index]
-            if bool(np.all(real)):
-                real_start, real_stop = 0, samples.shape[0]
-            else:
-                indices = np.flatnonzero(real)
-                if indices.size == 0:
-                    raise EncoderInputError(
-                        f"windows[{index}]: valid_samples is all-False; no real audio to encode"
-                    )
-                real_start, real_stop = int(indices[0]), int(indices[-1]) + 1
-            rows.append(self._extract_one(samples, float(starts[index]), real_start, real_stop))
+            region = real_region_after_resample(
+                valid_array[index], int(sample_rate), AUT_SAMPLE_RATE, samples.shape[0]
+            )
+            if region is None:
+                raise EncoderInputError(
+                    f"windows[{index}]: valid_samples is all-False; no real audio to encode"
+                )
+            rows.append(
+                self._extract_one(
+                    samples,
+                    float(starts[index]),
+                    region[0],
+                    region[1],
+                    extraction_mode="independent_windows",
+                )
+            )
 
         features = np.stack([row.features for row in rows], axis=0)
         valid = np.stack([row.valid for row in rows], axis=0)
@@ -193,4 +226,5 @@ class FakeAutEncoder:
             layer="final",
             model_id=self.model_id,
             revision=self.revision,
+            preprocessing=self._snapshot(extraction_mode="independent_windows"),
         )

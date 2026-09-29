@@ -19,6 +19,7 @@ Nothing here imports torch, transformers or safetensors.
 from __future__ import annotations
 
 import json
+import re
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
@@ -77,6 +78,92 @@ _DTYPE_BYTES = {
 def _require(condition: bool, message: str) -> None:
     if not condition:
         raise EncoderCheckpointError(message)
+
+
+@dataclass(frozen=True)
+class CheckpointProvenance:
+    """Identity of the locally available checkpoint files.
+
+    ``source`` is one of ``explicit`` (caller supplied id/revision),
+    ``hf-metadata`` (read from ``hf_hub_download`` local-dir metadata) or
+    ``unverified`` (local files without revision metadata).  ``unverified``
+    must never be silently replaced by the audited default revision: a feature
+    document may only claim the pinned revision when the bytes can be tied to
+    it.
+    """
+
+    model_id: str = ""
+    revision: str = ""
+    source: str = "unverified"
+
+
+_SHA40 = re.compile(r"^[0-9a-f]{40}$")
+
+
+def discover_checkpoint_provenance(model_dir: Path | str) -> CheckpointProvenance:
+    """Read ``hf_hub_download`` local-dir metadata to tie files to a revision.
+
+    ``huggingface_hub`` writes ``.cache/huggingface/download/<name>.metadata``
+    next to files downloaded with ``local_dir=...``.  Older hub versions write
+    a three-line text file (commit hash, etag, mtime), newer ones a JSON
+    object; both are accepted.  Multiple distinct commit hashes are rejected
+    because the directory would mix revisions.
+    """
+
+    directory = Path(model_dir) / ".cache" / "huggingface" / "download"
+    revisions: set[str] = set()
+    if directory.is_dir():
+        for metadata_path in sorted(directory.glob("*.metadata")):
+            try:
+                text = metadata_path.read_text(encoding="utf-8").strip()
+            except OSError as error:  # pragma: no cover - unusual filesystem error
+                raise EncoderCheckpointError(
+                    f"cannot read checkpoint metadata {metadata_path}: {error}"
+                ) from error
+            candidate: Any = None
+            try:
+                payload = json.loads(text)
+                if isinstance(payload, dict):
+                    candidate = payload.get("commit_hash")
+            except json.JSONDecodeError:
+                lines = text.splitlines()
+                candidate = lines[0].strip() if lines else None
+            if isinstance(candidate, str) and _SHA40.match(candidate):
+                revisions.add(candidate)
+    if len(revisions) > 1:
+        raise EncoderCheckpointError(
+            f"local checkpoint {directory.parent.parent.parent} mixes revisions: "
+            f"{sorted(revisions)}"
+        )
+    if revisions:
+        return CheckpointProvenance(revision=revisions.pop(), source="hf-metadata")
+    return CheckpointProvenance(source="unverified")
+
+
+def merge_checkpoint_provenance(
+    discovered: CheckpointProvenance,
+    *,
+    model_id: str | None = None,
+    revision: str | None = None,
+) -> CheckpointProvenance:
+    """Combine explicit caller identity with local download metadata."""
+
+    if model_id is None and revision is None:
+        return discovered
+    if (
+        revision is not None
+        and discovered.revision
+        and revision != discovered.revision
+    ):
+        raise EncoderCheckpointError(
+            f"requested revision {revision!r} but the local download metadata "
+            f"records {discovered.revision!r}; refusing to mislabel the weights"
+        )
+    return CheckpointProvenance(
+        model_id=model_id if model_id else discovered.model_id,
+        revision=revision if revision else discovered.revision,
+        source="explicit",
+    )
 
 
 @dataclass(frozen=True)

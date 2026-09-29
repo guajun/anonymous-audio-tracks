@@ -55,6 +55,8 @@ AUT_MEL_HOP_SAMPLES = 160
 AUT_N_FFT = 400
 #: Number of mel bins of the official checkpoint.
 AUT_MEL_BINS = 128
+#: Upstream ``n_window``; the convolution chunk is ``n_window * 2`` mel frames.
+AUT_N_WINDOW = 50
 #: Mel frames per AuT convolution chunk (``n_window * 2`` with ``n_window=50``).
 AUT_CHUNK_MEL_FRAMES = 100
 #: Tokens produced by one full 100-frame chunk (100 -> 50 -> 25 -> 13).

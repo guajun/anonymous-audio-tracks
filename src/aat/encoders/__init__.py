@@ -25,11 +25,14 @@ from .checkpoint import (
     AUT_TENSOR_COUNT,
     AUT_TENSOR_PREFIX,
     CheckpointIndex,
+    CheckpointProvenance,
     ShardPlan,
     audio_config_from_checkpoint,
     check_disk_space,
     check_state_dict_coverage,
+    discover_checkpoint_provenance,
     header_encoder_bytes,
+    merge_checkpoint_provenance,
     normalize_encoder_keys,
     plan_encoder_shards,
 )
@@ -49,6 +52,7 @@ from .grid import (
     AUT_MEL_BINS,
     AUT_MEL_HOP_SAMPLES,
     AUT_MIN_AUDIO_SAMPLES,
+    AUT_N_WINDOW,
     AUT_N_FFT,
     AUT_NOMINAL_TOKEN_STEP_SECONDS,
     AUT_SAMPLE_RATE,
@@ -58,7 +62,13 @@ from .grid import (
     aut_token_grid,
     token_valid_mask,
 )
-from .resample import prepare_audio, resample_audio
+from .resample import (
+    DEFAULT_RESAMPLE_TAPS,
+    prepare_audio,
+    real_region_after_resample,
+    resample_audio,
+    resample_kernel_half_width,
+)
 
 __all__ = [
     "AUT_CHUNK_MEL_FRAMES",
@@ -72,6 +82,7 @@ __all__ = [
     "AUT_MODEL_ID",
     "AUT_NOMINAL_TOKEN_STEP_SECONDS",
     "AUT_N_FFT",
+    "AUT_N_WINDOW",
     "AUT_PARAM_COUNT",
     "AUT_REVISION",
     "AUT_SAMPLE_RATE",
@@ -81,6 +92,8 @@ __all__ = [
     "AutFeatures",
     "AutWindowBatch",
     "CheckpointIndex",
+    "CheckpointProvenance",
+    "DEFAULT_RESAMPLE_TAPS",
     "EncoderCheckpointError",
     "EncoderError",
     "EncoderInputError",
@@ -94,12 +107,16 @@ __all__ = [
     "check_disk_space",
     "check_state_dict_coverage",
     "compare_aligned_tokens",
+    "discover_checkpoint_provenance",
     "feature_name_for_layer",
     "header_encoder_bytes",
+    "merge_checkpoint_provenance",
     "normalize_encoder_keys",
     "plan_encoder_shards",
     "prepare_audio",
+    "real_region_after_resample",
     "resample_audio",
+    "resample_kernel_half_width",
     "token_valid_mask",
 ]
 
@@ -107,7 +124,8 @@ __all__ = [
 def __getattr__(name: str):
     """Expose the real encoder lazily so importing the package needs no torch."""
 
-    if name in {"AutEncoder", "MelConfig", "load_filtered_audio_encoder"}:
+    lazy = {"AutEncoder", "MelConfig", "load_filtered_audio_encoder", "validate_encoder_class_and_grid"}
+    if name in lazy:
         from . import aut
 
         return getattr(aut, name)

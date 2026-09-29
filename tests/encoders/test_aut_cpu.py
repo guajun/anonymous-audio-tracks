@@ -18,6 +18,8 @@ torch = pytest.importorskip("torch")
 pytest.importorskip("transformers")
 safetensors_torch = pytest.importorskip("safetensors.torch")
 
+pytestmark = pytest.mark.ml
+
 from aat.encoders import AUT_SAMPLE_RATE, EncoderCheckpointError, EncoderInputError
 from aat.encoders.aut import AUT_TENSOR_PREFIX, AutEncoder
 from aat.encoders.grid import aut_output_length
@@ -55,7 +57,7 @@ PREPROCESSOR = {
 }
 
 
-def _build_tiny_checkpoint(tmp_path, *, drop_key=None, extra_key=None):
+def _build_tiny_checkpoint(tmp_path, *, drop_key=None, extra_key=None, audio_overrides=None):
     from transformers.models.qwen3_omni_moe.configuration_qwen3_omni_moe import (
         Qwen3OmniMoeAudioEncoderConfig,
     )
@@ -63,8 +65,11 @@ def _build_tiny_checkpoint(tmp_path, *, drop_key=None, extra_key=None):
         Qwen3OmniMoeAudioEncoder,
     )
 
+    audio_config = dict(TINY_AUDIO_CONFIG)
+    if audio_overrides:
+        audio_config.update(audio_overrides)
     torch.manual_seed(0)
-    config = Qwen3OmniMoeAudioEncoderConfig(**TINY_AUDIO_CONFIG)
+    config = Qwen3OmniMoeAudioEncoderConfig(**audio_config)
     model = Qwen3OmniMoeAudioEncoder(config)
     state = {
         f"{AUT_TENSOR_PREFIX}{key}": value.detach().contiguous()
@@ -85,7 +90,7 @@ def _build_tiny_checkpoint(tmp_path, *, drop_key=None, extra_key=None):
     )
     (tmp_path / "config.json").write_text(
         json.dumps(
-            {"model_type": "qwen3_omni_moe", "thinker_config": {"audio_config": TINY_AUDIO_CONFIG}}
+            {"model_type": "qwen3_omni_moe", "thinker_config": {"audio_config": audio_config}}
         ),
         encoding="utf-8",
     )
@@ -118,10 +123,96 @@ def test_load_report_proves_encoder_only_loading(tiny_encoder):
     assert report.device == "cpu"
     assert report.dtype == "float32"
     assert report.mel_config["feature_size"] == 128
+    # A locally built random checkpoint has no download metadata; it must not
+    # attest the audited default revision.
+    assert report.revision == ""
+    assert report.model_id == ""
+    assert report.revision_source == "unverified"
     names = encoder.module_class_names()
     assert "Qwen3OmniMoeAudioEncoder" in names
     for forbidden in ("Qwen3OmniMoeForConditionalGeneration", "Qwen3OmniMoeTalkerForConditionalGeneration"):
         assert forbidden not in names
+
+
+def test_provenance_is_explicit_or_read_from_hf_metadata(tmp_path):
+    directory = tmp_path / "prov"
+    directory.mkdir()
+    _build_tiny_checkpoint(directory)
+
+    encoder = AutEncoder.from_checkpoint(
+        directory, device="cpu", dtype="float32", model_id="local/test", revision="rev-1"
+    )
+    assert encoder.load_report.model_id == "local/test"
+    assert encoder.load_report.revision == "rev-1"
+    assert encoder.load_report.revision_source == "explicit"
+    item = encoder.extract(_signal(1.0))
+    assert item.preprocessing["model"]["revision"] == "rev-1"
+    assert item.preprocessing["model"]["revision_source"] == "explicit"
+
+    metadata_dir = directory / ".cache" / "huggingface" / "download"
+    metadata_dir.mkdir(parents=True)
+    (metadata_dir / "config.json.metadata").write_text(
+        "a" * 40 + "\n" + "b" * 64 + "\n1.0\n", encoding="utf-8"
+    )
+    discovered = AutEncoder.from_checkpoint(directory, device="cpu", dtype="float32")
+    assert discovered.load_report.revision == "a" * 40
+    assert discovered.load_report.revision_source == "hf-metadata"
+
+    with pytest.raises(EncoderCheckpointError, match="local download metadata"):
+        AutEncoder.from_checkpoint(
+            directory, device="cpu", dtype="float32", revision="c" * 40
+        )
+
+
+def test_preprocessing_snapshot_tracks_attention_mode_and_extraction_mode(tiny_encoder):
+    encoder, _ = tiny_encoder
+    audio = _signal(1.0)
+    masked = encoder.extract(audio)
+    unmasked = encoder.with_masked_attention(False).extract(audio)
+    assert masked.preprocessing["attention"]["mode"] == "block_diagonal"
+    assert unmasked.preprocessing["attention"]["mode"] == "unmasked_global"
+    assert masked.preprocessing["extraction_mode"] == "single_buffer"
+    assert unmasked.preprocessing["attention"] != masked.preprocessing["attention"]
+
+    starts = np.array([0.0, 2.0])
+    windows = np.stack([audio, audio])
+    batch = encoder.extract_windows(windows, AUT_SAMPLE_RATE, window_start_seconds=starts)
+    assert batch.preprocessing["extraction_mode"] == "independent_windows"
+    window = batch.window(0)
+    assert window.preprocessing == batch.preprocessing
+    assert window.preprocessing["attention"]["mode"] == "block_diagonal"
+
+
+def test_grid_assumptions_are_validated_before_extraction(tmp_path):
+    directory = tmp_path / "bad-window"
+    directory.mkdir()
+    _build_tiny_checkpoint(directory, audio_overrides={"n_window": 40})
+    with pytest.raises(EncoderCheckpointError, match="n_window"):
+        AutEncoder.from_checkpoint(directory, device="cpu", dtype="float32")
+
+
+def test_unaudited_transformers_version_is_rejected(tmp_path, monkeypatch):
+    import transformers
+
+    directory = tmp_path / "unaudited-version"
+    directory.mkdir()
+    _build_tiny_checkpoint(directory)
+    monkeypatch.setattr(transformers, "__version__", "9.9.9")
+    with pytest.raises(EncoderCheckpointError, match="audited"):
+        AutEncoder.from_checkpoint(directory, device="cpu", dtype="float32")
+
+
+def test_attention_block_boundary_is_eight_full_chunks(tiny_encoder):
+    encoder, _ = tiny_encoder
+    # 8.0 s = eight 100-frame chunks = 104 tokens -> one attention block.
+    encoder.extract(np.zeros(int(8.0 * AUT_SAMPLE_RATE), dtype=np.float32))
+    assert encoder.last_attention_info["cu_seqlens"] == [0, 104]
+    # 8.05 s has one tail-chunk token more and therefore starts a second block.
+    encoder.extract(np.zeros(int(8.05 * AUT_SAMPLE_RATE), dtype=np.float32))
+    assert encoder.last_attention_info["cu_seqlens"] == [0, 104, 105]
+    # 16.0 s = two full blocks.
+    encoder.extract(np.zeros(int(16.0 * AUT_SAMPLE_RATE), dtype=np.float32))
+    assert encoder.last_attention_info["cu_seqlens"] == [0, 104, 208]
 
 
 def test_real_class_extract_shapes_times_and_finite_values(tiny_encoder):
@@ -277,3 +368,81 @@ def test_official_formula_port_matches_installed_transformers():
     upstream = _get_feat_extract_output_lengths(lengths).tolist()
     for mel_len, expected in zip(lengths.tolist(), upstream):
         assert aut_output_length(mel_len) == expected
+
+
+def _noise(seconds: float, rate: int, seed: int = 5) -> np.ndarray:
+    rng = np.random.default_rng(seed)
+    t = np.arange(int(round(seconds * rate))) / rate
+    return (0.3 * np.sin(2 * np.pi * 220.0 * t) + 0.05 * rng.standard_normal(t.size)).astype(
+        np.float32
+    )
+
+
+def test_real_and_fake_share_padded_window_validity(tiny_encoder):
+    from aat.encoders import FakeAutEncoder
+    from aat.windowing import extract_windows_at_times
+
+    encoder, _ = tiny_encoder
+    fake = FakeAutEncoder()
+    track = _signal(1.0)
+    centers = np.array([0.25, 0.5, 0.75, 1.0])
+    windows, valid = extract_windows_at_times(
+        track, centers, AUT_SAMPLE_RATE, 2.0, origin_seconds=0.0
+    )
+    starts = centers - 1.0
+    real_batch = encoder.extract_windows(
+        windows, AUT_SAMPLE_RATE, window_start_seconds=starts, valid_samples=valid
+    )
+    fake_batch = fake.extract_windows(
+        windows, AUT_SAMPLE_RATE, window_start_seconds=starts, valid_samples=valid
+    )
+    np.testing.assert_array_equal(real_batch.valid, fake_batch.valid)
+
+
+def test_equal_rate_endpoint_validity_is_half_open(tiny_encoder):
+    """A real span of [0, 1319) must not validate the token ending at 1320."""
+
+    from aat.encoders import FakeAutEncoder
+
+    encoder, _ = tiny_encoder
+    fake = FakeAutEncoder()
+    audio = _signal(2.0)
+    valid = np.zeros(audio.size, dtype=bool)
+    valid[:1319] = True
+    starts = np.array([0.0])
+    real_batch = encoder.extract_windows(
+        audio[None, :], AUT_SAMPLE_RATE, window_start_seconds=starts, valid_samples=valid[None, :]
+    )
+    fake_batch = fake.extract_windows(
+        audio[None, :], AUT_SAMPLE_RATE, window_start_seconds=starts, valid_samples=valid[None, :]
+    )
+    assert real_batch.valid[0, 0] is np.bool_(False)
+    assert fake_batch.valid[0, 0] is np.bool_(False)
+    np.testing.assert_array_equal(real_batch.valid, fake_batch.valid)
+
+    # Same span but one sample longer: token 0's support [0, 1320) is now real.
+    valid[1319] = True
+    longer = fake.extract_windows(
+        audio[None, :], AUT_SAMPLE_RATE, window_start_seconds=starts, valid_samples=valid[None, :]
+    )
+    assert longer.valid[0, 0]
+
+
+def test_real_and_fake_validity_match_for_44k_windows(tiny_encoder):
+    from aat.encoders import FakeAutEncoder
+    from aat.windowing import extract_windows_at_times
+
+    encoder, _ = tiny_encoder
+    fake = FakeAutEncoder()
+    track = _noise(1.0, 44100)
+    centers = np.array([0.5, 1.0])
+    windows, valid = extract_windows_at_times(track, centers, 44100, 2.0, origin_seconds=0.0)
+    starts = centers - 1.0
+    real_batch = encoder.extract_windows(
+        windows, 44100, window_start_seconds=starts, valid_samples=valid
+    )
+    fake_batch = fake.extract_windows(
+        windows, 44100, window_start_seconds=starts, valid_samples=valid
+    )
+    assert np.all(np.isfinite(real_batch.features))
+    np.testing.assert_array_equal(real_batch.valid, fake_batch.valid)

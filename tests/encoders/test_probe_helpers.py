@@ -8,7 +8,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from aat.encoders.aut import _real_region_after_resample
+from aat.encoders import EncoderInputError
+from aat.encoders.resample import real_region_after_resample
 
 _SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "probe_aut.py"
 _spec = importlib.util.spec_from_file_location("probe_aut_under_test", _SCRIPT)
@@ -33,27 +34,38 @@ def test_synthetic_signal_respects_requested_rate():
     assert signal.shape == (22050,)
 
 
-def test_edge_interior_split_uses_first_and_last_tokens():
+def test_edge_interior_split_uses_per_token_mae_and_max():
     count = 26
-    diffs = [1.0] * 8 + [0.5] * 10 + [2.0] * 8
+    per_token_mae = [0.25] * 8 + [0.05] * 10 + [0.5] * 8
+    per_token_max = [1.0] * 8 + [0.5] * 10 + [2.0] * 8
     cosines = [0.9] * 8 + [0.99] * 10 + [0.7] * 8
     summary = probe_aut._edge_interior(
-        {"per_token_max_abs_diff": diffs, "per_token_cosine": cosines}
+        {
+            "per_token_mae": per_token_mae,
+            "per_token_max_abs_diff": per_token_max,
+            "per_token_cosine": cosines,
+        }
     )
     assert summary["edge_tokens"] == 16
     assert summary["interior_tokens"] == 10
-    assert summary["edge_mean_abs_diff"] == pytest.approx(1.5)
-    assert summary["interior_mean_abs_diff"] == pytest.approx(0.5)
+    assert summary["edge_mean_mae"] == pytest.approx((8 * 0.25 + 8 * 0.5) / 16)
+    assert summary["interior_mean_mae"] == pytest.approx(0.05)
+    assert summary["edge_mean_token_max_abs"] == pytest.approx((8 * 1.0 + 8 * 2.0) / 16)
+    assert summary["interior_mean_token_max_abs"] == pytest.approx(0.5)
     assert summary["edge_min_cosine"] == pytest.approx(0.7)
     assert summary["interior_min_cosine"] == pytest.approx(0.99)
 
 
 def test_edge_interior_split_handles_short_windows():
     summary = probe_aut._edge_interior(
-        {"per_token_max_abs_diff": [1.0, 2.0, 3.0, 4.0], "per_token_cosine": [1.0] * 4}
+        {
+            "per_token_mae": [0.1, 0.2, 0.3, 0.4],
+            "per_token_max_abs_diff": [1.0, 2.0, 3.0, 4.0],
+            "per_token_cosine": [1.0] * 4,
+        }
     )
     assert summary["edge_tokens"] + summary["interior_tokens"] == 4
-    assert summary["edge_mean_abs_diff"] is not None
+    assert summary["edge_mean_mae"] is not None
 
 
 def test_median_helper_matches_numpy():
@@ -63,9 +75,19 @@ def test_median_helper_matches_numpy():
 def test_real_region_after_resample_maps_contiguous_span():
     valid = np.zeros(44100, dtype=bool)
     valid[11025:33075] = True  # 0.25 s .. 0.75 s at 44.1 kHz
-    region = _real_region_after_resample(valid, 44100, 16000, 16000)
+    region = real_region_after_resample(valid, 44100, 16000, 16000)
     assert region is not None
     start, stop = region
-    assert start == pytest.approx(4000, abs=1)
-    assert stop == pytest.approx(12000, abs=1)
-    assert _real_region_after_resample(np.zeros(100, dtype=bool), 16000, 16000, 100) is None
+    # Kernel half width for 16 taps at cutoff 16000/44100 is ceil(44.1) = 45
+    # input samples; both borders are interior, so both are shrunk.
+    assert start == 4017  # ceil((11025 + 45) * 16000 / 44100)
+    assert stop == 11984  # ceil((33075 - 45) * 16000 / 44100)
+    assert real_region_after_resample(np.zeros(100, dtype=bool), 16000, 16000, 100) is None
+
+
+def test_real_region_after_resample_rejects_internal_holes():
+    holes = np.zeros(1000, dtype=bool)
+    holes[100:200] = True
+    holes[300:400] = True
+    with pytest.raises(EncoderInputError, match="contiguous"):
+        real_region_after_resample(holes, 16000, 16000, 1000)

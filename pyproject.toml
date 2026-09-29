@@ -25,8 +25,14 @@ render = [
 # `uv sync --locked --extra ml` never pulls the CUDA/nvidia stack.  Darwin
 # falls back to the default PyPI index because the PyTorch CPU index has no
 # macOS arm64 wheels; PyPI torch on macOS is CPU-only anyway.
+# transformers/safetensors/huggingface_hub are needed by the standalone AuT
+# encoder (issue #5); the base install stays free of model-stack packages and
+# CI never downloads weights (tests build tiny random checkpoints locally).
 ml = [
     "torch>=2.5,<3",
+    "transformers==4.57.1",
+    "safetensors>=0.5,<1",
+    "huggingface_hub>=0.34,<2",
 ]
 
 [dependency-groups]
@@ -52,5 +58,5 @@ testpaths = ["tests"]
 addopts = "-ra"
 markers = [
     "integration: requires the optional render extra (DawDreamer)",
-    "ml: requires the optional ml extra (CPU PyTorch)",
+    "ml: requires the optional ml extra (CPU PyTorch, transformers, safetensors)",
 ]
