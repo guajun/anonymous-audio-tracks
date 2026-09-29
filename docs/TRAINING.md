@@ -31,6 +31,12 @@
 - **head 输入一致**：帧绝对时间 `frame_times = 实际窗口起点 + 编码器帧中心`，窗口中心用
   `center_times - W/2` 的同一 half-up 取整换算；`frame_valid` 为 False 的补零帧不参与注意力，
   `center_valid=False` 的行不产生有效槽位，padding 槽位不进入 loss。
+- **推理边界与模式**：`HeadInference.predict_windows` 只接受该采样率下精确的 2 s 样本数，
+  校验 `sample_rate` 为正整数、start/center 在同一采样网格取整约定内一致；`valid_samples`
+  含补零的行（或调用方显式给出的 `center_valid=False`）在头部被强制为全零无效槽位，
+  边界补零窗不会伪装成受监督预测。预测期间模型强制 `eval()`（dropout 关闭、不消耗 RNG），
+  并在异常/正常返回后恢复原模式；`predictor_for_centers` 支持 `audio_duration_seconds` 以在
+  callback 路径获得相同的边界掩码。
 
 ## 2. 数据：真实 DawDreamer 渲染与分组切分
 
@@ -142,7 +148,10 @@ step_seed(base_seed, step) = SeedSequence([base_seed, step, 0xA17]).generate_sta
   `sample_sha256` 与全部文件摘要）；
 - encoder identity 与完整 provenance（模式、model id/revision/revision_source、layer、dtype、
   attention、extraction、分块策略、fake seed 等）；
-- 最后一个 step 的 loss 分项与累计有效监督计数。
+- 最后一个 step 的 loss 分项与累计有效监督计数；
+- `resources`：设备、整体 elapsed、每进程 torch CUDA allocator 的 peak allocated/reserved
+  （在 `Trainer` 构造、编码器加载前 reset；CPU 明确写 `null` 并给 `unavailable_reason`，
+  不伪造 0）。
 
 恢复时在**训练任何一步之前**逐项核对：config identity（含 head/loss/optim 超参、seed、数据
 采样参数）、数据集 digest 与当前 split digest、encoder identity、model shape。任何不一致抛
@@ -159,6 +168,13 @@ supervision_masked 与四类有效 term 数）、`effective_supervision`、`grad
 
 **零有效监督不算成功**：若整个 run 的 `activity_terms == 0`（例如所有中心窗口都越界），
 `summary.status = "no_effective_supervision"`，CLI 退出码 1，但诊断与 checkpoint 仍保留。
+
+**中断日志对账**：恢复时不把上一次未 checkpoint 的日志尾巴直接拼接。`_reconcile_train_log`
+只保留与 committed checkpoint step 严格对齐的 `0..step` 前缀（任何不一致的 step 序列直接抛
+`CheckpointError`）；checkpoint 之后的完整行、以及写入中断产生的半行 JSON，统一保存为
+`train_log.discarded-<timestamp>.jsonl` 证据后，把 canonical 日志原子重写为前缀。恢复后的
+step seed 序列不变，因此被丢弃的行会被同 seed 重新计算，canonical 日志与 checkpoint/totals
+始终唯一且对齐。
 
 ### 3.4 覆盖安全
 
@@ -184,21 +200,33 @@ supervision_masked 与四类有效 term 数）、`effective_supervision`、`grad
 
 在评估报告与轨迹 provenance 中，基线标为 `data_kind = "mock"`、模型输出标为 `"model"`。
 
+边界语义：评估只在 `activity.valid` 的中心预测，且 `HeadInference` 会把越界/补零中心输出为
+全零槽位（`center_valid=False`、`slot_valid` 全 False、`E=P=0`），与训练时无效中心一致；
+`build_prediction_data` 路径传入 `audio_duration_seconds` 时获得相同掩码。`extract_windows_at_times`
+仍拒绝对音频范围外的中心（维持既有 windowing 策略）。
+
 ## 5. 实测证据
 
 ### 5.1 本地测试
 
 ```sh
 uv sync --locked --extra ml --extra render
-uv run --no-sync pytest -q -p no:cacheprovider              # 678 passed（含 render 集成）
-uv run --no-sync pytest -q -p no:cacheprovider tests/training  # 36 passed
+uv run --no-sync pytest -q -p no:cacheprovider              # 686 passed（ml + render）
+uv run --no-sync pytest -q -p no:cacheprovider tests/training  # 44 passed
+# 无 torch 的 base job / 无 torch 的 render job（同 CI）：
+UV_PROJECT_ENVIRONMENT=runs/venv-base uv sync --locked
+UV_PROJECT_ENVIRONMENT=runs/venv-base uv run --no-sync pytest -q -m "not integration and not ml"  # 574 passed, 12 skipped
+UV_PROJECT_ENVIRONMENT=runs/venv-render uv sync --locked --extra render
+UV_PROJECT_ENVIRONMENT=runs/venv-render uv run --no-sync pytest -q -m "not ml"  # 579 passed, 10 skipped
 ```
 
 `tests/training/` 覆盖：配置解析/未知键/pinned 模式拒绝、合成语料无泄漏与家族不交叉、摘要随
 内容变化、padded 来源列与补零帧不进入 loss、越界中心零有效监督、fake smoke 的 finite loss 与
-机器可读日志、**中断恢复与不中断训练 bitwise 一致**（模型/优化器/batch/loss/torch RNG）、
-配置与数据变化拒绝恢复、覆盖归档、checkpoint→推理接口、评估协议与基线、CLI 端到端。
-CPU 测试与本地运行设置 `OMP_NUM_THREADS=4` 以避免小矩阵线程开销。
+机器可读日志、**中断恢复与不中断训练 bitwise 一致**（模型/优化器/batch/loss/torch RNG，含
+\"checkpoint 之间真实中断 + 部分 JSON 行\"的日志对账）、配置与数据变化拒绝恢复、覆盖归档、
+checkpoint→推理接口、边界掩码与 callback 一致性、窗口长度/时间戳校验、dropout 下推理模式与
+RNG 不消耗、评估协议与基线、CLI 端到端。CPU 测试与本地运行设置 `OMP_NUM_THREADS=4` 以避免
+小矩阵线程开销。
 
 ### 5.2 fake 编码器（工程链路，非模型结论）
 
@@ -215,10 +243,18 @@ train/val/test F1 均为 0。**fake 链路证明工程可运行，不证明学�
 诚实记录：调参期间观察过训练集 loss 与 **val** 单曲的 P 分布（用于判断是否收敛），因此 val
 不是完全未触碰的保留集；**test 没有参与任何配置选择**，但同样只有 1 首、只用于最终报告。
 
-### 5.3 真实冻结 AuT 短训练（已完成）
+### 5.3 真实冻结 AuT 短训练（已完成，两次同配置 100 step）
 
-在授权 GPU 服务器（A6000，共享环境只读复用 issue #5 的模型与 venv）执行，代码为该提交
-`dc0c8a70a468533854d5a0d0882964048a163a39`：
+两个 100 step 运行使用同一 `aut_short.toml`、seed 与数据，未做任何超参选择：
+
+- **首次运行**（§5.3.1）：代码 `dc0c8a70a468533854d5a0d0882964048a163a39`，原始产物保留在
+  远端 `runs/train/aut-short` 与本地回拷，未被覆写；
+- **资源测量验证运行**（§5.3.2）：review 修复后的代码 `3649aba`，在新克隆/新输出目录重跑，
+  逐 step loss 与保留集指标与首次运行完全一致；额外记录设备、整体耗时与 CUDA 峰值。
+
+#### 5.3.1 首次真实短训练（dc0c8a7）
+
+在授权 GPU 服务器（A6000，共享环境只读复用 issue #5 的模型与 venv）执行：
 
 ```sh
 PYTHONPATH=src OMP_NUM_THREADS=4 CUDA_VISIBLE_DEVICES=0 \
@@ -259,6 +295,22 @@ PYTHONPATH=src OMP_NUM_THREADS=4 CUDA_VISIBLE_DEVICES=0 \
 | val | 0.0 | 0.216 | 0.425 |
 | test | 0.0 | 0.145 | 0.578 |
 
+#### 5.3.2 资源测量验证运行（3649aba）
+
+同一命令、同一 seed/配置/数据，在新输出目录重跑（前两次尝试因 torch 2.14 在 CUDA 懒初始化下
+拒绝显式 device index 而立即失败、未消耗 GPU 计算；已改为 `torch.cuda.init()` + 选中设备后
+reset，由此运行验证）：
+
+- `status = completed`，100/100 step，`timeout 600` 未触发；逐 step 计算时间合计 **92.4 s**
+  （首次 87.1 s，属共享机器波动）；
+- 逐 step loss（step 1/50/100）与累计有效计数、val/test 指标、三个基线均与 §5.3.1 完全一致；
+- `resources`：`device = cuda:0`、`device_index = 0`、整体 `elapsed_seconds = 189.73`
+  （含编码器加载与评估）、`peak_allocated_bytes = 2,951,400,960`（2.95 GB）、
+  `peak_reserved_bytes = 3,323,985,920`（3.32 GB）；scope 为**本进程** torch allocator
+  统计，覆盖构造（编码器加载前）到 run 结束，其他进程不可见；reset 只发生在构造时一次。
+- CPU 路径明确记 `peak_allocated_bytes = null`、`peak_reserved_bytes = null` 与
+  `unavailable_reason`，不伪造 0。
+
 **诚实结论**：100 step 的真实短训练在保留集上明显优于全不活跃/全活跃基线（召回高、过预测导致
 precision 低）；但 `no_identity`（丢弃全部身份向量）与模型结果几乎相同（val 甚至完全一致，
 test 只低约 0.003），在这个极小预算与数据规模下，**没有测到身份向量带来的收益**。ID switch
@@ -289,3 +341,11 @@ checkpoint、音频或凭据。
   由 issue #9 的 tracker 消费，本 issue 不重新实现关联。
 - 未实现特征缓存：每 step 重新编码，避免 stale 特征；如未来加入缓存，key 必须覆盖音频摘要、
   窗口/时间/mask、模型 revision/layer/attention/dtype/预处理。
+- 推理模式修复（`eval()` + dropout 关闭）不会改变已记录的 100 step 指标：该运行 `dropout = 0`，
+  且 3649aba 验证运行逐 step loss 与保留集指标与之完全一致，故不以此归罪旧结果。
+- callback 路径在未提供 `audio_duration_seconds` 时只能判定起点边界，终点边界无法知悉；
+  需要精确边界掩码时使用 `predict_at_times` 或显式传 duration。
+- 日志对账会丢弃并保留 checkpoint 之后未审计的 tail；若 canonical 日志与 checkpoint 前缀不
+  兼容（缺失/乱序/非整数 step），直接抛 `CheckpointError`，不会拼接伪造历史。
+- GPU 峰值是**本进程** torch allocator 统计，不含其他进程/系统显存；编码器加载前的瞬态峰值
+  已在 reset 前覆盖（scope 写明从构造开始）。
