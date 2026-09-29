@@ -1,0 +1,51 @@
+# Credentials and machine-specific settings
+.env
+.env.*
+!.env.example
+.local/
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Python and environments
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
+
+# Generated or externally sourced assets
+data/
+datasets/
+models/
+checkpoints/
+cache/
+runs/
+outputs/
+logs/
+wandb/
+*.wav
+*.mp3
+*.flac
+*.ogg
+*.opus
+*.mid
+*.midi
+*.npz
+*.npy
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.fxp
+*.vstpreset
+
+# Editors and OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

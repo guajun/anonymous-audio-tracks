@@ -1,0 +1,28 @@
+# Proposed baseline; no trained model exists yet.
+[experiment]
+name = "center-activity-v0"
+seed = 20260929
+stage = "planning"
+
+[task]
+slots = 8
+embedding_dim = 128
+probability_target = "center_time_activity"
+window_seconds = 2.0
+hop_seconds = 0.02
+mode = "offline_centered"
+cross_song_mixing = false
+
+[backbone]
+candidate = "Qwen/Qwen3-Omni-30B-A3B-Instruct"
+component = "audio_encoder_only"
+frozen = true
+local_detail_branch = false
+
+[data]
+renderer = "DawDreamer"
+initial_sources_min = 2
+initial_sources_max = 4
+split_groups = ["composition", "preset", "sample_origin"]
+activity_label = "rendered_stem_local_energy"
+# Threshold/window/hysteresis must be calibrated in M1, not silently assumed.
