@@ -28,6 +28,12 @@ runs/
 outputs/
 logs/
 wandb/
+# Source and test packages literally named "data" are tracked; generated
+# data/ directories elsewhere (and compiled caches) stay ignored.
+!src/aat/data/
+!src/aat/data/*.py
+!tests/data/
+!tests/data/*.py
 *.wav
 *.mp3
 *.flac
@@ -43,6 +49,10 @@ wandb/
 *.safetensors
 *.fxp
 *.vstpreset
+
+# Source directories whose names collide with the asset rule above.
+!src/aat/models/
+!tests/models/
 
 # Editors and OS
 .idea/
