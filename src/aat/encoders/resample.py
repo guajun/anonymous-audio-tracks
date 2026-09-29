@@ -1,0 +1,105 @@
+"""Anti-aliased 16 kHz resampling for the AuT input (NumPy only).
+
+The AuT checkpoint expects mono, 16 kHz audio (``preprocessor_config.json``:
+``sampling_rate=16000``).  Renders produced by the project renderer are 44.1
+kHz, so the feature path has to resample.  This module implements a
+windowed-sinc (Blackman window) resampler with no SciPy dependency so the
+base CPU test environment stays lightweight.  The resampler is deterministic
+and tested for DC gain and alias rejection in ``tests/encoders/test_resample.py``.
+"""
+
+from __future__ import annotations
+
+import math
+
+import numpy as np
+
+from .errors import EncoderInputError
+from .grid import AUT_SAMPLE_RATE
+
+
+def resample_audio(
+    audio: np.ndarray,
+    sample_rate: int,
+    target_rate: int = AUT_SAMPLE_RATE,
+    *,
+    taps: int = 16,
+) -> np.ndarray:
+    """Resample a 1-D mono signal with a Blackman-windowed sinc kernel.
+
+    ``taps`` is the number of sinc zero crossings kept on each side; for
+    downsampling the kernel is widened by ``1 / cutoff`` input samples so the
+    anti-alias filter has enough taps at the lower cutoff.  Edges are handled
+    by edge-padding the input.  Returns ``float32`` and a length of
+    ``round(n_in * target / sample_rate)`` (half-up, matching
+    :func:`aat.windowing.seconds_to_samples` conventions).
+    """
+
+    samples = np.asarray(audio)
+    if samples.ndim != 1:
+        raise EncoderInputError(f"audio: expected a 1-D mono array, got shape {samples.shape}")
+    if isinstance(sample_rate, bool) or not isinstance(sample_rate, (int, np.integer)):
+        raise EncoderInputError(f"sample_rate: expected an integer, got {type(sample_rate).__name__}")
+    sample_rate = int(sample_rate)
+    if sample_rate < 1:
+        raise EncoderInputError(f"sample_rate: must be >= 1, got {sample_rate}")
+    if isinstance(target_rate, bool) or not isinstance(target_rate, (int, np.integer)):
+        raise EncoderInputError(f"target_rate: expected an integer, got {type(target_rate).__name__}")
+    target_rate = int(target_rate)
+    if target_rate < 1:
+        raise EncoderInputError(f"target_rate: must be >= 1, got {target_rate}")
+    if isinstance(taps, bool) or not isinstance(taps, (int, np.integer)) or int(taps) < 1:
+        raise EncoderInputError(f"taps: expected an integer >= 1, got {taps!r}")
+    taps = int(taps)
+
+    values = samples.astype(np.float64, copy=False)
+    if values.size == 0:
+        return np.empty(0, dtype=np.float32)
+    if not np.all(np.isfinite(values)):
+        raise EncoderInputError("audio: contains NaN/Inf")
+    if sample_rate == target_rate:
+        return values.astype(np.float32)
+
+    ratio = target_rate / sample_rate
+    n_out = max(1, math.floor(values.size * ratio + 0.5))
+    positions = np.arange(n_out, dtype=np.float64) / ratio
+    cutoff = min(1.0, ratio)
+    half_width = max(1, int(math.ceil(taps / cutoff)))
+
+    padded = np.pad(values, (half_width, half_width), mode="edge")
+    base = np.floor(positions).astype(np.int64)
+    frac = positions - base
+
+    acc = np.zeros(n_out, dtype=np.float64)
+    weight_sum = np.zeros(n_out, dtype=np.float64)
+    for offset in range(-half_width, half_width + 1):
+        distance = frac - offset
+        outside = np.abs(distance) > half_width
+        window = np.where(
+            outside,
+            0.0,
+            0.42 + 0.5 * np.cos(np.pi * distance / half_width) + 0.08 * np.cos(2.0 * np.pi * distance / half_width),
+        )
+        weight = np.sinc(distance * cutoff) * window
+        acc += weight * padded[base + offset + half_width]
+        weight_sum += weight
+    # Normalising the kernel keeps DC gain exactly 1 and tames edge effects.
+    denominator = np.where(np.abs(weight_sum) < 1e-12, 1.0, weight_sum)
+    return (acc / denominator).astype(np.float32)
+
+
+def prepare_audio(audio: np.ndarray, sample_rate: int) -> np.ndarray:
+    """Validate and convert input audio to the AuT's 16 kHz mono float32.
+
+    Only resampling to the model's own rate is performed here; no amplitude
+    normalisation, channel mixing or trimming is applied (the official
+    ``WhisperFeatureExtractor`` does the log-mel computation).
+    """
+
+    samples = np.asarray(audio)
+    if samples.ndim != 1:
+        raise EncoderInputError(f"audio: expected a 1-D mono array, got shape {samples.shape}")
+    converted = resample_audio(samples, sample_rate, AUT_SAMPLE_RATE)
+    if converted.size and not np.all(np.isfinite(converted)):
+        raise EncoderInputError("audio: resampling produced NaN/Inf")
+    return converted
