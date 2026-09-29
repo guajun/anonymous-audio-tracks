@@ -3,11 +3,14 @@ import assert from "node:assert/strict";
 
 import {
   beginAudioFileLoad,
+  beginTrajectoryFileLoad,
   captureLoopPoint,
   checkAudioCompatibility,
   clearLoop,
+  COMPATIBILITY_TOLERANCE_SECONDS,
   createSession,
   describeSession,
+  failTrajectoryLoad,
   loadTrajectoryText,
   playbackRate,
   setAudioError,
@@ -16,6 +19,7 @@ import {
   setThreshold,
   setWindowLength,
   setWindowStart,
+  syncPlaybackAllowed,
   toggleTrack,
 } from "../../viewer/js/session.js";
 import { fixtureText } from "./test-helpers.js";
@@ -89,7 +93,7 @@ test("switching audio drops the old duration immediately, then installs metadata
   assert.equal(session.audio.duration, null);
 });
 
-test("duration compatibility distinguishes pending metadata from mismatch", () => {
+test("duration compatibility compares the declared clip length in both directions", () => {
   const knownSession = loadTrajectoryText(createSession(), knownText, "known.json");
   const trajectory = knownSession.trajectory;
   assert.equal(checkAudioCompatibility(null, null).status, "no-trajectory");
@@ -97,15 +101,73 @@ test("duration compatibility distinguishes pending metadata from mismatch", () =
   assert.equal(checkAudioCompatibility(trajectory, Number.NaN).status, "pending");
   assert.equal(checkAudioCompatibility(trajectory, 0).status, "pending");
   assert.equal(checkAudioCompatibility(trajectory, 4).status, "ok");
-  assert.equal(checkAudioCompatibility(trajectory, 300).status, "ok");
+  assert.equal(checkAudioCompatibility(trajectory, 4.005).status, "ok");
+  assert.equal(checkAudioCompatibility(trajectory, 3.995).status, "ok");
+  assert.equal(checkAudioCompatibility(trajectory, 4.02).status, "mismatch");
+  assert.equal(checkAudioCompatibility(trajectory, 3.98).status, "mismatch");
+  // The old bug: a whole 600s song passed because it merely covered the span.
+  const tooLong = checkAudioCompatibility(trajectory, 600);
+  assert.equal(tooLong.status, "mismatch");
+  assert.match(tooLong.message, /长于/);
 
   const clipSession = loadTrajectoryText(createSession(), clipText, "clip.json");
-  const mismatch = checkAudioCompatibility(clipSession.trajectory, 4);
-  assert.equal(mismatch.status, "mismatch");
-  assert.match(mismatch.message, /只有/);
+  // origin 12s / duration 0.5s requires a 0.5s clip, not "at least 12.5s".
+  const clipOk = checkAudioCompatibility(clipSession.trajectory, 0.5);
+  assert.equal(clipOk.status, "ok");
+  assert.equal(syncPlaybackAllowed(clipSession.trajectory, 0.5), true);
+  assert.equal(checkAudioCompatibility(clipSession.trajectory, 0.48).status, "mismatch");
+  assert.equal(checkAudioCompatibility(clipSession.trajectory, 0.52).status, "mismatch");
+  assert.equal(checkAudioCompatibility(clipSession.trajectory, 4).status, "mismatch");
+  assert.equal(syncPlaybackAllowed(clipSession.trajectory, 4), false);
+  assert.equal(syncPlaybackAllowed(clipSession.trajectory, null), false);
+  assert.equal(syncPlaybackAllowed(null, 4), false);
+
+  // Tolerance is symmetric: exactly at the boundary is still accepted.
+  assert.equal(
+    checkAudioCompatibility(trajectory, 4 + COMPATIBILITY_TOLERANCE_SECONDS).status,
+    "ok",
+  );
 
   const emptySession = loadTrajectoryText(createSession(), emptyText, "empty.json");
   assert.equal(checkAudioCompatibility(emptySession.trajectory, 4).status, "empty");
+  assert.equal(syncPlaybackAllowed(emptySession.trajectory, 4), true);
+});
+
+test("a new trajectory selection immediately drops the old synchronized data", () => {
+  let session = loadTrajectoryText(createSession(), knownText, "known.json");
+  session = beginTrajectoryFileLoad(session, "next.json");
+  assert.equal(session.trajectory, null);
+  assert.equal(session.trajectoryPending, "next.json");
+  assert.equal(session.trajectoryFileName, "next.json");
+  assert.equal(session.trajectoryError, null);
+  assert.equal(session.loop, null);
+
+  // The newest read commits and clears pending.
+  session = loadTrajectoryText(session, clipText, "next.json");
+  assert.equal(session.trajectory.tracks[0].trackId, "trk-clip-0001");
+  assert.equal(session.trajectoryPending, null);
+
+  // A newer pending state also clears a previous error.
+  session = beginTrajectoryFileLoad(session, "third.json");
+  assert.equal(session.trajectoryPending, "third.json");
+  assert.equal(session.trajectoryError, null);
+  session = failTrajectoryLoad(session, "third.json", "读取轨迹文件失败：boom");
+  assert.equal(session.trajectoryPending, null);
+  assert.equal(session.trajectory, null);
+  assert.equal(session.trajectoryError.fileName, "third.json");
+  assert.match(session.trajectoryError.message, /boom/);
+  assert.equal(session.trajectoryError.issues.length, 1);
+});
+
+test("pending trajectory reads are observable through describeSession", () => {
+  let session = beginTrajectoryFileLoad(createSession(), "pending.json");
+  const described = describeSession(session);
+  assert.equal(described.trajectoryPending, "pending.json");
+  assert.equal(described.trajectoryLoaded, false);
+  assert.equal(described.trackCount, 0);
+  session = loadTrajectoryText(session, knownText, "pending.json");
+  assert.equal(describeSession(session).trajectoryPending, null);
+  assert.equal(describeSession(session).trajectoryLoaded, true);
 });
 
 test("threshold, rate and window setters enforce their domains", () => {

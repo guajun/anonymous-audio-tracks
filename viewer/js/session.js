@@ -14,12 +14,15 @@ export const RATES = [0.25, 0.5, 0.75, 1, 1.5, 2];
 export const WINDOW_LENGTHS = [5, 10, 20, 30, 60, 120];
 export const DEFAULT_THRESHOLD = 0.5;
 export const DEFAULT_WINDOW_LENGTH = 20;
-export const COMPATIBILITY_TOLERANCE_SECONDS = 1e-6;
+// Loaded audio length must match the declared analyzed-audio length in both
+// directions within this tolerance (e.g. codec padding on short files).
+export const COMPATIBILITY_TOLERANCE_SECONDS = 0.01;
 
 export function createSession() {
   return {
     trajectory: null,
     trajectoryFileName: null,
+    trajectoryPending: null,
     trajectoryError: null,
     audio: { fileName: null, duration: null, error: null },
     threshold: DEFAULT_THRESHOLD,
@@ -31,6 +34,36 @@ export function createSession() {
     loopDraft: { start: null, end: null },
     loopError: null,
     hiddenTracks: [],
+  };
+}
+
+function clearedTrajectoryState(session, fileName) {
+  return {
+    ...session,
+    trajectory: null,
+    trajectoryFileName: fileName,
+    trajectoryPending: null,
+    windowStart: 0,
+    hiddenTracks: [],
+    loop: null,
+    loopDraft: { start: null, end: null },
+    loopError: null,
+  };
+}
+
+/**
+ * Begin reading a newly selected trajectory file.
+ *
+ * The previous document is dropped immediately: while the new text is being
+ * read, no stale curves may be treated as the current synchronization data.
+ * app.js pairs this with a generation token so that only the newest read may
+ * call {@link loadTrajectoryText} / {@link failTrajectoryLoad}.
+ */
+export function beginTrajectoryFileLoad(session, fileName) {
+  return {
+    ...clearedTrajectoryState(session, fileName),
+    trajectoryPending: fileName,
+    trajectoryError: null,
   };
 }
 
@@ -49,31 +82,30 @@ export function loadTrajectoryText(session, text, fileName) {
         ? error.issues
         : [{ path: "<file>", message: String((error && error.message) || error) }];
     return {
-      ...session,
-      trajectory: null,
-      trajectoryFileName: fileName,
+      ...clearedTrajectoryState(session, fileName),
       trajectoryError: {
         fileName,
         message: error instanceof Error ? error.message : String(error),
         issues,
       },
-      windowStart: 0,
-      hiddenTracks: [],
-      loop: null,
-      loopDraft: { start: null, end: null },
-      loopError: null,
     };
   }
   return {
-    ...session,
+    ...clearedTrajectoryState(session, fileName),
     trajectory,
-    trajectoryFileName: fileName,
     trajectoryError: null,
-    windowStart: 0,
-    hiddenTracks: [],
-    loop: null,
-    loopDraft: { start: null, end: null },
-    loopError: null,
+  };
+}
+
+/** Record an I/O failure for the newest trajectory read (generation-guarded). */
+export function failTrajectoryLoad(session, fileName, message, issues = []) {
+  return {
+    ...clearedTrajectoryState(session, fileName),
+    trajectoryError: {
+      fileName,
+      message,
+      issues: issues.length > 0 ? issues : [{ path: "<file>", message }],
+    },
   };
 }
 
@@ -114,9 +146,14 @@ export function setAudioError(session, message) {
 }
 
 /**
- * Compare the analyzed span declared by the trajectory with the loaded audio
- * duration.  `pending` is the async-metadata case: it must not be reported as
- * a duration error.
+ * Compare the declared analyzed-audio length with the loaded audio length.
+ *
+ * Protocol 0.1.0 documents the analyzed clip (`audio.duration_seconds`), and
+ * this viewer requires that the loaded file *is* that same analyzed clip, so
+ * the two lengths must agree within {@link COMPATIBILITY_TOLERANCE_SECONDS} in
+ * both directions.  `track_start_seconds` only shifts absolute-time readouts;
+ * it is never part of the length comparison.  `pending` is the async-metadata
+ * case and must not be reported as a duration error.
  */
 export function checkAudioCompatibility(trajectory, audioDuration) {
   if (!trajectory) {
@@ -126,7 +163,7 @@ export function checkAudioCompatibility(trajectory, audioDuration) {
   if (!Number.isFinite(audioDuration) || audioDuration <= 0) {
     return {
       status: "pending",
-      message: "音频 metadata 尚未就绪；加载完成后会自动校验轨迹端点。",
+      message: "音频 metadata 尚未就绪；加载完成后会自动校验音频长度。",
     };
   }
   if (span.durationSeconds === 0) {
@@ -135,21 +172,34 @@ export function checkAudioCompatibility(trajectory, audioDuration) {
       message: "轨迹声明了空音频范围（duration=0，无轨迹）；该边界不应崩溃。",
     };
   }
-  const requiredEnd = span.trackStartSeconds + span.durationSeconds;
-  if (audioDuration + COMPATIBILITY_TOLERANCE_SECONDS < requiredEnd) {
+  const difference = Math.abs(audioDuration - span.durationSeconds);
+  if (difference > COMPATIBILITY_TOLERANCE_SECONDS) {
+    const direction = audioDuration < span.durationSeconds ? "短于" : "长于";
     return {
       status: "mismatch",
       message:
-        `轨迹分析范围是 [${span.trackStartSeconds}, ${requiredEnd}]s，` +
-        `但已加载音频只有 ${audioDuration.toFixed(3)}s；请确认音频与轨迹来自同一分析片段。`,
+        `轨迹声明被分析音频时长 ${span.durationSeconds}s，已加载音频 ${audioDuration.toFixed(3)}s ` +
+        `（${direction} ${difference.toFixed(3)}s，超出 ±${COMPATIBILITY_TOLERANCE_SECONDS}s 容差）；` +
+        `本页要求载入同一分析片段，不自动接受整歌或更长的音频。`,
     };
   }
   return {
     status: "ok",
     message:
-      `轨迹分析范围 [${span.trackStartSeconds}, ${requiredEnd}]s ` +
-      `位于已加载音频 ${audioDuration.toFixed(3)}s 之内。`,
+      `已加载音频 ${audioDuration.toFixed(3)}s 与轨迹声明的被分析音频时长 ` +
+      `${span.durationSeconds}s 相符（容差 ±${COMPATIBILITY_TOLERANCE_SECONDS}s）；` +
+      `原曲绝对起点为 ${span.trackStartSeconds}s。`,
   };
+}
+
+/**
+ * Whether synchronized playback/loop/seek may be enabled for this pair.
+ * `pending` is not allowed because the length cannot be verified yet;
+ * `mismatch` is explicitly forbidden by review (issue #10 fix).
+ */
+export function syncPlaybackAllowed(trajectory, audioDuration) {
+  const status = checkAudioCompatibility(trajectory, audioDuration).status;
+  return status === "ok" || status === "empty";
 }
 
 export function setThreshold(session, value) {
@@ -238,8 +288,11 @@ export function playbackRate(session) {
 export function describeSession(session) {
   return {
     trajectoryFileName: session.trajectoryFileName,
+    trajectoryPending: session.trajectoryPending,
+    trajectoryLoaded: session.trajectory !== null,
     trajectoryError: session.trajectoryError
       ? {
+          fileName: session.trajectoryError.fileName,
           message: session.trajectoryError.message,
           issues: session.trajectoryError.issues,
         }

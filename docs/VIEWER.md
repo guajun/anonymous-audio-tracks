@@ -59,8 +59,7 @@ uv run pytest
 1. **加载音频**：本地文件选择；浏览器异步读取 metadata 期间显示“等待 metadata”，
    此时不会误判为时长错误。加载失败（非音频、解码失败）会暂停播放、清除
    blob URL 并给出明确错误；已加载的轨迹保留以便排查。
-2. **加载 trajectory JSON**：按协议校验；失败时旧曲线、旧循环与播放立即清空，
-   面板列出每条字段级问题。成功时重置窗口与来源开关。
+2. **加载 trajectory JSON**：选择新文件的瞬间即进入 pending：暂停播放、清空旧曲线/旧循环，使旧轨迹不再充当当前同步数据；随后只有**最新一次**读取结果（成功或失败）可以提交文件名、provenance 或错误，迟到/过期的旧读取被丢弃（`trajectoryLoadGeneration` 代次令牌）。校验失败时面板列出每条字段级问题。成功时重置窗口与来源开关。
 3. **播放/暂停/定位**：滑块、窗口画布点击、整曲概览点击都直接写
    `audio.currentTime`；时间读数分“本地”（播放器秒）与“原曲绝对”（本地 +
    `track_start_seconds`）。
@@ -85,9 +84,16 @@ uv run pytest
   {model, annotation, mock}`；`track_id` 唯一；`center_times` 有限、非负、严格
   递增且落在音频范围内；`activity` 与 `center_times` 等长且在 `[0, 1]`；
   `confidence`/`slot_indices` 可选但形状与范围一致。未知额外字段按协议容忍。
-- 时长兼容性：已加载音频必须覆盖
-  `[track_start_seconds, track_start_seconds + duration_seconds]`；音频更长允许。
-  metadata 未就绪返回 `pending`，只有真正覆盖不了才是 `mismatch`。
+- 时长兼容性：本页要求载入**同一分析片段**，因此比较已加载音频时长与轨迹
+  声明 `audio.duration_seconds` 的**双向差值**，容差 ±0.01s
+  （`COMPATIBILITY_TOLERANCE_SECONDS`，用于吸收短文件 codec padding 等差异）；
+  `track_start_seconds` 只参与绝对时间换算，**不参与长度比较**。差值超出容差为
+  `mismatch`：立即暂停并禁用播放/定位/循环（按钮禁用；`window.__aatViewer` 的
+  `play`/`setTime`/`setLoop` 同样拒绝，rAF 内的守卫也会暂停任何绕过路径），
+  不自动接受整歌或更长音频；metadata 未就绪返回 `pending`，不误报为时长错误。
+- 读取代次：`beginTrajectoryFileLoad` 先清空旧轨迹并置 pending；只有与
+  `trajectoryLoadGeneration` 相等的最新读取才能调用 `loadTrajectoryText` 或
+  `failTrajectoryLoad`。旧读取无论成功或失败都不会覆盖新文件名、数据或错误。
 - `data_kind` 在 provenance 面板显著区分，`mock` 另有“不能当作模型结果”的警告。
 - 所有用户 JSON 文本只经 `textContent`/`fillText` 渲染；测试会静态扫描
   `innerHTML`、`insertAdjacentHTML`、`document.write` 等 HTML sink。
@@ -130,6 +136,8 @@ node viewer/tools/make-fixture-audio.mjs --pattern tone --seconds 10 --out /tmp/
 
 `known-times.wav` 的两段音与 `trajectory.known-times.json` 的阈值区间对齐
 （0.3125–1.25s、2.875–3.0833s），便于人耳核对；音频文件本身不入 Git。
+浏览器检查还会即时合成与 `trajectory.clip.json` 配对的 0.5s 音频，以及
+0.48s / 0.52s 两种不匹配长度，用于验证同片段策略。
 
 ## 5. 实际浏览器检查记录
 
@@ -144,8 +152,8 @@ node viewer/tools/browser-check.mjs \
 # 也可用 --chrome <path> 或环境变量 CHROME_PATH 指定浏览器
 ```
 
-本 session 记录（2026-09-29，Windows，Chrome 150.0.7871.101 headless，
-`--autoplay-policy=no-user-gesture-required --mute-audio`）：
+本 session 记录（2026-09-29 复审修复后的重跑，Windows，Chrome 150.0.7871.101
+headless，`--autoplay-policy=no-user-gesture-required --mute-audio`）：
 
 ```text
 PASS  browser: headless Chrome/Edge launched — {"browser":"Chrome/150.0.7871.101","page":"/viewer/index.html"}
@@ -160,24 +168,40 @@ PASS  second track is active at 1.0s
 PASS  threshold intervals: [0.3125, 1.25] and [2.875, 3.08333] — [[0.3125,1.25],[2.875,3.0833333333333335]]
 PASS  adjustable threshold 0.95 flips 0.9 activity to inactive
 PASS  seek slider drag updates the shared audio clock — {"currentTime":3.4}
-PASS  play at 1x tracks real wall-clock time — {"advance":0.70021,"wallElapsed":0.701}
+PASS  play at 1x tracks real wall-clock time — {"advance":0.705223,"wallElapsed":0.706}
 PASS  pause freezes the shared clock
-PASS  slow motion 0.5x advances at half wall-clock rate — {"slowAdvance":0.35712700000000003,"slowWallElapsed":0.716,"playbackRate":0.5}
+PASS  slow motion 0.5x advances at half wall-clock rate — {"slowAdvance":0.35494000000000003,"slowWallElapsed":0.711,"playbackRate":0.5}
 PASS  valid loop A=1.0 B=1.5 activates — {"start":1,"end":1.5}
-PASS  playback wraps inside the loop and never runs past B — {"currentTime":1.035338}
+PASS  playback wraps inside the loop and never runs past B — {"currentTime":1.034713}
 PASS  loop endpoint validation rejects A >= B — "循环区间至少需要 0.05s（当前 A=2s，B=1s）。"
 PASS  loop endpoint validation rejects intervals shorter than 0.05s — "循环区间至少需要 0.05s（当前 A=0.5s，B=0.52s）。"
 PASS  loop endpoint validation rejects B beyond the audio duration — "循环端点 B=99s 超出音频时长 4s。"
 PASS  loop clears cleanly
+PASS  4s audio vs declared 0.5s clip is a mismatch (old code accepted it as "covering") — {"message":"轨迹声明被分析音频时长 0.5s，已加载音频 4.000s （长于 3.500s，超出 ±0.01s 容差）；本页要求载入同一分析片段，不自动接受整歌或更长的音频。"}
+PASS  mismatch disables play/seek/loop controls — {"play":true,"seek":true,"loopA":true}
+PASS  mismatch refuses playback through the test hook too — {"ok":false,"message":"同步播放被禁止：音频与轨迹时长不匹配或未就绪。"}
+PASS  mismatch refuses seek through the test hook — {"beforeRefusedSeek":1.034713,"afterRefusedSeek":1.034713}
+PASS  mismatch refuses loop creation — {"refused":"音频与轨迹时长不匹配或未就绪，循环被拒绝。"}
+PASS  origin 12s / duration 0.5s clip matches a real 0.5s audio (ok) — {"message":"已加载音频 0.500s 与轨迹声明的被分析音频时长 0.5s 相符（容差 ±0.01s）；原曲绝对起点为 12s。"}
 PASS  non-zero track_start_seconds: local 0.24s maps to absolute 12.24s — {"localTime":0.24,"absoluteTime":12.24}
 PASS  absolute center time 12.24s yields p=0.7 (not the 0.24s player value) — {"value":0.7}
-PASS  duration incompatibility is reported for a 0.5s clip trailer vs 4s audio — {"compatText":"轨迹分析范围是 [12, 12.5]s，但已加载音频只有 4.000s；请确认音频与轨迹来自同一分析片段。"}
-PASS  empty trajectory (duration 0, tracks []) renders without crashing — {"duration":4,"durationSource":"audio"}
+PASS  valid loop works with the matching 0.5s clip — {"start":0.1,"end":0.3}
+PASS  matching clip is actually playable through the hook — {"currentTime":0.220215,"paused":false}
+PASS  declared 0.5s vs 0.48s audio is rejected (too short) — {"message":"轨迹声明被分析音频时长 0.5s，已加载音频 0.480s （短于 0.020s，超出 ±0.01s 容差）；本页要求载入同一分析片段，不自动接受整歌或更长的音频。"}
+PASS  mismatch transition pauses playback and drops the active loop — {"paused":true,"loop":null}
+PASS  too-short mismatch keeps play/seek disabled — {"play":true,"seek":true}
+PASS  declared 0.5s vs 0.52s audio is rejected (too long) — {"message":"轨迹声明被分析音频时长 0.5s，已加载音频 0.520s （长于 0.020s，超出 ±0.01s 容差）；本页要求载入同一分析片段，不自动接受整歌或更长的音频。"}
+PASS  empty trajectory (duration 0, tracks []) renders without crashing — {"duration":0.52,"durationSource":"audio"}
 PASS  invalid trajectory rejected with field-level issues — {"paths":"trajectory.tracks[\"trk-invalid\"].center_times,trajectory.tracks[\"trk-invalid\"].activity"}
 PASS  load error clears old curves, old playback and shows the error panel — {"trajectoryLoaded":false,"trackListText":"当前 trajectory 没有轨迹（空数组）。","errorPanelVisible":true,"paused":true,"trackCount":0}
 PASS  hostile JSON strings render as text, never as HTML — {"pwned":0,"imgs":0}
+PASS  new selection enters pending immediately, pauses and drops old curves — {"pending":"race-old-slow-a.json","loaded":false,"paused":true}
+PASS  a delayed read still commits when it remains the newest selection
+PASS  slow old failure cannot overwrite the newer fast success — {"runId":"race-new-fast-a","fileName":"race-new-fast-a.json"}
+PASS  slow old success cannot overwrite the newer fast success — {"runId":"race-new-fast-b"}
+PASS  newest failure is not overwritten by an older slow success — {"errorFileName":"race-new-fail.json","loaded":false}
 PASS  switching audio revokes the previous blob URL — {"revokeCount":1}
-PASS  non-audio file produces a clear load error and keeps the trajectory — {"error":"浏览器不支持该音频格式或源（MEDIA_ERR_SRC_NOT_SUPPORTED）。","trackCount":1}
+PASS  non-audio file produces a clear load error and keeps the trajectory — {"error":"浏览器不支持该音频格式或源（MEDIA_ERR_SRC_NOT_SUPPORTED）。","trackCount":3}
 PASS  600s trajectory + audio loads (long-song browsing input) — {"duration":600}
 PASS  window next moves the local window by one window length — 20
 PASS  window next reaches 80s after four clicks — 80
@@ -185,19 +209,20 @@ PASS  window last clamps to 580s for a 600s song — 580
 PASS  window first returns to 0s — 0
 PASS  clicking the overview seeks the shared clock to the middle of a 600s song — {"currentTime":299.705304}
 
-36/36 browser checks passed.
+52/52 browser checks passed.
 ```
 
 同一轮检查还生成了页面截图（`tests/viewer/fixtures/generated/viewer-check.png`，
 未提交），确认布局、provenance（含 mock 警告）、传输区与整曲/局部画布正常绘制。
 
-Node 单元/集成测试（72 项，含时间换算、插值、阈值区间、循环边界、窗口导航、
-长歌包络、会话清理、blob URL 生命周期、HTML sink/网络静态扫描）：
+Node 单元/集成测试（74 项，含时间换算、插值、阈值区间、循环边界、窗口导航、
+长歌包络、会话清理与 pending/失败状态、双向时长容差、blob URL 生命周期、
+HTML sink/网络静态扫描）：
 
 ```sh
 node --test "tests/viewer/**/*.test.js"
-# ℹ tests 72
-# ℹ pass 72
+# ℹ tests 74
+# ℹ pass 74
 # ℹ fail 0
 ```
 
@@ -206,6 +231,8 @@ node --test "tests/viewer/**/*.test.js"
 - 只在 Chromium（Chrome 150 headless，1280×900）验证；Firefox/Safari、移动端
   布局未验证。
 - headless 使用 `--mute-audio`，只验证时钟与状态，未验证实际听感。
+- 时长策略固定为“载入同一分析片段 + ±0.01s 双向容差”；若以后需要「整歌音频 +
+  片段轨迹」的另一个原点，必须显式增加选择项，本次不做，也不会静默接受。
 - 刷新时 `beforeunload` 里的 blob URL 清理只通过源码/静态测试与代码路径确认，
   未能自动断言页面销毁后的 revoke 计数。
 - 页面只消费 `trajectory.json`，不解析 `activity.npz` / `feature.npz` /

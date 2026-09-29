@@ -271,6 +271,31 @@ function buildInvalidTrajectoryJson() {
   });
 }
 
+/** Small valid trajectory used to stage async read races by run_id. */
+function buildRaceTrajectoryJson(runId, valid = true) {
+  if (!valid) {
+    return "{ this is deliberately not valid json\n";
+  }
+  return JSON.stringify({
+    schema_version: "0.1.0",
+    kind: "trajectory",
+    sample_id: runId,
+    audio: { duration_seconds: 4.0, track_start_seconds: 0.0 },
+    provenance: {
+      run_id: runId,
+      data_kind: "mock",
+      created_at_utc: "2026-09-29T12:00:00Z",
+    },
+    tracks: [
+      {
+        track_id: `trk-${runId}`,
+        center_times: [0.0, 1.0],
+        activity: [0.2, 0.8],
+      },
+    ],
+  });
+}
+
 const CLOSE = (left, right, tolerance) => Math.abs(left - right) <= tolerance;
 
 async function main() {
@@ -300,15 +325,35 @@ async function main() {
 
   try {
     const knownWav = join(workDir, "known-times.wav");
+    const clipMatchWav = join(workDir, "clip-0.5s.wav");
+    const clipShortWav = join(workDir, "clip-0.48s.wav");
+    const clipLongWav = join(workDir, "clip-0.52s.wav");
     const longWav = join(workDir, "long-600s.wav");
     const longTrajectory = join(workDir, "trajectory.long.json");
     const invalidTrajectory = join(workDir, "trajectory.invalid.json");
     const notAudio = join(workDir, "not-audio.txt");
+    const raceFiles = {
+      oldSlowA: join(workDir, "race-old-slow-a.json"),
+      oldSlowB: join(workDir, "race-old-slow-b.json"),
+      oldSlowC: join(workDir, "race-old-slow-c.json"),
+      newFastA: join(workDir, "race-new-fast-a.json"),
+      newFastB: join(workDir, "race-new-fast-b.json"),
+      newFail: join(workDir, "race-new-fail.json"),
+    };
     await writeFile(knownWav, buildWav({ pattern: "known-times", seconds: 4, rate: 44100 }));
+    await writeFile(clipMatchWav, buildWav({ pattern: "tone", seconds: 0.5, rate: 44100 }));
+    await writeFile(clipShortWav, buildWav({ pattern: "tone", seconds: 0.48, rate: 44100 }));
+    await writeFile(clipLongWav, buildWav({ pattern: "tone", seconds: 0.52, rate: 44100 }));
     await writeFile(longWav, buildWav({ pattern: "long", seconds: 600, rate: 8000 }));
     await writeFile(longTrajectory, buildLongTrajectoryJson(600, 1));
     await writeFile(invalidTrajectory, buildInvalidTrajectoryJson());
     await writeFile(notAudio, "this is not an audio file\n");
+    await writeFile(raceFiles.oldSlowA, buildRaceTrajectoryJson("race-old-slow-a"));
+    await writeFile(raceFiles.oldSlowB, buildRaceTrajectoryJson("race-old-slow-b", false));
+    await writeFile(raceFiles.oldSlowC, buildRaceTrajectoryJson("race-old-slow-c"));
+    await writeFile(raceFiles.newFastA, buildRaceTrajectoryJson("race-new-fast-a"));
+    await writeFile(raceFiles.newFastB, buildRaceTrajectoryJson("race-new-fast-b"));
+    await writeFile(raceFiles.newFail, buildRaceTrajectoryJson("race-new-fail", false));
 
     const debuggingUrlPrefix = "http://127.0.0.1:";
     const pageUrl = `http://127.0.0.1:${serverPort}${VIEWER_URL_PATH}`;
@@ -508,12 +553,54 @@ async function main() {
     loopState = await evaluate(client, "__aatViewer.describe()");
     record("loop clears cleanly", loopState.session.loop === null && loopState.session.loopError === null);
 
-    // ---- clip fixture: track_start_seconds mapping ---------------------------
+    // ---- clip fixture: track_start_seconds mapping and duration policy -------
+    // clip.json declares origin 12.0s and analyzed-audio duration 0.5s.
     await setFileInput(client, "#trajectory-file", [clip]);
     await waitFor("clip trajectory", async () => {
       const described = await evaluate(client, "__aatViewer.describe()");
       return described.session.trajectoryError === null && described.session.trackCount === 1 ? described : null;
     });
+    const clipAgainstKnownWav = await waitFor("clip vs 4s audio mismatch", async () => {
+      const described = await evaluate(client, "__aatViewer.describe()");
+      return described.compatibility.status === "mismatch" ? described : null;
+    });
+    record("4s audio vs declared 0.5s clip is a mismatch (old code accepted it as \"covering\")",
+      /长于/.test(clipAgainstKnownWav.compatibility.message),
+      { message: clipAgainstKnownWav.compatibility.message },
+    );
+    const mismatchControls = await evaluate(
+      client,
+      "({ play: document.getElementById('play').disabled, seek: document.getElementById('seek').disabled, loopA: document.getElementById('loop-a').disabled })",
+    );
+    record("mismatch disables play/seek/loop controls", mismatchControls.play && mismatchControls.seek && mismatchControls.loopA, mismatchControls);
+    const refusedPlay = await evaluate(
+      client,
+      "(async () => { try { await __aatViewer.play(); return { ok: true }; } catch (error) { return { ok: false, message: error.message }; } })()",
+    );
+    await sleep(200);
+    const afterRefusedPlay = await evaluate(client, "__aatViewer.describe()");
+    record("mismatch refuses playback through the test hook too", refusedPlay.ok === false && afterRefusedPlay.audio.paused === true, refusedPlay);
+    const beforeRefusedSeek = (await evaluate(client, "__aatViewer.describe()")).audio.currentTime;
+    await evaluate(client, "__aatViewer.setTime(0.2)");
+    const afterRefusedSeek = (await evaluate(client, "__aatViewer.describe()")).audio.currentTime;
+    record("mismatch refuses seek through the test hook",
+      Math.abs(afterRefusedSeek - beforeRefusedSeek) < 1e-9 && Math.abs(afterRefusedSeek - 0.2) > 1e-9,
+      { beforeRefusedSeek, afterRefusedSeek },
+    );
+    const refusedLoop = await evaluate(client, "__aatViewer.setLoop(0.1, 0.3)");
+    record("mismatch refuses loop creation", refusedLoop.loop === null && /拒绝|不匹配/.test(refusedLoop.refused || ""), { refused: refusedLoop.refused });
+
+    // The real analyzed clip is 0.5s long; loading it must be accepted.
+    await setFileInput(client, "#audio-file", [clipMatchWav]);
+    await waitFor("0.5s clip audio", async () => {
+      const described = await evaluate(client, "__aatViewer.describe()");
+      return described.audio.duration !== null && Math.abs(described.audio.duration - 0.5) < 0.001 ? described : null;
+    });
+    const clipMatch = await evaluate(client, "__aatViewer.describe()");
+    record("origin 12s / duration 0.5s clip matches a real 0.5s audio (ok)",
+      clipMatch.compatibility.status === "ok" && clipMatch.syncAllowed === true,
+      { message: clipMatch.compatibility.message },
+    );
     await evaluate(client, "__aatViewer.setTime(0.24)");
     snapshot = await evaluate(client, "__aatViewer.snapshot()");
     const clipTrack = snapshot.tracks[0];
@@ -522,11 +609,40 @@ async function main() {
       absoluteTime: snapshot.absoluteTime,
     });
     record("absolute center time 12.24s yields p=0.7 (not the 0.24s player value)", CLOSE(clipTrack.value, 0.7, 1e-9), { value: clipTrack.value });
-    const compatText = await evaluate(client, "document.getElementById('compat-message').textContent");
-    const compatClass = await evaluate(client, "document.getElementById('compat-message').className");
-    record("duration incompatibility is reported for a 0.5s clip trailer vs 4s audio", /只有/.test(compatText) && /error/.test(compatClass), {
-      compatText,
+    const clipLoop = await evaluate(client, "__aatViewer.setLoop(0.1, 0.3)");
+    record("valid loop works with the matching 0.5s clip", clipLoop.loop !== null && clipLoop.loopError === null, clipLoop.loop);
+    await evaluate(client, "(async () => { __aatViewer.setTime(0.05); await __aatViewer.play(); return true; })()");
+    await sleep(250);
+    const clipPlaying = await evaluate(client, "__aatViewer.describe()");
+    record("matching clip is actually playable through the hook", clipPlaying.audio.paused === false && clipPlaying.audio.currentTime > 0.05, {
+      currentTime: clipPlaying.audio.currentTime,
+      paused: clipPlaying.audio.paused,
     });
+
+    // Switch to a too-short clip while playing: must pause, drop the loop and
+    // keep every transport control disabled.
+    await setFileInput(client, "#audio-file", [clipShortWav]);
+    await waitFor("0.48s short clip audio", async () => {
+      const described = await evaluate(client, "__aatViewer.describe()");
+      return described.audio.duration !== null && Math.abs(described.audio.duration - 0.48) < 0.001 ? described : null;
+    });
+    const shortClip = await evaluate(client, "__aatViewer.describe()");
+    record("declared 0.5s vs 0.48s audio is rejected (too short)", shortClip.compatibility.status === "mismatch" && /短于/.test(shortClip.compatibility.message), { message: shortClip.compatibility.message });
+    record("mismatch transition pauses playback and drops the active loop", shortClip.audio.paused === true && shortClip.session.loop === null, {
+      paused: shortClip.audio.paused,
+      loop: shortClip.session.loop,
+    });
+    const shortControls = await evaluate(client, "({ play: document.getElementById('play').disabled, seek: document.getElementById('seek').disabled })");
+    record("too-short mismatch keeps play/seek disabled", shortControls.play && shortControls.seek, shortControls);
+
+    // Too-long clip (0.52s) is rejected as well.
+    await setFileInput(client, "#audio-file", [clipLongWav]);
+    await waitFor("0.52s long clip audio", async () => {
+      const described = await evaluate(client, "__aatViewer.describe()");
+      return described.audio.duration !== null && Math.abs(described.audio.duration - 0.52) < 0.001 ? described : null;
+    });
+    const longClip = await evaluate(client, "__aatViewer.describe()");
+    record("declared 0.5s vs 0.52s audio is rejected (too long)", longClip.compatibility.status === "mismatch" && /长于/.test(longClip.compatibility.message), { message: longClip.compatibility.message });
 
     // ---- empty trajectory boundary ------------------------------------------
     await setFileInput(client, "#trajectory-file", [empty]);
@@ -580,6 +696,88 @@ async function main() {
       imgs: injection.imgs,
     });
 
+    // ---- trajectory read race (generation guard) -----------------------------
+    // Delay File.text() by file name so two real selections can race.
+    await evaluate(
+      client,
+      `(() => {
+        window.__originalFileText = window.__originalFileText || File.prototype.text;
+        File.prototype.text = function () {
+          const name = this.name || "";
+          const delay = name.includes("slow") ? 200 : 0;
+          const read = () => window.__originalFileText.call(this);
+          return new Promise((resolve, reject) => {
+            setTimeout(() => read().then(resolve, reject), delay);
+          });
+        };
+        return true;
+      })()`,
+    );
+
+    // Pending state must appear immediately and drop the old synchronized data.
+    await setFileInput(client, "#trajectory-file", [raceFiles.oldSlowA]);
+    await sleep(60);
+    const pendingRace = await evaluate(client, "__aatViewer.describe()");
+    record("new selection enters pending immediately, pauses and drops old curves",
+      pendingRace.session.trajectoryPending === "race-old-slow-a.json" &&
+        pendingRace.session.trajectoryLoaded === false &&
+        pendingRace.session.trackCount === 0 &&
+        pendingRace.audio.paused === true,
+      {
+        pending: pendingRace.session.trajectoryPending,
+        loaded: pendingRace.session.trajectoryLoaded,
+        paused: pendingRace.audio.paused,
+      },
+    );
+    await waitFor("old-slow-a loads alone after its delay", async () => {
+      const described = await evaluate(client, "__aatViewer.describe()");
+      return described.session.provenance && described.session.provenance.runId === "race-old-slow-a" ? described : null;
+    });
+    record("a delayed read still commits when it remains the newest selection", true);
+
+    // Older slow failure must not replace the newer fast success.
+    await setFileInput(client, "#trajectory-file", [raceFiles.oldSlowB]);
+    await setFileInput(client, "#trajectory-file", [raceFiles.newFastA]);
+    await sleep(500);
+    const raceOldFail = await evaluate(client, "__aatViewer.describe()");
+    record("slow old failure cannot overwrite the newer fast success",
+      raceOldFail.session.trajectoryError === null &&
+        raceOldFail.session.provenance.runId === "race-new-fast-a" &&
+        raceOldFail.session.trajectoryFileName === "race-new-fast-a.json" &&
+        raceOldFail.session.trajectoryPending === null,
+      {
+        runId: raceOldFail.session.provenance.runId,
+        fileName: raceOldFail.session.trajectoryFileName,
+      },
+    );
+
+    // Older slow success must not replace the newer fast success.
+    await setFileInput(client, "#trajectory-file", [raceFiles.oldSlowC]);
+    await setFileInput(client, "#trajectory-file", [raceFiles.newFastB]);
+    await sleep(500);
+    const raceOldSuccess = await evaluate(client, "__aatViewer.describe()");
+    record("slow old success cannot overwrite the newer fast success",
+      raceOldSuccess.session.trajectoryError === null &&
+        raceOldSuccess.session.provenance.runId === "race-new-fast-b",
+      { runId: raceOldSuccess.session.provenance.runId },
+    );
+
+    // Newest fast failure must win over an older slow success.
+    await setFileInput(client, "#trajectory-file", [raceFiles.oldSlowC]);
+    await setFileInput(client, "#trajectory-file", [raceFiles.newFail]);
+    await sleep(500);
+    const raceNewestFail = await evaluate(client, "__aatViewer.describe()");
+    record("newest failure is not overwritten by an older slow success",
+      raceNewestFail.session.trajectoryError !== null &&
+        raceNewestFail.session.trajectoryError.fileName === "race-new-fail.json" &&
+        raceNewestFail.session.trajectoryLoaded === false &&
+        raceNewestFail.session.trajectoryPending === null,
+      {
+        errorFileName: raceNewestFail.session.trajectoryError && raceNewestFail.session.trajectoryError.fileName,
+        loaded: raceNewestFail.session.trajectoryLoaded,
+      },
+    );
+
     // ---- object URL cleanup --------------------------------------------------
     const secondKnownWav = join(workDir, "known-times-second.wav");
     await writeFile(secondKnownWav, buildWav({ pattern: "known-times", seconds: 4, rate: 44100 }));
@@ -595,12 +793,20 @@ async function main() {
     const revokeCount = await evaluate(client, "window.__revokeCount");
     record("switching audio revokes the previous blob URL", revokeCount >= 1, { revokeCount });
 
+    // Re-load a valid trajectory so the next check proves an audio load error
+    // keeps a *currently loaded* trajectory instead of clearing it.
+    await setFileInput(client, "#trajectory-file", [knownTimes]);
+    await waitFor("valid trajectory before audio error test", async () => {
+      const described = await evaluate(client, "__aatViewer.describe()");
+      return described.session.trajectoryError === null && described.session.trackCount === 3 ? described : null;
+    });
+
     await setFileInput(client, "#audio-file", [notAudio]);
     const audioError = await waitFor("audio error state", async () => {
       const described = await evaluate(client, "__aatViewer.describe()");
       return described.session.audio.error ? described : null;
     });
-    record("non-audio file produces a clear load error and keeps the trajectory", /失败|不支持|格式/.test(audioError.session.audio.error), {
+    record("non-audio file produces a clear load error and keeps the trajectory", /失败|不支持|格式/.test(audioError.session.audio.error) && audioError.session.trackCount === 3, {
       error: audioError.session.audio.error,
       trackCount: audioError.session.trackCount,
     });

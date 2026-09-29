@@ -10,11 +10,13 @@ import { computeOverviewBins } from "./js/overview.js";
 import { describeDataKind } from "./js/protocol.js";
 import {
   beginAudioFileLoad,
+  beginTrajectoryFileLoad,
   captureLoopPoint,
   checkAudioCompatibility,
   clearLoop,
   createSession,
   describeSession,
+  failTrajectoryLoad,
   loadTrajectoryText,
   playbackRate,
   setAudioError,
@@ -23,6 +25,7 @@ import {
   setThreshold,
   setWindowLength,
   setWindowStart,
+  syncPlaybackAllowed,
   toggleTrack,
 } from "./js/session.js";
 import { buildSnapshot } from "./js/snapshot.js";
@@ -102,6 +105,8 @@ let overviewCache = { trajectory: null, duration: -1, width: -1 };
 let trackRows = new Map();
 let trackRowOrder = null;
 let lastStatus = { message: "", kind: "" };
+// Monotonic token for trajectory reads: only the newest selection may commit.
+let trajectoryLoadGeneration = 0;
 
 const audio = elements.audio;
 audio.preservesPitch = true;
@@ -124,9 +129,45 @@ function audioReady() {
   return audioDuration() !== null && audio.readyState >= 1;
 }
 
+/** Whether the loaded audio may currently drive synchronized playback. */
+function playbackAllowed() {
+  return (
+    session.trajectory !== null &&
+    audioReady() &&
+    syncPlaybackAllowed(session.trajectory, audioDuration())
+  );
+}
+
+/**
+ * On a duration mismatch the pair cannot be synchronized: stop playback,
+ * drop any loop and let render() disable the transport.  This also guards
+ * every path that could otherwise start playback (hook included).
+ */
+function enforceSyncPolicy() {
+  const compatibility = checkAudioCompatibility(
+    session.trajectory,
+    audioDuration(),
+  );
+  if (compatibility.status === "mismatch") {
+    if (!audio.paused) {
+      audio.pause();
+    }
+    if (
+      session.loop !== null ||
+      session.loopDraft.start !== null ||
+      session.loopDraft.end !== null ||
+      session.loopError !== null
+    ) {
+      session = clearLoop(session);
+    }
+  }
+  return compatibility;
+}
+
 /* ------------------------------------------------------------------ render */
 
 function render() {
+  const compatibility = enforceSyncPolicy();
   const snapshot = buildSnapshot({
     trajectory: session.trajectory,
     audioDuration: audioDuration(),
@@ -149,7 +190,7 @@ function render() {
       : "");
 
   elements.play.textContent = audio.paused ? "播放" : "暂停";
-  const playable = snapshot.trajectoryLoaded && audioReady();
+  const playable = playbackAllowed();
   elements.play.disabled = !playable;
   elements.seek.disabled = !playable;
   elements.loopA.disabled = !playable;
@@ -170,7 +211,7 @@ function render() {
   audio.playbackRate = playbackRate(session);
 
   renderAudioStatus();
-  renderCompatibility(snapshot);
+  renderCompatibility(snapshot, compatibility);
   renderLoopInfo();
   ensureTrackRows(snapshot);
   renderTrackValues(snapshot);
@@ -203,16 +244,12 @@ function renderAudioStatus() {
   elements.audioStatus.className = "status ok";
 }
 
-function renderCompatibility(snapshot) {
+function renderCompatibility(snapshot, compatibility) {
   if (!snapshot.trajectoryLoaded) {
     elements.compatMessage.textContent = "";
     elements.compatMessage.className = "status";
     return;
   }
-  const compatibility = checkAudioCompatibility(
-    session.trajectory,
-    audioDuration(),
-  );
   elements.compatMessage.textContent = compatibility.message || "";
   const kindByStatus = {
     pending: "pending",
@@ -428,6 +465,13 @@ function ensureAnimationLoop() {
   const frame = () => {
     rafHandle = null;
     if (!audio.paused) {
+      // Never let playback continue when the pair is not syncable (e.g. a
+      // duration mismatch), regardless of which path started it.
+      if (!playbackAllowed()) {
+        audio.pause();
+        render();
+        return;
+      }
       // Single shared clock: wrap the audio element itself, never a second one.
       const corrected = applyLoopCorrection(audio.currentTime, session.loop);
       if (corrected !== audio.currentTime) {
@@ -451,8 +495,8 @@ function stopAnimationLoop() {
 }
 
 function seekTo(seconds) {
-  if (!audioReady()) {
-    renderStatus("音频 metadata 未就绪，暂时不能定位。", "pending");
+  if (!playbackAllowed()) {
+    renderStatus("音频与轨迹未就绪或时长不匹配，已禁止定位。", "error");
     return;
   }
   const duration = audioDuration();
@@ -513,14 +557,40 @@ elements.trajectoryFile.addEventListener("change", async () => {
   if (!file) {
     return;
   }
+  // Generation token: only the newest selection may commit its text, error,
+  // filename or provenance.  A slow older read can never overwrite it.
+  const generation = ++trajectoryLoadGeneration;
   audio.pause();
+  session = beginTrajectoryFileLoad(session, file.name);
+  renderStatus(
+    `正在读取轨迹 ${file.name}…（旧轨迹已停止同步并清除）`,
+    "pending",
+  );
+  render();
+
   let text;
   try {
     text = await file.text();
   } catch (error) {
-    text = "{}";
-    renderStatus(`读取轨迹文件失败：${error.message}`, "error");
+    if (generation !== trajectoryLoadGeneration) {
+      return; // stale read failure must not replace the newer selection
+    }
+    session = failTrajectoryLoad(
+      session,
+      file.name,
+      `读取轨迹文件失败：${error.message}`,
+    );
+    renderStatus(
+      `轨迹未加载：${file.name} 读取失败（旧轨迹已清除）。`,
+      "error",
+    );
+    render();
+    return;
   }
+  if (generation !== trajectoryLoadGeneration) {
+    return; // stale read success must not replace the newer selection
+  }
+
   session = loadTrajectoryText(session, text, file.name);
   if (session.trajectoryError) {
     renderStatus(
@@ -537,6 +607,10 @@ elements.trajectoryFile.addEventListener("change", async () => {
 });
 
 elements.play.addEventListener("click", async () => {
+  if (!playbackAllowed()) {
+    renderStatus("音频与轨迹未就绪或时长不匹配，已禁止同步播放。", "error");
+    return;
+  }
   if (audio.paused) {
     try {
       await audio.play();
@@ -573,10 +647,18 @@ elements.threshold.addEventListener("input", () => {
 });
 
 elements.loopA.addEventListener("click", () => {
+  if (!playbackAllowed()) {
+    renderStatus("音频与轨迹未就绪或时长不匹配，不能设置循环。", "error");
+    return;
+  }
   session = captureLoopPoint(session, "start", audio.currentTime);
   render();
 });
 elements.loopB.addEventListener("click", () => {
+  if (!playbackAllowed()) {
+    renderStatus("音频与轨迹未就绪或时长不匹配，不能设置循环。", "error");
+    return;
+  }
   session = captureLoopPoint(session, "end", audio.currentTime);
   render();
 });
@@ -662,6 +744,11 @@ window.__aatViewer = {
   describe() {
     return {
       session: describeSession(session),
+      compatibility: checkAudioCompatibility(
+        session.trajectory,
+        audioDuration(),
+      ),
+      syncAllowed: playbackAllowed(),
       audio: {
         currentTime: audio.currentTime,
         duration: audioDuration(),
@@ -712,6 +799,12 @@ window.__aatViewer = {
     };
   },
   setLoop(start, end) {
+    if (!playbackAllowed()) {
+      return {
+        ...describeSession(session),
+        refused: "音频与轨迹时长不匹配或未就绪，循环被拒绝。",
+      };
+    }
     session = captureLoopPoint(session, "start", start);
     session = captureLoopPoint(session, "end", end);
     render();
@@ -722,6 +815,11 @@ window.__aatViewer = {
     render();
   },
   play() {
+    if (!playbackAllowed()) {
+      return Promise.reject(
+        new Error("同步播放被禁止：音频与轨迹时长不匹配或未就绪。"),
+      );
+    }
     return audio.play();
   },
   pause() {
