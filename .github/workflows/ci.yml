@@ -24,7 +24,7 @@ jobs:
         include:
           # Base install: contract/window/unit suites; DawDreamer integration
           # tests self-skip because the optional render extra is not installed,
-          # and ML head/loss tests are deselected (torch is not installed).
+          # ML head/loss and AuT encoder tests are deselected (no torch).
           - name: unit
             sync-args: ""
             pytest-args: -m "not integration and not ml"
@@ -33,8 +33,10 @@ jobs:
           - name: render
             sync-args: --extra render
             pytest-args: -m "not ml"
-          # ML extra: CPU-only torch from the explicit pytorch-cpu wheel index;
-          # real head/loss/matching tests including a CPU overfit experiment.
+          # ML extra: CPU-only torch from the explicit pytorch-cpu wheel index,
+          # transformers/safetensors for the standalone AuT encoder, real
+          # head/loss/matching tests and a CPU overfit experiment.  Encoder
+          # tests build tiny random checkpoints locally and never fetch weights.
           - name: ml
             sync-args: --extra ml
             pytest-args: -m ml
