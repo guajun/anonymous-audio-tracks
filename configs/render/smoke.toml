@@ -1,0 +1,163 @@
+# Deterministic 20 s smoke sample for issue #3 (no external assets).
+#
+# Reproduce with:
+#   uv sync --locked --extra render
+#   uv run --no-sync python scripts/render_sample.py render \
+#       --config configs/render/smoke.toml --out runs/render/smoke-0001
+#
+# Four independently controllable layers: kick, snare, plucked bass and pad.
+# Every layer is synthesized locally from sample.seed; nothing is downloaded and
+# nothing here is machine-specific.
+
+[render]
+sample_id = "smoke-0001"
+composition = "comp-smoke-01"
+seed = 20260929
+sample_rate = 44100
+block_size = 512
+bpm = 100.0
+duration_seconds = 20.0
+tail_seconds = 3.0
+track_start_seconds = 0.0
+notes = "self-generated deterministic smoke sample; 4 anonymous source layers"
+
+# Surge XT is probed only when a plugin path is passed at runtime:
+#   --surge-plugin-path "<path to Surge XT.vst3>"
+[surge]
+probe_duration_seconds = 1.5
+note = 60
+velocity = 100
+
+[[sources]]
+id = "s01"
+gain = 0.9
+center_note = 36
+preset_ref = "aat/sampler/kick-v1"
+sample_ref = "aat/generated/kick-v1"
+sample = { type = "kick", seed = 11, params = { duration_seconds = 0.6, decay_seconds = 0.35 } }
+amp = { attack_ms = 1.0, decay_ms = 0.0, sustain = 1.0, release_ms = 40.0 }
+[sources.pattern]
+step_seconds = 0.25
+loop_steps = 32
+[[sources.pattern.notes]]
+step = 0
+note = 36
+velocity = 118
+length_steps = 1
+[[sources.pattern.notes]]
+step = 6
+note = 36
+velocity = 96
+length_steps = 1
+[[sources.pattern.notes]]
+step = 10
+note = 36
+velocity = 108
+length_steps = 1
+[[sources.pattern.notes]]
+step = 16
+note = 36
+velocity = 118
+length_steps = 1
+[[sources.pattern.notes]]
+step = 22
+note = 36
+velocity = 96
+length_steps = 1
+[[sources.pattern.notes]]
+step = 26
+note = 36
+velocity = 108
+length_steps = 1
+
+[[sources]]
+id = "s02"
+gain = 0.65
+center_note = 36
+preset_ref = "aat/sampler/snare-v1"
+sample_ref = "aat/generated/snare-v1"
+sample = { type = "snare", seed = 12, params = { duration_seconds = 0.5, noise_decay_seconds = 0.18 } }
+amp = { attack_ms = 1.0, decay_ms = 0.0, sustain = 1.0, release_ms = 60.0 }
+[sources.pattern]
+step_seconds = 0.25
+loop_steps = 32
+[[sources.pattern.notes]]
+step = 8
+note = 36
+velocity = 112
+length_steps = 1
+[[sources.pattern.notes]]
+step = 15
+note = 36
+velocity = 48
+length_steps = 1
+[[sources.pattern.notes]]
+step = 24
+note = 36
+velocity = 112
+length_steps = 1
+
+[[sources]]
+id = "s03"
+gain = 0.6
+center_note = 45
+preset_ref = "aat/sampler/pluck-v1"
+sample_ref = "aat/generated/pluck-a2-v1"
+sample = { type = "pluck", seed = 13, params = { duration_seconds = 1.2, freq_hz = 110.0, decay_seconds = 0.8, damping = 0.5 } }
+amp = { attack_ms = 2.0, decay_ms = 0.0, sustain = 1.0, release_ms = 150.0 }
+effects = [
+  { type = "filter", mode = "low", frequency_hz = 1400.0, q = 0.9, gain = 1.0 },
+]
+[sources.pattern]
+step_seconds = 0.5
+loop_steps = 16
+[[sources.pattern.notes]]
+step = 0
+note = 45
+velocity = 108
+length_steps = 2
+[[sources.pattern.notes]]
+step = 3
+note = 45
+velocity = 92
+length_steps = 1
+[[sources.pattern.notes]]
+step = 6
+note = 48
+velocity = 100
+length_steps = 1
+[[sources.pattern.notes]]
+step = 10
+note = 43
+velocity = 100
+length_steps = 2
+[[sources.pattern.notes]]
+step = 14
+note = 47
+velocity = 96
+length_steps = 1
+
+[[sources]]
+id = "s04"
+gain = 0.35
+center_note = 60
+preset_ref = "aat/sampler/pad-v1"
+sample_ref = "aat/generated/pad-c4-v1"
+sample = { type = "pad", seed = 14, params = { duration_seconds = 2.0, freq_hz = 261.625565, attack_seconds = 0.4, release_seconds = 0.9, detune_cents = 6.0, stereo = true } }
+amp = { attack_ms = 4.0, decay_ms = 0.0, sustain = 1.0, release_ms = 500.0 }
+effects = [
+  { type = "filter", mode = "low", frequency_hz = 3200.0, q = 0.7071067811865476, gain = 1.0 },
+]
+[sources.pattern]
+step_seconds = 1.0
+loop_steps = 8
+[[sources.pattern.notes]]
+step = 0
+note = 60
+velocity = 84
+length_steps = 4
+[[sources.pattern.notes]]
+step = 4
+note = 67
+velocity = 80
+length_steps = 4

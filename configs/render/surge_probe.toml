@@ -1,0 +1,63 @@
+# Surge XT probe template.
+#
+# The plugin location is intentionally absent: never commit a machine path.
+# Probe alone:
+#   uv run python scripts/render_sample.py probe-surge \
+#       --plugin-path "<path to Surge XT.vst3>" --out runs/render/surge-probe
+#
+# Render a small sample and attach the probe result in the same run:
+#   uv run python scripts/render_sample.py render \
+#       --config configs/render/surge_probe.toml \
+#       --out runs/render/surge-probe \
+#       --surge-plugin-path "<path to Surge XT.vst3>"
+#
+# When the plugin is missing the probe result is an explicit failure
+# (`status = "failed"`, `reason = "path_not_found"` / `"not_configured"`), not a
+# silent pass and not a replacement for the self-generated sampler smoke test.
+
+[render]
+sample_id = "surge-probe-0001"
+composition = "comp-surge-probe-01"
+seed = 20260929
+sample_rate = 44100
+block_size = 512
+bpm = 100.0
+duration_seconds = 2.0
+tail_seconds = 0.6
+track_start_seconds = 0.0
+notes = "small sample used while probing Surge XT; Surge itself is unverified without a plugin"
+
+[surge]
+probe_duration_seconds = 1.5
+note = 60
+velocity = 100
+
+[[sources]]
+id = "s01"
+gain = 0.9
+center_note = 36
+sample = { type = "kick", seed = 31, params = { duration_seconds = 0.4, decay_seconds = 0.25 } }
+amp = { attack_ms = 1.0, release_ms = 40.0 }
+[sources.pattern]
+step_seconds = 0.25
+loop_steps = 8
+[[sources.pattern.notes]]
+step = 0
+note = 36
+velocity = 115
+length_steps = 1
+
+[[sources]]
+id = "s02"
+gain = 0.7
+center_note = 45
+sample = { type = "pluck", seed = 32, params = { duration_seconds = 0.5, freq_hz = 110.0, decay_seconds = 0.35 } }
+amp = { attack_ms = 2.0, release_ms = 100.0 }
+[sources.pattern]
+step_seconds = 0.5
+loop_steps = 4
+[[sources.pattern.notes]]
+step = 0
+note = 45
+velocity = 105
+length_steps = 1
