@@ -29,9 +29,9 @@ KINDS = frozenset(
     }
 )
 
-#: Capacity default for the per-window candidate slots.  Configurable per run.
+#: Default number of per-window candidate slots.  K stays configurable per run.
 DEFAULT_SLOTS = 8
-#: Default anonymous identity embedding size for one candidate.
+#: Embedding dimension fixed by protocol 0.1.0.  Only K is configurable.
 DEFAULT_EMBEDDING_DIM = 128
 #: Absolute tolerance for "valid candidate embedding is a unit vector".
 UNIT_NORM_TOLERANCE = 1e-3

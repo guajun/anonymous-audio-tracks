@@ -6,8 +6,10 @@ provenance; the ``.npz`` payload is a plain ``numpy.savez`` archive with
 ``allow_pickle=False`` so that non-Python readers (including future browser
 readers) can decode it without executing Python.
 
-Time convention: ``center_times`` / ``frame_times`` are absolute seconds on the
-original-track axis (``t = 0`` is the original track start).
+Loading checks the sidecar against the protocol itself (dtype, unit and time
+origin), not only against the NPZ payload, so a wrong unit or a re-based time
+axis is rejected instead of silently changing scale.  Saving revalidates the
+current object state, because the underlying numpy arrays remain mutable.
 """
 
 from __future__ import annotations
@@ -41,7 +43,7 @@ from .checks import (
 )
 from .documents import RunProvenance
 from .errors import ContractError
-from .jsonio import dump_json, load_json
+from .jsonio import dump_json, dumps_json, load_json
 from .version import (
     DEFAULT_EMBEDDING_DIM,
     DEFAULT_SLOTS,
@@ -55,30 +57,33 @@ from .version import (
 ACTIVITY_METADATA_FILENAME = "activity.json"
 ACTIVITY_ARRAYS_FILENAME = "activity.npz"
 ACTIVITY_ARRAY_KEYS = ("center_times", "activity", "valid")
-ACTIVITY_UNITS = {
-    "center_times": "seconds",
-    "activity": "probability",
-    "valid": "bool",
-}
 
 FEATURE_METADATA_FILENAME = "feature.json"
 FEATURE_ARRAYS_FILENAME = "feature.npz"
 FEATURE_ARRAY_KEYS = ("frame_times", "features", "valid")
-FEATURE_UNITS = {
-    "frame_times": "seconds",
-    "features": "feature",
-    "valid": "bool",
-}
 
 PREDICTION_METADATA_FILENAME = "prediction.json"
 PREDICTION_ARRAYS_FILENAME = "prediction.npz"
 PREDICTION_ARRAY_KEYS = ("center_times", "embeddings", "activity", "slot_valid", "center_valid")
-PREDICTION_UNITS = {
-    "center_times": "seconds",
-    "embeddings": "l2_normalized",
-    "activity": "probability",
-    "slot_valid": "bool",
-    "center_valid": "bool",
+
+#: Protocol expectations for every sidecar ``arrays`` entry.  Loading rejects a
+#: declared dtype/unit/origin that differs from these frozen values.
+_ACTIVITY_ARRAY_SPECS: dict[str, dict[str, str]] = {
+    "center_times": {"dtype": "float64", "unit": "seconds", "origin": "original_track_start"},
+    "activity": {"dtype": "float32", "unit": "probability"},
+    "valid": {"dtype": "bool", "unit": "bool"},
+}
+_FEATURE_ARRAY_SPECS: dict[str, dict[str, str]] = {
+    "frame_times": {"dtype": "float64", "unit": "seconds", "origin": "original_track_start"},
+    "features": {"dtype": "float32", "unit": "feature"},
+    "valid": {"dtype": "bool", "unit": "bool"},
+}
+_PREDICTION_ARRAY_SPECS: dict[str, dict[str, str]] = {
+    "center_times": {"dtype": "float64", "unit": "seconds", "origin": "original_track_start"},
+    "embeddings": {"dtype": "float32", "unit": "l2_normalized"},
+    "activity": {"dtype": "float32", "unit": "probability"},
+    "slot_valid": {"dtype": "bool", "unit": "bool"},
+    "center_valid": {"dtype": "bool", "unit": "bool"},
 }
 
 
@@ -100,9 +105,9 @@ def _load_npz(path: Path, expected_keys: Sequence[str]) -> dict[str, np.ndarray]
         return {key: archive[key] for key in expected_keys}
 
 
-def _resolve_arrays_path(directory: Path, metadata: Mapping[str, Any], default: str, path: str) -> Path:
-    raw = metadata.get("arrays_path", default)
-    relative = require_relative_posix_path(raw, f"{path}.arrays_path")
+def _resolve_arrays_path(directory: Path, metadata: Mapping[str, Any], path: str) -> Path:
+    require_keys(metadata, ("arrays_path",), path)
+    relative = require_relative_posix_path(metadata["arrays_path"], f"{path}.arrays_path")
     base = directory.resolve()
     candidate = (directory / relative).resolve()
     if not candidate.is_relative_to(base):
@@ -113,25 +118,53 @@ def _resolve_arrays_path(directory: Path, metadata: Mapping[str, Any], default: 
 def _check_array_specs(
     metadata: Mapping[str, Any],
     arrays: Mapping[str, np.ndarray],
-    units: Mapping[str, str],
+    specs: Mapping[str, Mapping[str, str]],
     path: str,
 ) -> None:
-    specs = require_mapping(metadata.get("arrays"), f"{path}.arrays")
-    require_keys(specs, units.keys(), f"{path}.arrays")
-    for key in units:
-        spec = require_mapping(specs[key], f"{path}.arrays.{key}")
-        require_keys(spec, ("dtype", "shape", "unit"), f"{path}.arrays.{key}")
-        if np.dtype(spec["dtype"]) != arrays[key].dtype:
+    """Check the sidecar ``arrays`` block against protocol expectations."""
+
+    declared_specs = require_mapping(metadata.get("arrays"), f"{path}.arrays")
+    require_keys(declared_specs, specs.keys(), f"{path}.arrays")
+    for key, expected in specs.items():
+        spec = require_mapping(declared_specs[key], f"{path}.arrays.{key}")
+        required_fields = ("dtype", "shape", "unit")
+        if "origin" in expected:
+            required_fields = required_fields + ("origin",)
+        require_keys(spec, required_fields, f"{path}.arrays.{key}")
+
+        declared_dtype = require_str(spec["dtype"], f"{path}.arrays.{key}.dtype")
+        if declared_dtype != expected["dtype"]:
             raise ContractError(
-                f"{path}.arrays.{key}.dtype: declared {spec['dtype']!r}, "
+                f"{path}.arrays.{key}.dtype: protocol requires {expected['dtype']!r}, "
+                f"sidecar declares {declared_dtype!r}"
+            )
+        if np.dtype(declared_dtype) != arrays[key].dtype:
+            raise ContractError(
+                f"{path}.arrays.{key}.dtype: sidecar declares {declared_dtype!r}, "
                 f"payload has {arrays[key].dtype.name!r}"
             )
-        if list(spec["shape"]) != list(arrays[key].shape):
+
+        declared_unit = require_str(spec["unit"], f"{path}.arrays.{key}.unit")
+        if declared_unit != expected["unit"]:
             raise ContractError(
-                f"{path}.arrays.{key}.shape: declared {list(spec['shape'])}, "
+                f"{path}.arrays.{key}.unit: protocol requires {expected['unit']!r}, "
+                f"sidecar declares {declared_unit!r}"
+            )
+
+        if "origin" in expected:
+            declared_origin = require_str(spec["origin"], f"{path}.arrays.{key}.origin")
+            if declared_origin != expected["origin"]:
+                raise ContractError(
+                    f"{path}.arrays.{key}.origin: protocol requires {expected['origin']!r}, "
+                    f"sidecar declares {declared_origin!r}"
+                )
+
+        shape = require_sequence(spec["shape"], f"{path}.arrays.{key}.shape")
+        if list(shape) != list(arrays[key].shape):
+            raise ContractError(
+                f"{path}.arrays.{key}.shape: declared {list(shape)}, "
                 f"payload has {list(arrays[key].shape)}"
             )
-        require_str(spec["unit"], f"{path}.arrays.{key}.unit")
 
 
 def _array_spec(dtype: Any, shape: Sequence[int], unit: str, **extra: Any) -> dict[str, Any]:
@@ -153,6 +186,9 @@ def _save_document(
 ) -> tuple[Path, Path]:
     target = Path(directory)
     target.mkdir(parents=True, exist_ok=True)
+    # Validate the full JSON payload before writing anything (rejects NaN/Inf
+    # anywhere, including arbitrary nested metadata).
+    dumps_json(dict(metadata))
     arrays_path = target / arrays_filename
     _save_npz(arrays_path, arrays)
     metadata_path = dump_json(target / metadata_filename, metadata)
@@ -223,8 +259,13 @@ class ActivityData:
         check_strictly_increasing_array(self.center_times, "activity.center_times")
         check_finite(self.activity, "activity.activity")
         check_unit_interval(self.activity, "activity.activity")
+        source_ids = tuple(self.source_ids)
+        for position, value in enumerate(source_ids):
+            require_str(value, f"activity.source_ids[{position}]")
+        require_unique(source_ids, "activity.source_ids")
 
     def to_npz_dict(self) -> dict[str, np.ndarray]:
+        self.validate()
         return {
             "center_times": self.center_times,
             "activity": self.activity,
@@ -232,6 +273,7 @@ class ActivityData:
         }
 
     def to_metadata(self, arrays_filename: str = ACTIVITY_ARRAYS_FILENAME) -> dict[str, Any]:
+        self.validate()
         metadata: dict[str, Any] = {
             "schema_version": self.schema_version,
             "kind": KIND_ACTIVITY,
@@ -292,10 +334,10 @@ class ActivityData:
         check_schema_header(metadata, KIND_ACTIVITY)
         require_keys(metadata, ("sample_rate", "source_ids"), "activity")
         arrays = _load_npz(
-            _resolve_arrays_path(target, metadata, ACTIVITY_ARRAYS_FILENAME, "activity"),
+            _resolve_arrays_path(target, metadata, "activity"),
             ACTIVITY_ARRAY_KEYS,
         )
-        _check_array_specs(metadata, arrays, ACTIVITY_UNITS, "activity")
+        _check_array_specs(metadata, arrays, _ACTIVITY_ARRAY_SPECS, "activity")
         source_ids = require_sequence(metadata["source_ids"], "activity.source_ids")
         return cls(
             center_times=arrays["center_times"],
@@ -319,6 +361,8 @@ class FeatureData:
     ``frame_times`` is authoritative and absolute on the original-track axis;
     ``frame_origin_seconds``/``hop_seconds`` are the nominal grid metadata.
     ``valid[t]`` is ``False`` when the frame was computed from zero-padded audio.
+    The feature dimension stays free; only the prediction embedding dimension is
+    fixed at 128.
     """
 
     frame_times: Any
@@ -380,6 +424,7 @@ class FeatureData:
         check_finite(self.features, "feature.features")
 
     def to_npz_dict(self) -> dict[str, np.ndarray]:
+        self.validate()
         return {
             "frame_times": self.frame_times,
             "features": self.features,
@@ -387,6 +432,7 @@ class FeatureData:
         }
 
     def to_metadata(self, arrays_filename: str = FEATURE_ARRAYS_FILENAME) -> dict[str, Any]:
+        self.validate()
         metadata: dict[str, Any] = {
             "schema_version": self.schema_version,
             "kind": KIND_FEATURE,
@@ -460,10 +506,10 @@ class FeatureData:
             "feature",
         )
         arrays = _load_npz(
-            _resolve_arrays_path(target, metadata, FEATURE_ARRAYS_FILENAME, "feature"),
+            _resolve_arrays_path(target, metadata, "feature"),
             FEATURE_ARRAY_KEYS,
         )
-        _check_array_specs(metadata, arrays, FEATURE_UNITS, "feature")
+        _check_array_specs(metadata, arrays, _FEATURE_ARRAY_SPECS, "feature")
         return cls(
             frame_times=arrays["frame_times"],
             features=arrays["features"],
@@ -484,8 +530,9 @@ class FeatureData:
 class PredictionData:
     """``prediction.json`` + ``prediction.npz`` (``kind = prediction``).
 
-    Core shapes: ``embeddings`` is ``E[N, K, embedding_dim]`` and ``activity`` is
-    ``P[N, K]``.  ``P[n, k]`` is the activity probability at the *center* of
+    Core shapes are fixed by protocol 0.1.0: ``embeddings`` is ``E[N, K, 128]``
+    and ``activity`` is ``P[N, K]``.  K is configurable; the embedding dimension
+    is fixed at 128.  ``P[n, k]`` is the activity probability at the *center* of
     window ``n`` (``center_times[n]``), not "active anywhere in the window".
 
     ``slot_valid[n, k]`` marks a usable candidate.  Active candidates hold a
@@ -524,6 +571,11 @@ class PredictionData:
         check_schema_version(self.schema_version)
         require_int(self.slots, "prediction.slots", minimum=1)
         require_int(self.embedding_dim, "prediction.embedding_dim", minimum=1)
+        if self.embedding_dim != DEFAULT_EMBEDDING_DIM:
+            raise ContractError(
+                f"prediction.embedding_dim: protocol 0.1.0 fixes the embedding dimension at "
+                f"{DEFAULT_EMBEDDING_DIM}; got {self.embedding_dim}"
+            )
         if self.hop_seconds is not None:
             require_number(
                 self.hop_seconds, "prediction.hop_seconds", minimum=0.0, strict_minimum=True
@@ -587,6 +639,7 @@ class PredictionData:
                 )
 
     def to_npz_dict(self) -> dict[str, np.ndarray]:
+        self.validate()
         return {
             "center_times": self.center_times,
             "embeddings": self.embeddings,
@@ -596,6 +649,7 @@ class PredictionData:
         }
 
     def to_metadata(self, arrays_filename: str = PREDICTION_ARRAYS_FILENAME) -> dict[str, Any]:
+        self.validate()
         metadata: dict[str, Any] = {
             "schema_version": self.schema_version,
             "kind": KIND_PREDICTION,
@@ -671,10 +725,10 @@ class PredictionData:
         check_schema_header(metadata, KIND_PREDICTION)
         require_keys(metadata, ("slots", "embedding_dim"), "prediction")
         arrays = _load_npz(
-            _resolve_arrays_path(target, metadata, PREDICTION_ARRAYS_FILENAME, "prediction"),
+            _resolve_arrays_path(target, metadata, "prediction"),
             PREDICTION_ARRAY_KEYS,
         )
-        _check_array_specs(metadata, arrays, PREDICTION_UNITS, "prediction")
+        _check_array_specs(metadata, arrays, _PREDICTION_ARRAY_SPECS, "prediction")
         return cls(
             center_times=arrays["center_times"],
             embeddings=arrays["embeddings"],

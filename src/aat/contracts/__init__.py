@@ -21,6 +21,10 @@ from .arrays import (
 )
 from .checks import check_schema_header, check_schema_version
 from .documents import (
+    DATA_KINDS,
+    MANIFEST_STAGES,
+    TRAJECTORY_TIME_TOLERANCE_SECONDS,
+    AudioSpan,
     ControlEvent,
     Controls,
     RunProvenance,
@@ -31,7 +35,7 @@ from .documents import (
     Trajectory,
 )
 from .errors import ContractError, SchemaVersionError
-from .jsonio import dump_json, load_json
+from .jsonio import dump_json, dumps_json, load_json
 from .version import (
     DEFAULT_EMBEDDING_DIM,
     DEFAULT_HOP_SECONDS,
@@ -45,18 +49,22 @@ from .version import (
 __all__ = [
     "ACTIVITY_ARRAYS_FILENAME",
     "ACTIVITY_METADATA_FILENAME",
+    "DATA_KINDS",
     "DEFAULT_EMBEDDING_DIM",
     "DEFAULT_HOP_SECONDS",
     "DEFAULT_SLOTS",
     "DEFAULT_WINDOW_SECONDS",
     "FEATURE_ARRAYS_FILENAME",
     "FEATURE_METADATA_FILENAME",
+    "MANIFEST_STAGES",
     "PREDICTION_ARRAYS_FILENAME",
     "PREDICTION_METADATA_FILENAME",
     "SCHEMA_VERSION",
     "SUPPORTED_SCHEMA_VERSIONS",
+    "TRAJECTORY_TIME_TOLERANCE_SECONDS",
     "UNIT_NORM_TOLERANCE",
     "ActivityData",
+    "AudioSpan",
     "ContractError",
     "ControlEvent",
     "Controls",
@@ -72,5 +80,6 @@ __all__ = [
     "check_schema_header",
     "check_schema_version",
     "dump_json",
+    "dumps_json",
     "load_json",
 ]
