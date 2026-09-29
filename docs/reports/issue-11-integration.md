@@ -50,20 +50,27 @@ checkpoint SHA-256 与 step、编码器 identity/provenance（model id、revisio
 extraction、window、batch 策略）、随机种子、选择的窗口/步长与阈值、设备与资源统计。
 `data_kind=mock` 的 fake 轨迹在 viewer 中会显示“不能当作模型结果”的警告。
 
+**选择与完成状态（review 修正后）**：`synthetic` 先用 `--songs`/`--max-songs` 过滤出精确的评估集合，
+再把该子集交给 `evaluate_split`，因此 canonical 指标与三个基线只覆盖选中的歌；
+`provenance.dataset.selection` 记录 requested/evaluated/canonical 顺序与模式，
+不会用全 split 的排序前缀冒充选择结果。所有模式在归档/解码/模型加载之前校验参数、
+`--out` 包含关系与 `--label` 安全组件；完成后逐条校验产出的轨迹（Node 缺失为 `skipped`），
+viewer 校验失败或 `canonical_metrics_match=false` 时保留诊断产物并返回非零退出码。
+
 ## 2. CPU CI smoke（fake，工程证据）
 
 新增 `tests/integration/test_demo_pipeline.py`（`integration` + `ml` 双标记，模块顶部
 `pytest.importorskip("torch")` 在任何 ML import 之前）。它通过生产 CLI 端到端执行：
 `make_smoke_dataset`（明确标注 `synthetic=True` 的协议语料，非 DawDreamer）→ 3 步训练 → **从磁盘重载 checkpoint**
 → 对保留曲目滑窗推理 → `associate_sequence` → 保存 `prediction.json/npz`、`trajectory.json`、viewer 会话
-→ 用真实 `viewer/js/protocol.js`（Node，若可用）校验轨迹，并检查 Git/lock/config/数据集 digest、编码器 pinned policy、
-artifact 哈希、覆盖保护。
+→ 用真实 `viewer/js/protocol.js`（Node，若可用）校验**每一条**轨迹，并检查 Git/lock/config/数据集 digest、
+编码器 pinned policy、artifact 哈希、覆盖保护。
 
 实测（本机 Windows，Python 3.12.11，torch 2.14.0+cpu）：
 
 ```text
-tests/integration:                        4 passed in 19.78s
-全量（base+ml，render 缺省跳过）:          681 passed, 2 skipped, 4 deselected
+tests/integration:                        11 passed in 47.30s
+全量（base+ml，`-m "not integration"`）:  681 passed, 16 deselected
 base-only 环境（无 torch，模拟 unit job）: 574 passed, 13 skipped, 15 deselected
   tests/integration 单独收集:             1 skipped（importorskip 生效，base/render CI 保持有效）
 viewer Node 测试:                         74 passed
@@ -72,7 +79,10 @@ viewer Node 测试:                         74 passed
 额外覆盖：checkpoint 两次重载的逐位一致预测；`origin_seconds=12.0` 的非零原点仍保持原曲绝对时间；
 2 s 窗口在 4 s 音频两端产生 canonical 补零无效槽位（`center_valid=False`、`E=P=0`、`slot_valid=False`）；
 `predictor_for_centers(..., audio_duration_seconds=...)` 与 `predict_at_times` 掩码一致，而缺少 duration 的
-callback 只保护起点边界（端点边界未知）——与 `docs/TRAINING.md` 的既有说明一致。
+callback 只保护起点边界（端点边界未知）——与 `docs/TRAINING.md` 的既有说明一致。review 修正另加回归：
+`--songs` 精确过滤 canonical/基线（含非首曲、反序与聚合计数/基线归属）、`--config` 类型/相关性负例与 CLI 负例、
+`--out` 包含关系与 `--label` 穿越拒绝（sentinel 文件不变）、第二条轨迹 viewer 失败/指标不一致时保留产物并返回 1、
+音频分支端到端（生成 WAV + fake checkpoint，验证绝对时间、解码时长/哈希与无准确率字段）以及截断解码拒绝。
 
 持久化的本机 smoke 产物（忽略目录）：`runs/demo/smoke-final/`（checkpoint、prediction、trajectory、session、
 manual_inspection.md、viewer 校验 `ok`）。这是 **fake 工程证据**，不是模型结果。
@@ -93,6 +103,9 @@ manual_inspection.md、viewer 校验 `ok`）。这是 **fake 工程证据**，�
   （scope：本进程，从编码器加载前到结束；其他进程不可见）。
 
 ### 3.2 固定顺序、无模型选择
+
+以下指标由同一流水线生成；该次运行选择的就是 test split 的全部两首歌，因此修正后的
+“精确子集评估”与旧的全 split 覆盖在数值上等价（两首都被评估）。
 
 在 `test` split 的 2 首曲目上按 `sample_id` 固定顺序 `test-01, test-02` 全部运行（未挑歌、未调参、未用 clip 选阈值）。
 两首均为未见 composition/preset/sample 家族，与 train/val 共享资产数 0：
@@ -169,6 +182,8 @@ manual_inspection.md、viewer 校验 `ok`）。这是 **fake 工程证据**，�
 
 - 两段都使用 K=8 容量；clip-A 占满 8 条轨迹、clip-B 3 条，说明「槽位数不等于来源数」的语义在真实音频上同样成立。
 - 所有时间保持原曲绝对秒（30.0–38.0 起点不回零），viewer 同时显示本地播放时间与绝对时间。
+- 解码时长校验（review 修正后重跑，同一固定片段）：两段请求 `352800` 样本，实际解码 `352800`，
+  `delta_seconds=0.0`（`tolerance 0.01 s`），`checks.status=ok`、每段 viewer 校验 ok；源文件的 SHA-256 未变。
 - **没有观测到超出 10 分钟预算的问题**；`resources` 明确记录 CPU 不适用 CUDA 峰值（null + 原因），不伪造 0。
 
 ### 4.4 人工检查（pending）
@@ -176,7 +191,7 @@ manual_inspection.md、viewer 校验 `ok`）。这是 **fake 工程证据**，�
 每片段产物目录包含 `manual_inspection.md` 模板与 `session.json`，启动方式：
 
 ```sh
-uv run python -m http.server 8123 --directory viewer
+uv run python -m http.server 8123 --bind 127.0.0.1 --directory viewer
 # 浏览器打开 http://127.0.0.1:8123/ 并依次加载解码后的 wav 与 trajectory.json
 ```
 

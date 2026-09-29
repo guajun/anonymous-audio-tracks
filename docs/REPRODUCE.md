@@ -84,9 +84,14 @@ CUDA_VISIBLE_DEVICES=0 OMP_NUM_THREADS=4 timeout 600 \
 `synthetic` 会先用 `evaluate_split` 走 issue #8 的固定协议（阈值 0.5、整曲全局一对一声明映射、
 `all_inactive` / `all_active` / `no_identity` 三个基线），再对同一批歌单独跑一遍
 `predict_at_times → associate_sequence` 并保存 `prediction/`、`trajectory.json`、`session.json`、
-`manual_inspection.md`；报告里逐曲记录 `canonical_metrics_match`（两条路径的指标是否一致）。
+`manual_inspection.md`；报告里逐曲记录 `canonical_metrics_match`（两条路径的指标是否一致），并把
+`--songs`/`--max-songs` 的选择写入 `provenance.dataset.selection`。**canonical 指标与基线只覆盖选中的歌**：
+索引在评估前被过滤为精确的 `evaluated_songs`，不会用全 split 排序前缀冒充选择结果。
 预期（A6000，两首 9.5 s 曲目）：整体约 3–4 分钟，`timeout 600` 不触发；报告含 GPU 峰值（本进程）与
 encoder revision/attention/window policy。实测数字与失败例见 `docs/reports/issue-11-integration.md` §3。
+
+完成状态：每个模式都会校验**每一条**产出的轨迹（Node 缺失为 `skipped`，不算失败）；任一 viewer 校验失败或
+`canonical_metrics_match=false` 时，仍写入诊断产物但返回非零退出码（1），不会把失败当成功上报。
 
 ## 3. 真实冻结 AuT：本地用户音频（不含真值）
 
@@ -106,7 +111,10 @@ OMP_NUM_THREADS=8 uv run --no-sync python scripts/demo_pipeline.py audio \
   **0.10 s**，报告会写出「比合成 20 ms 粗」的说明。W=2 s 与阈值/关联参数保持不变，禁止用片段调参。
 - `--duration-seconds` 缺省时按 `ffprobe` 时长计算到文件末尾；`--start-seconds + --duration-seconds`
   超过源时长会**直接报错**，不会静默替换片段。`pipeline_report.json` 记录源文件 SHA-256、精确区间、
-  解码命令与 FFmpeg 版本、解码后 SHA-256。
+  解码命令与 FFmpeg 版本、解码后 SHA-256，并核对解码帧数与请求时长（声明容差 0.01 s）：截断/加长的输出
+  会在推理前直接失败，不会把不足 8 s 的解码结果当成完整片段上报。
+- 参数校验（布尔、正数、合法 split、命令相关键）在**任何目录归档、解码或模型加载之前**完成；`--out` 不得
+  等于或位于 checkpoint/index/数据/音频/模型/仓库输入的祖先路径，`--label` 必须是安全的单层目录名。
 - 无真值 → 不输出 precision/recall/F1；`manual_inspection.md` 默认 `human listening status: pending`。
 
 ## 4. 本地试听（viewer）
@@ -114,7 +122,7 @@ OMP_NUM_THREADS=8 uv run --no-sync python scripts/demo_pipeline.py audio \
 只开本地静态服务，页面无远程请求、无上传、无遥测：
 
 ```sh
-uv run python -m http.server 8123 --directory viewer
+uv run python -m http.server 8123 --bind 127.0.0.1 --directory viewer
 # 浏览器打开 http://127.0.0.1:8123/
 ```
 
@@ -132,6 +140,7 @@ uv run python -m http.server 8123 --directory viewer
 - checkpoint SHA-256 与 step，编码器 identity/provenance（model id、revision、dtype、attention backend、extraction、window、batch 策略）；
 - pinned policy（W=2.0 s、fp32、block_diagonal/sdpa、independent windows）；
 - 种子、中心步长、活动阈值、设备与资源统计（CPU 明确 `null` + 原因）；
+- `viewer_validation`（总体 `status` + 每首歌 `per_song`）与 `checks`（完成检查的失败清单）；
 - `artifacts.json`：其余产物逐文件 sha256。
 
 `trajectory.json` 与 `prediction.json/npz` 均遵循 `docs/SCHEMAS.md` v0.1.0；所有时间为原曲绝对秒，

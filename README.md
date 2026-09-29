@@ -37,8 +37,8 @@ uv run --no-sync python scripts/demo_pipeline.py synthetic \
     --checkpoint runs/train/aut-short/checkpoint.pt --index runs/train-index/index.json \
     --data-root runs/train-data --split test --model-dir /path/to/encoder-checkpoint --out runs/demo/aut-test
 
-# 本地试听页（不上传音频）
-uv run python -m http.server 8123 --directory viewer
+# 本地试听页（不上传音频；只监听 127.0.0.1）
+uv run python -m http.server 8123 --bind 127.0.0.1 --directory viewer
 ```
 
 完整复现步骤、运行预算与隐私边界见 [docs/REPRODUCE.md](docs/REPRODUCE.md)。

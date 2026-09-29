@@ -35,8 +35,10 @@ Common guarantees:
   attention/dtype/extraction settings are used for inference;
 * every report records Git SHA, ``uv.lock`` digest, config/dataset digests, the
   random seeds, the encoder revision and the attention/window policy;
-* output directories are archived (never deleted) unless ``--overwrite`` is
-  passed explicitly.
+* an existing non-empty output directory is refused by default; ``--overwrite`` archives it
+  (never deletes) as ``*.bak-<timestamp>`` and only after output-containment checks pass;
+* a completed run returns non-zero when a viewer check or a canonical-metric cross-check fails,
+  while keeping the diagnostic artifacts on disk; Node missing is an explicit ``skipped``, not a failure.
 
 All inputs are CLI flags; ``--config`` can supply the same values as a flat
 TOML file (long option names as keys) so a run does not require hand-editing
@@ -58,6 +60,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 import re
 import shutil
@@ -65,6 +68,7 @@ import subprocess
 import sys
 import time
 import tomllib
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping, Sequence
@@ -142,7 +146,6 @@ def _write_json(path: Path, payload: Any) -> Path:
 def _archive_if_needed(target: Path, *, overwrite: bool, kind: str) -> None:
     """Move an existing non-empty directory aside; never delete anything."""
 
-
     if not target.exists():
         return
     if not any(target.iterdir()):
@@ -156,6 +159,182 @@ def _archive_if_needed(target: Path, *, overwrite: bool, kind: str) -> None:
     backup = target.with_name(f"{target.name}.bak-{stamp}")
     os.replace(target, backup)
     print(f"archived existing {kind} as {backup}", file=sys.stderr)
+
+
+#: Tolerated difference between the requested segment length and the decoder output.
+DECODE_DURATION_TOLERANCE_SECONDS = 0.01
+
+#: Windows device names that cannot be used as a file/directory component.
+_WINDOWS_RESERVED_NAMES = {
+    "CON",
+    "PRN",
+    "AUX",
+    "NUL",
+    *(f"COM{index}" for index in range(1, 10)),
+    *(f"LPT{index}" for index in range(1, 10)),
+}
+
+
+def validate_label(label: str) -> str:
+    """Return a safe single path component or raise ``TrainingError``.
+
+    Rejects separators, drive/UNC prefixes, ``.``/``..``, Windows reserved
+    device names (also with an extension), trailing dots/spaces and control
+    characters, so ``out / label`` can never escape the chosen output root.
+    """
+
+    if not isinstance(label, str) or not label:
+        raise TrainingError(f"--label: expected a non-empty string, got {label!r}")
+    if label in (".", ".."):
+        raise TrainingError(f"--label: {label!r} is a dot path component")
+    if label != label.rstrip(" ."):
+        raise TrainingError(f"--label: {label!r} must not end with a dot or space")
+    if any(character in label for character in "/\\:") or Path(label).is_absolute():
+        raise TrainingError(
+            f"--label: {label!r} must be a single path component (no separators or drive/UNC prefix)"
+        )
+    if re.match(r"^[A-Za-z]:", label) or label.startswith("\\\\"):
+        raise TrainingError(f"--label: {label!r} must not be a drive or UNC path")
+    if any(ord(character) < 32 for character in label):
+        raise TrainingError(f"--label: {label!r} must not contain control characters")
+    if label.split(".")[0].upper() in _WINDOWS_RESERVED_NAMES:
+        raise TrainingError(f"--label: {label!r} uses a reserved Windows device name")
+    return label
+
+
+def _check_output_containment(
+    out: Path,
+    inputs: Sequence[tuple[str, str | Path | None]],
+    *,
+    command: str,
+) -> None:
+    """Refuse an output root that is (or is an ancestor of) a referenced input."""
+
+    out_resolved = Path(out).expanduser().resolve()
+    for name, value in inputs:
+        if value is None:
+            continue
+        resolved = Path(value).expanduser().resolve()
+        if out_resolved == resolved or out_resolved in resolved.parents:
+            raise TrainingError(
+                f"{command}: --out {out} must not be equal to or an ancestor of the {name} "
+                f"{value!r}; refusing before archiving or decoding"
+            )
+
+
+def _require_bool(value: Any, name: str, *, command: str) -> None:
+    if not isinstance(value, bool):
+        raise TrainingError(f"{command}: --{name} must be a boolean, got {value!r}")
+
+
+def _require_positive_int(
+    value: Any, name: str, *, command: str, minimum: int = 1
+) -> None:
+    if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
+        raise TrainingError(
+            f"{command}: --{name} must be an integer >= {minimum}, got {value!r}"
+        )
+
+
+def _require_finite(
+    value: Any,
+    name: str,
+    *,
+    command: str,
+    minimum: float | None = None,
+    exclusive_minimum: bool = False,
+) -> None:
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(float(value))
+    ):
+        raise TrainingError(f"{command}: --{name} must be a finite number, got {value!r}")
+    number = float(value)
+    if minimum is not None:
+        too_small = number <= minimum if exclusive_minimum else number < minimum
+        if too_small:
+            comparator = ">" if exclusive_minimum else ">="
+            raise TrainingError(
+                f"{command}: --{name} must be {comparator} {minimum:g}, got {value!r}"
+            )
+
+
+def _require_string(value: Any, name: str, *, command: str) -> None:
+    if not isinstance(value, str) or not value.strip():
+        raise TrainingError(f"{command}: --{name} must be a non-empty string, got {value!r}")
+
+
+def _require_optional_string(value: Any, name: str, *, command: str) -> None:
+    if value is None:
+        return
+    _require_string(value, name, command=command)
+
+
+def _validate_smoke_args(args: argparse.Namespace) -> None:
+    command = "smoke"
+    _require_string(args.out, "out", command=command)
+    _require_bool(args.overwrite, "overwrite", command=command)
+    _require_positive_int(args.steps, "steps", command=command)
+    _require_positive_int(args.seed, "seed", command=command, minimum=0)
+    _require_optional_string(args.dataset_root, "dataset-root", command=command)
+
+
+def _validate_synthetic_args(args: argparse.Namespace) -> None:
+    command = "synthetic"
+    for name in ("checkpoint", "index", "out"):
+        _require_string(getattr(args, name), name.replace("_", "-"), command=command)
+    _require_bool(args.overwrite, "overwrite", command=command)
+    if args.split not in ("train", "val", "test"):
+        raise TrainingError(
+            f"synthetic: --split must be one of train/val/test, got {args.split!r}"
+        )
+    _require_optional_string(args.songs, "songs", command=command)
+    if args.max_songs is not None:
+        _require_positive_int(args.max_songs, "max-songs", command=command)
+    for name in ("data_root", "model_dir", "device"):
+        _require_optional_string(getattr(args, name), name.replace("_", "-"), command=command)
+
+
+def _validate_audio_args(args: argparse.Namespace) -> None:
+    command = "audio"
+    for name in ("audio", "checkpoint", "out"):
+        _require_string(getattr(args, name), name.replace("_", "-"), command=command)
+    _require_bool(args.overwrite, "overwrite", command=command)
+    _require_finite(args.start_seconds, "start-seconds", command=command, minimum=0.0)
+    if args.duration_seconds is not None:
+        _require_finite(
+            args.duration_seconds,
+            "duration-seconds",
+            command=command,
+            minimum=0.0,
+            exclusive_minimum=True,
+        )
+    _require_finite(
+        args.hop_seconds, "hop-seconds", command=command, minimum=0.0, exclusive_minimum=True
+    )
+    _require_positive_int(args.sample_rate, "sample-rate", command=command)
+    _require_optional_string(args.label, "label", command=command)
+    for name in ("model_dir", "device"):
+        _require_optional_string(getattr(args, name), name.replace("_", "-"), command=command)
+
+
+def _decoded_duration_check(
+    duration_seconds: float, decoded_samples: int, sample_rate: int
+) -> dict[str, Any]:
+    """Compare the decoded frame count with the requested segment length."""
+
+    expected_samples = int(math.floor(duration_seconds * sample_rate + 0.5))
+    delta_seconds = (decoded_samples - expected_samples) / sample_rate
+    return {
+        "requested_seconds": float(duration_seconds),
+        "requested_samples": expected_samples,
+        "decoded_seconds": decoded_samples / sample_rate,
+        "decoded_samples": int(decoded_samples),
+        "delta_seconds": delta_seconds,
+        "tolerance_seconds": DECODE_DURATION_TOLERANCE_SECONDS,
+        "ok": abs(delta_seconds) <= DECODE_DURATION_TOLERANCE_SECONDS,
+    }
 
 
 def _artifact_index(root: Path) -> dict[str, str]:
@@ -335,7 +514,7 @@ def _manual_inspection(
         "The viewer is local-only; it never uploads audio and makes no network requests.",
         "",
         "```sh",
-        "uv run python -m http.server 8123 --directory viewer",
+        "uv run python -m http.server 8123 --bind 127.0.0.1 --directory viewer",
         "# open http://127.0.0.1:8123/ in a browser",
         "```",
         "",
@@ -590,6 +769,46 @@ def validate_with_viewer(trajectory_path: Path, *, repo_root: Path) -> dict[str,
     return {"status": "ok", "viewer": payload, "protocol": str(protocol_path)}
 
 
+def _validate_trajectories(
+    trajectories: Mapping[str, Path], *, repo_root: Path
+) -> dict[str, Any]:
+    """Validate every produced trajectory; a Node-less environment is ``skipped``."""
+
+    per_song = {
+        sample_id: validate_with_viewer(path, repo_root=repo_root)
+        for sample_id, path in trajectories.items()
+    }
+    statuses = {entry.get("status") for entry in per_song.values()}
+    if "failed" in statuses:
+        overall = "failed"
+    elif "ok" in statuses:
+        overall = "ok"
+    else:
+        overall = "skipped"
+    return {"status": overall, "per_song": per_song}
+
+
+def _evaluate_checks(report: Mapping[str, Any]) -> dict[str, Any]:
+    """Completion checks: viewer validation and canonical/artifact metric agreement."""
+
+    failures: list[str] = []
+    viewer = report.get("viewer_validation") or {}
+    if viewer.get("status") == "failed":
+        failed = sorted(
+            sample_id
+            for sample_id, entry in (viewer.get("per_song") or {}).items()
+            if entry.get("status") == "failed"
+        )
+        failures.append(f"viewer validation failed for {failed or ['<unknown>']}")
+    for song in report.get("songs") or []:
+        if song.get("canonical_metrics_match") is False:
+            failures.append(
+                f"{song.get('sample_id', '?')}: canonical_metrics_match=false "
+                f"(max_abs_delta={song.get('canonical_metrics_max_abs_delta')})"
+            )
+    return {"status": "ok" if not failures else "failed", "failures": failures}
+
+
 # --------------------------------------------------------------------------- #
 # smoke mode (CPU fake encoder, tiny)
 # --------------------------------------------------------------------------- #
@@ -599,6 +818,15 @@ def cmd_smoke(args: argparse.Namespace) -> int:
     from aat.training.trainer import train_from_config
 
     out = Path(args.out).resolve()
+    _check_output_containment(
+        out,
+        [
+            ("dataset root", args.dataset_root),
+            ("config", getattr(args, "config", None)),
+            ("repository root", _REPO_ROOT),
+        ],
+        command="smoke",
+    )
     _archive_if_needed(out, overwrite=args.overwrite, kind="demo output")
     out.mkdir(parents=True, exist_ok=True)
 
@@ -643,7 +871,9 @@ def cmd_smoke(args: argparse.Namespace) -> int:
         git=git_provenance(_REPO_ROOT),
     )
 
-    viewer = validate_with_viewer(Path(song["trajectory"]), repo_root=_REPO_ROOT)
+    viewer = _validate_trajectories(
+        {song["sample_id"]: Path(song["trajectory"])}, repo_root=_REPO_ROOT
+    )
     report = {
         "schema": SCHEMA_REPORT,
         "mode": MODE_SMOKE,
@@ -686,13 +916,22 @@ def cmd_smoke(args: argparse.Namespace) -> int:
             "single synthetic held-out song; metrics here are not a model result",
         ],
     }
+    report["checks"] = _evaluate_checks(report)
     _finalize_report(out, report)
-    print(dumps_json({"status": "ok", "mode": MODE_SMOKE, "out": str(out), **{
+    print(dumps_json({"status": report["checks"]["status"], "mode": MODE_SMOKE, "out": str(out), **{
         "checkpoint": report["provenance"]["checkpoint"]["path"],
         "trajectory": song["trajectory"],
         "session": song["session"],
         "viewer_validation": viewer.get("status"),
+        "checks_failed": report["checks"]["failures"],
     }}))
+    if report["checks"]["status"] != "ok":
+        print(
+            "error: smoke completed with failed checks; diagnostic artifacts preserved: "
+            + "; ".join(report["checks"]["failures"]),
+            file=sys.stderr,
+        )
+        return 1
     return 0
 
 
@@ -776,6 +1015,18 @@ def _song_failure_notes(canonical: Mapping[str, Any]) -> list[str]:
 
 def cmd_synthetic(args: argparse.Namespace) -> int:
     out = Path(args.out).resolve()
+    _check_output_containment(
+        out,
+        [
+            ("checkpoint", args.checkpoint),
+            ("dataset index", args.index),
+            ("data root", args.data_root),
+            ("model directory", args.model_dir),
+            ("config", getattr(args, "config", None)),
+            ("repository root", _REPO_ROOT),
+        ],
+        command="synthetic",
+    )
     _archive_if_needed(out, overwrite=args.overwrite, kind="demo output")
     out.mkdir(parents=True, exist_ok=True)
     resources = _start_resources(args.device or "cuda:0")
@@ -783,14 +1034,12 @@ def cmd_synthetic(args: argparse.Namespace) -> int:
     index_path = Path(args.index).resolve()
     index = load_verified_index(index_path, data_root=args.data_root)
     data_root = index.resolve_data_root(index_path=index_path, data_root=args.data_root)
-    inference = load_head_from_checkpoint(
-        args.checkpoint, model_dir=args.model_dir, device=args.device
-    )
-    config = inference.config
-    resources["device"] = config.run.device
-    git = git_provenance(_REPO_ROOT)
+    # Dataset identity always describes the full verified index, never a
+    # per-run subset; the evaluated selection is recorded separately below.
+    dataset_digest = dataset_fingerprint(index)["digest"]
 
     entries = sorted(index.samples_for_split(args.split), key=lambda item: item.sample_id)
+    requested: list[str] | None = None
     if args.songs:
         requested = [value.strip() for value in args.songs.split(",") if value.strip()]
         by_id = {entry.sample_id: entry for entry in entries}
@@ -808,15 +1057,44 @@ def cmd_synthetic(args: argparse.Namespace) -> int:
         entries = entries[: int(args.max_songs)]
     if not entries:
         raise TrainingError(f"synthetic evaluation: split {args.split!r} has no songs")
+    selection = {
+        "split": args.split,
+        "requested_songs": requested,
+        "max_songs": args.max_songs,
+        "mode": (
+            "explicit-song-list"
+            if requested
+            else ("split-prefix" if args.max_songs is not None else "full-split")
+        ),
+        "evaluated_songs": [entry.sample_id for entry in entries],
+    }
 
-    run_id = f"demo-aut-{args.split}-{config.run.seed}"
+    inference = load_head_from_checkpoint(
+        args.checkpoint, model_dir=args.model_dir, device=args.device
+    )
+    config = inference.config
+    resources["device"] = config.run.device
+    git = git_provenance(_REPO_ROOT)
+
+    run_id = (
+        f"demo-{'aut' if config.encoder.mode == 'aut' else 'fake'}"
+        f"-{args.split}-{config.run.seed}"
+    )
+    encoder_label = (
+        "REAL FROZEN AuT"
+        if config.encoder.mode == "aut"
+        else "FAKE ENCODER (engineering smoke, not a model result)"
+    )
     print(
-        f"REAL FROZEN AuT: checkpoint step {inference.step} on {len(entries)} held-out "
-        f"{args.split} song(s): {[entry.sample_id for entry in entries]}",
+        f"{encoder_label}: checkpoint step {inference.step} on {len(entries)} held-out "
+        f"{args.split} song(s): {selection['evaluated_songs']}",
         file=sys.stderr,
     )
+    # Evaluate exactly the selected songs: filter the index instead of asking
+    # evaluate_split to re-derive a sorted prefix from the full split.
+    evaluation_index = replace(index, samples=tuple(entries))
     canonical = evaluate_split(
-        index=index,
+        index=evaluation_index,
         data_root=data_root,
         split=args.split,
         inference=inference,
@@ -824,6 +1102,13 @@ def cmd_synthetic(args: argparse.Namespace) -> int:
         max_songs=len(entries),
         git_commit=git.get("sha") if isinstance(git.get("sha"), str) else None,
     )
+    canonical_ids = sorted(row["sample_id"] for row in canonical["songs"])
+    if canonical_ids != sorted(selection["evaluated_songs"]):
+        raise TrainingError(
+            "synthetic: canonical evaluation covered "
+            f"{canonical_ids} but the selection was {selection['evaluated_songs']}"
+        )
+    selection["canonical_songs"] = canonical_ids
 
     artifact_songs: list[dict[str, Any]] = []
     for entry in entries:
@@ -851,8 +1136,9 @@ def cmd_synthetic(args: argparse.Namespace) -> int:
         song["canonical_metrics_match"] = delta is not None and delta <= 1e-6
         artifact_songs.append(song)
 
-    viewer = validate_with_viewer(
-        Path(artifact_songs[0]["trajectory"]), repo_root=_REPO_ROOT
+    viewer = _validate_trajectories(
+        {song["sample_id"]: Path(song["trajectory"]) for song in artifact_songs},
+        repo_root=_REPO_ROOT,
     )
     report = {
         "schema": SCHEMA_REPORT,
@@ -871,10 +1157,11 @@ def cmd_synthetic(args: argparse.Namespace) -> int:
             "dataset": {
                 "index_path": str(index_path),
                 "index_sha256": index_file_sha256(index_path),
-                "fingerprint_digest": dataset_fingerprint(index)["digest"],
+                "fingerprint_digest": dataset_digest,
                 "plan": dict(index.plan),
                 "split_counts": dict(index.summary["split_counts"]),
                 "leak_free": bool(index.summary["leak_free"]),
+                "selection": selection,
             },
             "checkpoint": {
                 "path": str(Path(args.checkpoint).resolve()),
@@ -900,22 +1187,32 @@ def cmd_synthetic(args: argparse.Namespace) -> int:
             f"canonical evaluate_split protocol threshold={config.eval.threshold} fixed; no tuning on this split",
         ],
     }
+    report["checks"] = _evaluate_checks(report)
     _finalize_report(out, report)
     print(
         dumps_json(
             {
-                "status": "ok",
+                "status": report["checks"]["status"],
                 "mode": report["mode"],
                 "out": str(out),
                 "gpu": config.run.device,
+                "selection": selection,
                 "songs": [song["sample_id"] for song in artifact_songs],
                 "micro": canonical["micro"],
                 "baselines_micro": canonical["baselines_micro"],
                 "canonical_match": [song["canonical_metrics_match"] for song in artifact_songs],
                 "viewer_validation": viewer.get("status"),
+                "checks_failed": report["checks"]["failures"],
             }
         )
     )
+    if report["checks"]["status"] != "ok":
+        print(
+            "error: synthetic run completed with failed checks; diagnostic artifacts preserved: "
+            + "; ".join(report["checks"]["failures"]),
+            file=sys.stderr,
+        )
+        return 1
     return 0
 
 
@@ -1030,14 +1327,28 @@ def _decode_segment(
 
 def cmd_audio(args: argparse.Namespace) -> int:
     out = Path(args.out).resolve()
+    source = Path(args.audio).expanduser().resolve()
+    _check_output_containment(
+        out,
+        [
+            ("audio source", source),
+            ("checkpoint", args.checkpoint),
+            ("model directory", args.model_dir),
+            ("config", getattr(args, "config", None)),
+            ("repository root", _REPO_ROOT),
+        ],
+        command="audio",
+    )
+    label = validate_label(
+        args.label or re.sub(r"[^0-9A-Za-z._-]+", "-", source.stem) or "clip"
+    )
+    clip_dir = (out / label).resolve()
+    if clip_dir.parent != out or clip_dir.name != label:
+        raise TrainingError(f"audio: resolved clip directory {clip_dir} escapes --out {out}")
     _archive_if_needed(out, overwrite=args.overwrite, kind="demo output")
     out.mkdir(parents=True, exist_ok=True)
-    resources = _start_resources(args.device or "cuda:0")
-
-    source = Path(args.audio).resolve()
-    label = args.label or re.sub(r"[^0-9A-Za-z._-]+", "-", source.stem) or "clip"
-    clip_dir = out / label
     clip_dir.mkdir(parents=True, exist_ok=True)
+    resources = _start_resources(args.device or "cuda:0")
 
     inference = load_head_from_checkpoint(
         args.checkpoint, model_dir=args.model_dir, device=args.device
@@ -1065,6 +1376,16 @@ def cmd_audio(args: argparse.Namespace) -> int:
         sample_rate=int(args.sample_rate),
     )
     wav = read_wav(decoded)
+    duration_check = _decoded_duration_check(duration, wav.frames, wav.sample_rate)
+    if not duration_check["ok"]:
+        raise TrainingError(
+            f"audio: decoded segment has {duration_check['decoded_samples']} samples "
+            f"({duration_check['decoded_seconds']:.6f}s) but requested "
+            f"{duration_check['requested_samples']} samples ({duration:.6f}s); "
+            f"delta {duration_check['delta_seconds']:+.6f}s exceeds tolerance "
+            f"{DECODE_DURATION_TOLERANCE_SECONDS:g}s; refusing to claim the full duration"
+        )
+    decode["duration_check"] = duration_check
     mono = wav.samples.mean(axis=1) if wav.channels > 1 else wav.samples[:, 0]
     centers = [float(value) for value in center_times(
         wav.frames / wav.sample_rate,
@@ -1138,6 +1459,7 @@ def cmd_audio(args: argparse.Namespace) -> int:
             "track_start_seconds": float(args.start_seconds),
             "sha256": decode["decoded_sha256"],
             "sample_rate": wav.sample_rate,
+            "duration_check": decode["duration_check"],
         },
         "trajectory": str(trajectory_path.resolve()),
         "prediction_dir": str(prediction_dir.resolve()),
@@ -1179,7 +1501,7 @@ def cmd_audio(args: argparse.Namespace) -> int:
         ),
     )
 
-    viewer = validate_with_viewer(trajectory_path, repo_root=_REPO_ROOT)
+    viewer = _validate_trajectories({label: trajectory_path}, repo_root=_REPO_ROOT)
     report = {
         "schema": SCHEMA_REPORT,
         "mode": MODE_AUDIO if config.encoder.mode == "aut" else MODE_AUDIO_FAKE,
@@ -1233,22 +1555,32 @@ def cmd_audio(args: argparse.Namespace) -> int:
             "fixed checkpoint thresholds/config; nothing is tuned on this clip",
         ],
     }
+    report["checks"] = _evaluate_checks(report)
     _finalize_report(out, report)
     print(
         dumps_json(
             {
-                "status": "ok",
+                "status": report["checks"]["status"],
                 "mode": report["mode"],
                 "out": str(out),
                 "label": label,
                 "segment": decode["segment"],
+                "duration_check": decode["duration_check"],
                 "tracks": len(trajectory.tracks),
                 "centers_valid": int(sum(1 for value in predictions.center_valid if value)),
                 "human_listening": "pending",
                 "viewer_validation": viewer.get("status"),
+                "checks_failed": report["checks"]["failures"],
             }
         )
     )
+    if report["checks"]["status"] != "ok":
+        print(
+            "error: audio run completed with failed checks; diagnostic artifacts preserved: "
+            + "; ".join(report["checks"]["failures"]),
+            file=sys.stderr,
+        )
+        return 1
     return 0
 
 
@@ -1358,8 +1690,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     known_args, _ = preparser.parse_known_args(argv)
     try:
         payload = _load_config_payload(known_args.config)
+        dests = {name: _subparser_dests(sub) for name, sub in subcommands.items()}
         if payload:
-            dests = {name: _subparser_dests(sub) for name, sub in subcommands.items()}
             union = set().union(*dests.values())
             unknown = sorted(set(payload) - union)
             if unknown:
@@ -1372,16 +1704,20 @@ def main(argv: Sequence[str] | None = None) -> int:
                 if applicable:
                     sub.set_defaults(**applicable)
         args = parser.parse_args(argv)
-        if getattr(args, "command", None) == "smoke" and not args.out:
-            raise TrainingError("smoke: --out is required (or set 'out' in --config)")
-        if getattr(args, "command", None) == "synthetic":
-            for name in ("checkpoint", "index", "out"):
-                if not getattr(args, name):
-                    raise TrainingError(f"synthetic: --{name.replace('_', '-')} is required")
-        if getattr(args, "command", None) == "audio":
-            for name in ("audio", "checkpoint", "out"):
-                if not getattr(args, name):
-                    raise TrainingError(f"audio: --{name.replace('_', '-')} is required")
+        if payload:
+            irrelevant = sorted(set(payload) - dests[args.command])
+            if irrelevant:
+                raise TrainingError(
+                    f"--config {known_args.config}: key(s) {irrelevant} do not apply to "
+                    f"command {args.command!r}; this command accepts "
+                    f"{sorted(dests[args.command])}"
+                )
+        validators = {
+            "smoke": _validate_smoke_args,
+            "synthetic": _validate_synthetic_args,
+            "audio": _validate_audio_args,
+        }
+        validators[args.command](args)
         return int(args.func(args))
     except TrainingError as error:
         print(f"error: {error}", file=sys.stderr)
