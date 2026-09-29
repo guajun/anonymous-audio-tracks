@@ -337,6 +337,9 @@ max|·|≈0.177。批次间 timing 有波动（GPU 为共享机器；同为 run6
   - `pytest -m "not integration and not ml"`：583 passed / 2 skipped（本机 Windows 无
     dawdreamer；CI Linux render job 会实跑）；
   - `pytest -m ml`：54 passed / 2 skipped（含 AuT encoder 20 项）。
+- CI 三 job（unit/render/ml）在本轮修复提交上全部通过；ml job 日志显示
+  `torch 2.14.0+cpu / cuda None` 与 `54 passed, 2 skipped, 583 deselected`，即 tiny
+  checkpoint 的真实类测试在 CI 中实际执行，且没有任何权重下载。
 - fake 测试覆盖：0.5/1.0/2.0/2.5/3.13 s、非整 chunk、左右补零 mask、非零 origin、
   等采样率端点半开区间、非连续 valid 拒绝、批量与单条数值一致、对齐窗口内部 token
   逐位一致、非对齐窗口差异 >0、FeatureData 落盘往返、以及子进程验证
