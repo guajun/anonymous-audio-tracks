@@ -23,15 +23,21 @@ jobs:
       matrix:
         include:
           # Base install: contract/window/unit suites; DawDreamer integration
-          # tests self-skip because the optional render extra is not installed.
+          # tests self-skip because the optional render extra is not installed,
+          # and ML head/loss tests are deselected (torch is not installed).
           - name: unit
             sync-args: ""
-            pytest-args: -m "not integration"
+            pytest-args: -m "not integration and not ml"
           # Render extra: real DawDreamer smoke renders (mix/stem additivity,
           # latency, tail decay, reproducibility) from the same lock file.
           - name: render
             sync-args: --extra render
-            pytest-args: ""
+            pytest-args: -m "not ml"
+          # ML extra: CPU-only torch from the explicit pytorch-cpu wheel index;
+          # real head/loss/matching tests including a CPU overfit experiment.
+          - name: ml
+            sync-args: --extra ml
+            pytest-args: -m ml
     steps:
       - uses: actions/checkout@v4
       - name: Install uv
@@ -41,5 +47,13 @@ jobs:
           enable-cache: true
       - name: Sync locked environment (no models, no data, no secrets)
         run: uv sync --locked ${{ matrix.sync-args }}
+      - name: Verify CPU-only PyTorch (ml job)
+        if: matrix.name == 'ml'
+        run: |
+          uv run --no-sync python - <<'PY'
+          import torch
+          assert torch.version.cuda is None, f"expected CPU torch, got CUDA {torch.version.cuda}"
+          print("torch", torch.__version__, "cuda", torch.version.cuda)
+          PY
       - name: Run tests
         run: uv run --no-sync pytest -q -p no:cacheprovider ${{ matrix.pytest-args }}
