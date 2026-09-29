@@ -1,0 +1,169 @@
+"""Base-environment issue #24 diagnostics: context, sampler, tracker, plan.
+
+These tests never import ``aat.losses``/torch, so they run in the base and
+render CI jobs.  They assert the measured structural facts, not model quality.
+"""
+
+from __future__ import annotations
+
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+import pytest
+
+from aat.diagnostics import (
+    context_boundary_report,
+    context_overlap_report,
+    load_phase_b_plan,
+    sampling_coverage_report,
+    tracker_postprocess_report,
+)
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+PLAN_PATH = REPO_ROOT / "configs" / "research" / "issue24_phase_b_plan.toml"
+SCRIPT_PATH = REPO_ROOT / "scripts" / "diagnose_issue24.py"
+
+
+def test_context_boundary_first_second_events_are_context_only():
+    report = context_boundary_report()
+    assert report["status"] == "ok"
+    assert report["centers_total"] == 81
+    assert report["centers_valid"] == 61
+    assert report["centers_invalid"] == 20
+    assert report["first_valid_center_seconds"] == pytest.approx(1.0)
+    assert report["last_valid_center_seconds"] == pytest.approx(7.0)
+    # The two short drums of the issue #11 listening clip sit in the first
+    # second: they appear in the context of valid windows but no valid center
+    # can carry them as a center label.
+    for event in report["events"]:
+        assert event["valid_centers_at_onset"] == 0
+        assert event["valid_centers_with_onset_in_window"] > 0
+        assert event["visible_as_context_only"] is True
+
+
+def test_context_overlap_is_ninety_five_percent_at_default_sampling():
+    report = context_overlap_report()
+    assert report["center_spacing_seconds"] == pytest.approx(0.1)
+    assert report["context_overlap_seconds"] == pytest.approx(1.9)
+    assert report["context_overlap_fraction"] == pytest.approx(0.95)
+
+
+def test_tracker_postprocess_separates_slots_from_tracks():
+    report = tracker_postprocess_report()
+    scenarios = {item["scenario"]: item for item in report["scenarios"]}
+
+    permutation = scenarios["slot-permutation"]
+    assert permutation["track_count"] == 2
+    assert permutation["raw_slot_identity_changes"] == 1
+    assert permutation["single_stable_track_ids"] is True
+
+    retention = scenarios["silence-retention"]
+    # A silent but still-matchable candidate keeps the track alive; retention
+    # only expires tracks when no candidate passes the gate.
+    assert retention["short_gap_with_embedding"]["track_count"] == 1
+    assert retention["long_gap_with_embedding"]["track_count"] == 1
+    assert retention["short_gap_without_candidate"]["track_count"] == 1
+    assert retention["long_gap_without_candidate"]["track_count"] == 2
+
+    gate = scenarios["gate-sensitivity"]
+    assert gate["track_count_at_gate_0_7"] == 2
+    assert gate["track_count_at_gate_0_6"] == 1
+    assert gate["forced_link_at_loose_gate"] is True
+
+
+def test_sampling_coverage_is_deterministic_and_bounded(smoke_corpus):
+    from aat.data import DatasetIndex
+
+    index = DatasetIndex.load(
+        smoke_corpus["index_path"], data_root=smoke_corpus["data_root"], verify_files=True
+    )
+    first = sampling_coverage_report(index, smoke_corpus["data_root"], steps=4)
+    second = sampling_coverage_report(index, smoke_corpus["data_root"], steps=4)
+    assert json.dumps(first, sort_keys=True) == json.dumps(second, sort_keys=True)
+    assert first["status"] == "ok"
+    assert first["songs"]
+    for song in first["songs"]:
+        assert 0.0 <= song["valid_row_coverage"] <= 1.0
+        for coverage in song["active_row_coverage_per_source"]:
+            assert coverage is None or 0.0 <= coverage <= 1.0
+
+
+def test_committed_phase_b_plan_is_valid_and_not_executable():
+    result = load_phase_b_plan(PLAN_PATH)
+    assert result["valid"] is True, result["errors"]
+    assert result["plan"]["stage"] == "design-only"
+    assert result["plan"]["authorization"] == "pending-main-session-approval"
+    assert result["plan"]["not_executable"] is True
+    assert len(result["experiments"]) >= 10
+    ids = [experiment["id"] for experiment in result["experiments"]]
+    assert len(ids) == len(set(ids))
+    assert "b0-overfit-gate" in ids
+    assert "b8-endpoint-splice-postproc" in ids
+
+
+def test_plan_validation_rejects_unsafe_mutations(tmp_path):
+    original = PLAN_PATH.read_text(encoding="utf-8")
+
+    def write(name: str, content: str) -> Path:
+        path = tmp_path / name
+        path.write_text(content, encoding="utf-8")
+        return path
+
+    assert not load_phase_b_plan(write("bad-auth.toml", original.replace(
+        'authorization = "pending-main-session-approval"',
+        'authorization = "approved"',
+    )))["valid"]
+    assert not load_phase_b_plan(write("bad-runnable.toml", original.replace(
+        'not_executable = true',
+        'not_executable = false',
+    )))["valid"]
+    assert not load_phase_b_plan(write("bad-fake.toml", original.replace(
+        "fake_use = ",
+        "# fake_use = ",
+    )))["valid"]
+    duplicated = original.replace(
+        'id = "b1-baseline-current"',
+        'id = "b0-overfit-gate"',
+    )
+    assert not load_phase_b_plan(write("bad-duplicate.toml", duplicated))["valid"]
+    missing_stop = original.replace(
+        'stop_condition = "If the re-run differs materially from the recorded #8 baseline, diagnose the difference first; do not compare later candidates against an unreproduced baseline"',
+        'stop_condition = ""',
+    )
+    assert not load_phase_b_plan(write("bad-stop.toml", missing_stop))["valid"]
+
+
+def test_diagnose_cli_validates_plan_and_skips_sections_without_torch():
+    validate = subprocess.run(
+        [sys.executable, str(SCRIPT_PATH), "validate-plan", "--plan", str(PLAN_PATH)],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=REPO_ROOT,
+    )
+    assert validate.returncode == 0, validate.stderr
+    assert "not executable" in validate.stdout
+
+    report = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT_PATH),
+            "report",
+            "--skip-torch",
+            "--skip-matching",
+            "--skip-corpus",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=REPO_ROOT,
+    )
+    assert report.returncode == 0, report.stderr
+    payload = json.loads(report.stdout)
+    assert payload["diagnostic_version"] == "issue24-stage-a-v1"
+    assert payload["sections"]["context_boundaries"]["status"] == "ok"
+    assert payload["sections"]["matching_ambiguity"]["status"] == "skipped"
+    assert payload["sections"]["sampling_coverage"]["status"] == "skipped"
+    assert "not model evidence" in payload["data_kind"] or "not model evidence" in payload["sections"]["tracker_postprocess"]["evidence_kind"]

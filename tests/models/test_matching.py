@@ -16,6 +16,8 @@ from aat.losses.matching import (
     match_sources,
 )
 
+pytestmark = pytest.mark.ml
+
 
 def _brute_force(cost: np.ndarray) -> tuple[float, int]:
     sources, slots = cost.shape
