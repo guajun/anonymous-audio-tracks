@@ -108,6 +108,8 @@ sample/
 
 ## 工程与资源管理
 
+GitHub 仓库：[guajun/anonymous-audio-tracks](https://github.com/guajun/anonymous-audio-tracks)（公开）。首轮开发由 [父 issue #1](https://github.com/guajun/anonymous-audio-tracks/issues/1) 管理；[开发任务图](docs/DEVELOPMENT.md) 说明并行范围与阻塞关系，[新主会话提示词](docs/PI_ORCHESTRATION_PROMPT.md) 规定本地 pi 的派发、等待、review 与合并流程。
+
 Python 环境由 uv 管理。当前工程无运行依赖，后续按实际渲染/训练环境分别添加并锁定，避免在无需求时安装完整模型栈。
 
 ```sh
