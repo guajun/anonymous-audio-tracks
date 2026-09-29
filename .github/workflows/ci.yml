@@ -15,9 +15,23 @@ concurrency:
 
 jobs:
   test:
-    name: linux-cpu-pytest
+    name: linux-cpu-${{ matrix.name }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Base install: contract/window/unit suites; DawDreamer integration
+          # tests self-skip because the optional render extra is not installed.
+          - name: unit
+            sync-args: ""
+            pytest-args: -m "not integration"
+          # Render extra: real DawDreamer smoke renders (mix/stem additivity,
+          # latency, tail decay, reproducibility) from the same lock file.
+          - name: render
+            sync-args: --extra render
+            pytest-args: ""
     steps:
       - uses: actions/checkout@v4
       - name: Install uv
@@ -26,6 +40,6 @@ jobs:
           version: "0.12.19"
           enable-cache: true
       - name: Sync locked environment (no models, no data, no secrets)
-        run: uv sync --locked
-      - name: Run contract and windowing tests
-        run: uv run --no-sync pytest -q
+        run: uv sync --locked ${{ matrix.sync-args }}
+      - name: Run tests
+        run: uv run --no-sync pytest -q -p no:cacheprovider ${{ matrix.pytest-args }}
