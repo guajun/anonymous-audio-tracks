@@ -1,0 +1,1070 @@
+# Real DawDreamer training-data plan for issue #8 (small local corpus).
+#
+# 8 songs in 3 disjoint asset families (train/val/test): every song belongs to one
+# composition; preset_ref/sample_ref are family-scoped voice IDs, and the four train
+# songs are linked through shared voices so the index keeps the whole train family in
+# one split component.  Nothing is downloaded; every buffer is synthesized by the
+# DawDreamer built-ins configured below.  No Surge XT is used (the plugin was not
+# installed locally), so this corpus covers self-generated sampler voices only.
+
+[dataset]
+name = "local-render-v1"
+seed = 20260929
+sample_rate = 44100
+block_size = 512
+ratios = [0.5, 0.25, 0.25]
+slots = 8
+window_seconds = 2.0
+
+[[songs]]
+sample_id = "train-01"
+composition = "comp-train-a"
+seed = 1101
+bpm = 96.0
+duration_seconds = 8.0
+tail_seconds = 1.5
+notes = "self-generated train family song; builtin sampler voices only"
+
+[[songs.sources]]
+id = "s01"
+gain = 0.9
+center_note = 36
+preset_ref = "aat/train/kick-v1"
+sample_ref = "generated/train/kick-v1"
+sample = { type = "kick", seed = 11010, params = { duration_seconds = 0.6, freq_start_hz = 120.0, freq_end_hz = 45.0, decay_seconds = 0.35, click = 0.4 } }
+amp = { attack_ms = 1.0, decay_ms = 0.0, sustain = 1.0, release_ms = 40.0 }
+
+[songs.sources.pattern]
+step_seconds = 0.25
+loop_steps = 32
+
+[[songs.sources.pattern.notes]]
+step = 0
+note = 36
+velocity = 118
+length_steps = 1
+
+[[songs.sources.pattern.notes]]
+step = 6
+note = 36
+velocity = 96
+length_steps = 1
+
+[[songs.sources.pattern.notes]]
+step = 10
+note = 36
+velocity = 108
+length_steps = 1
+
+[[songs.sources.pattern.notes]]
+step = 16
+note = 36
+velocity = 118
+length_steps = 1
+
+[[songs.sources.pattern.notes]]
+step = 22
+note = 36
+velocity = 96
+length_steps = 1
+
+[[songs.sources.pattern.notes]]
+step = 26
+note = 36
+velocity = 108
+length_steps = 1
+
+[[songs.sources]]
+id = "s02"
+gain = 0.6
+center_note = 45
+preset_ref = "aat/train/pluck-v1"
+sample_ref = "generated/train/pluck-v1"
+sample = { type = "pluck", seed = 11011, params = { duration_seconds = 1.2, freq_hz = 110.0, decay_seconds = 0.8, damping = 0.5 } }
+amp = { attack_ms = 2.0, decay_ms = 0.0, sustain = 1.0, release_ms = 150.0 }
+effects = [ { type = "filter", mode = "low", frequency_hz = 1400.0, q = 0.9, gain = 1.0 } ]
+
+[songs.sources.pattern]
+step_seconds = 0.5
+loop_steps = 16
+
+[[songs.sources.pattern.notes]]
+step = 0
+note = 45
+velocity = 108
+length_steps = 2
+
+[[songs.sources.pattern.notes]]
+step = 3
+note = 43
+velocity = 92
+length_steps = 1
+
+[[songs.sources.pattern.notes]]
+step = 6
+note = 48
+velocity = 100
+length_steps = 1
+
+[[songs.sources.pattern.notes]]
+step = 10
+note = 43
+velocity = 100
+length_steps = 2
+
+[[songs.sources.pattern.notes]]
+step = 14
+note = 47
+velocity = 96
+length_steps = 1
+
+[[songs.sources]]
+id = "s03"
+gain = 0.35
+center_note = 60
+preset_ref = "aat/train/pad-v1"
+sample_ref = "generated/train/pad-v1"
+sample = { type = "pad", seed = 11012, params = { duration_seconds = 2.0, freq_hz = 261.626, attack_seconds = 0.4, release_seconds = 0.9, detune_cents = 6.0, stereo = true } }
+amp = { attack_ms = 4.0, decay_ms = 0.0, sustain = 1.0, release_ms = 500.0 }
+effects = [ { type = "filter", mode = "low", frequency_hz = 3200.0, q = 0.707107, gain = 1.0 } ]
+
+[songs.sources.pattern]
+step_seconds = 1.0
+loop_steps = 8
+
+[[songs.sources.pattern.notes]]
+step = 0
+note = 60
+velocity = 84
+length_steps = 4
+
+[[songs.sources.pattern.notes]]
+step = 4
+note = 67
+velocity = 80
+length_steps = 4
+
+[[songs]]
+sample_id = "train-02"
+composition = "comp-train-b"
+seed = 1102
+bpm = 96.0
+duration_seconds = 8.0
+tail_seconds = 1.5
+notes = "self-generated train family song; builtin sampler voices only"
+
+[[songs.sources]]
+id = "s01"
+gain = 0.9
+center_note = 36
+preset_ref = "aat/train/kick-v1"
+sample_ref = "generated/train/kick-v1"
+sample = { type = "kick", seed = 11020, params = { duration_seconds = 0.6, freq_start_hz = 120.0, freq_end_hz = 45.0, decay_seconds = 0.35, click = 0.4 } }
+amp = { attack_ms = 1.0, decay_ms = 0.0, sustain = 1.0, release_ms = 40.0 }
+
+[songs.sources.pattern]
+step_seconds = 0.25
+loop_steps = 32
+
+[[songs.sources.pattern.notes]]
+step = 2
+note = 36
+velocity = 112
+length_steps = 1
+
+[[songs.sources.pattern.notes]]
+step = 8
+note = 36
+velocity = 120
+length_steps = 1
+
+[[songs.sources.pattern.notes]]
+step = 12
+note = 36
+velocity = 92
+length_steps = 1
+
+[[songs.sources.pattern.notes]]
+step = 18
+note = 36
+velocity = 116
+length_steps = 1
+
+[[songs.sources.pattern.notes]]
+step = 24
+note = 36
+velocity = 100
+length_steps = 1
+
+[[songs.sources.pattern.notes]]
+step = 28
+note = 36
+velocity = 118
+length_steps = 1
+
+[[songs.sources]]
+id = "s02"
+gain = 0.6
+center_note = 45
+preset_ref = "aat/train/pluck-v1"
+sample_ref = "generated/train/pluck-v1"
+sample = { type = "pluck", seed = 11021, params = { duration_seconds = 1.2, freq_hz = 110.0, decay_seconds = 0.8, damping = 0.5 } }
+amp = { attack_ms = 2.0, decay_ms = 0.0, sustain = 1.0, release_ms = 150.0 }
+effects = [ { type = "filter", mode = "low", frequency_hz = 1400.0, q = 0.9, gain = 1.0 } ]
+
+[songs.sources.pattern]
+step_seconds = 0.5
+loop_steps = 16
+
+[[songs.sources.pattern.notes]]
+step = 0
+note = 50
+velocity = 104
+length_steps = 1
+
+[[songs.sources.pattern.notes]]
+step = 2
+note = 48
+velocity = 96
+length_steps = 2
+
+[[songs.sources.pattern.notes]]
+step = 6
+note = 52
+velocity = 102
+length_steps = 1
+
+[[songs.sources.pattern.notes]]
+step = 9
+note = 50
+velocity = 98
+length_steps = 1
+
+[[songs.sources.pattern.notes]]
+step = 12
+note = 55
+velocity = 110
+length_steps = 2
+
+[[songs.sources]]
+id = "s03"
+gain = 0.3
+center_note = 60
+preset_ref = "aat/train/hat-v1"
+sample_ref = "generated/train/hat-v1"
+sample = { type = "hat", seed = 11022, params = { duration_seconds = 0.25, decay_seconds = 0.05, brightness = 0.9 } }
+amp = { attack_ms = 1.0, decay_ms = 0.0, sustain = 1.0, release_ms = 30.0 }
+
+[songs.sources.pattern]
+step_seconds = 0.25
+loop_steps = 32
+
+[[songs.sources.pattern.notes]]
+step = 0
+note = 60
+velocity = 70
+length_steps = 1
+
+[[songs.sources.pattern.notes]]
+step = 2
+note = 60
+velocity = 86
+length_steps = 1
+
+[[songs.sources.pattern.notes]]
+step = 4
+note = 60
+velocity = 70
+length_steps = 1
+
+[[songs.sources.pattern.notes]]
+step = 6
+note = 60
+velocity = 86
+length_steps = 1
+
+[[songs.sources.pattern.notes]]
+step = 8
+note = 60
+velocity = 70
+length_steps = 1
+
+[[songs.sources.pattern.notes]]
+step = 10
+note = 60
+velocity = 86
+length_steps = 1
+
+[[songs.sources.pattern.notes]]
+step = 12
+note = 60
+velocity = 70
+length_steps = 1
+
+[[songs.sources.pattern.notes]]
+step = 14
+note = 60
+velocity = 86
+length_steps = 1
+
+[[songs.sources.pattern.notes]]
+step = 16
+note = 60
+velocity = 70
+length_steps = 1
+
+[[songs.sources.pattern.notes]]
+step = 18
+note = 60
+velocity = 86
+length_steps = 1
+
+[[songs.sources.pattern.notes]]
+step = 20
+note = 60
+velocity = 70
+length_steps = 1
+
+[[songs.sources.pattern.notes]]
+step = 22
+note = 60
+velocity = 86
+length_steps = 1
+
+[[songs.sources.pattern.notes]]
+step = 24
+note = 60
+velocity = 70
+length_steps = 1
+
+[[songs.sources.pattern.notes]]
+step = 26
+note = 60
+velocity = 86
+length_steps = 1
+
+[[songs.sources.pattern.notes]]
+step = 28
+note = 60
+velocity = 70
+length_steps = 1
+
+[[songs.sources.pattern.notes]]
+step = 30
+note = 60
+velocity = 86
+length_steps = 1
+
+[[songs]]
+sample_id = "train-03"
+composition = "comp-train-c"
+seed = 1103
+bpm = 96.0
+duration_seconds = 8.0
+tail_seconds = 1.5
+notes = "self-generated train family song; builtin sampler voices only"
+
+[[songs.sources]]
+id = "s01"
+gain = 0.35
+center_note = 55
+preset_ref = "aat/train/pad-v1"
+sample_ref = "generated/train/pad-v1"
+sample = { type = "pad", seed = 11030, params = { duration_seconds = 2.0, freq_hz = 261.626, attack_seconds = 0.4, release_seconds = 0.9, detune_cents = 6.0, stereo = true } }
+amp = { attack_ms = 4.0, decay_ms = 0.0, sustain = 1.0, release_ms = 500.0 }
+effects = [ { type = "filter", mode = "low", frequency_hz = 3200.0, q = 0.707107, gain = 1.0 } ]
+
+[songs.sources.pattern]
+step_seconds = 1.0
+loop_steps = 8
+
+[[songs.sources.pattern.notes]]
+step = 0
+note = 55
+velocity = 86
+length_steps = 4
+
+[[songs.sources.pattern.notes]]
+step = 4
+note = 62
+velocity = 82
+length_steps = 4
+
+[[songs.sources]]
+id = "s02"
+gain = 0.3
+center_note = 60
+preset_ref = "aat/train/hat-v1"
+sample_ref = "generated/train/hat-v1"
+sample = { type = "hat", seed = 11031, params = { duration_seconds = 0.25, decay_seconds = 0.05, brightness = 0.9 } }
+amp = { attack_ms = 1.0, decay_ms = 0.0, sustain = 1.0, release_ms = 30.0 }
+
+[songs.sources.pattern]
+step_seconds = 0.25
+loop_steps = 32
+
+[[songs.sources.pattern.notes]]
+step = 1
+note = 60
+velocity = 80
+length_steps = 1
+
+[[songs.sources.pattern.notes]]
+step = 3
+note = 60
+velocity = 70
+length_steps = 1
+
+[[songs.sources.pattern.notes]]
+step = 5
+note = 60
+velocity = 90
+length_steps = 1
+
+[[songs.sources.pattern.notes]]
+step = 7
+note = 60
+velocity = 80
+length_steps = 1
+
+[[songs.sources.pattern.notes]]
+step = 9
+note = 60
+velocity = 70
+length_steps = 1
+
+[[songs.sources.pattern.notes]]
+step = 11
+note = 60
+velocity = 90
+length_steps = 1
+
+[[songs.sources.pattern.notes]]
+step = 13
+note = 60
+velocity = 80
+length_steps = 1
+
+[[songs.sources.pattern.notes]]
+step = 15
+note = 60
+velocity = 70
+length_steps = 1
+
+[[songs.sources]]
+id = "s03"
+gain = 0.6
+center_note = 45
+preset_ref = "aat/train/pluck-v1"
+sample_ref = "generated/train/pluck-v1"
+sample = { type = "pluck", seed = 11032, params = { duration_seconds = 1.2, freq_hz = 110.0, decay_seconds = 0.8, damping = 0.5 } }
+amp = { attack_ms = 2.0, decay_ms = 0.0, sustain = 1.0, release_ms = 150.0 }
+effects = [ { type = "filter", mode = "low", frequency_hz = 1400.0, q = 0.9, gain = 1.0 } ]
+
+[songs.sources.pattern]
+step_seconds = 0.5
+loop_steps = 16
+
+[[songs.sources.pattern.notes]]
+step = 1
+note = 57
+velocity = 102
+length_steps = 1
+
+[[songs.sources.pattern.notes]]
+step = 4
+note = 60
+velocity = 96
+length_steps = 2
+
+[[songs.sources.pattern.notes]]
+step = 8
+note = 55
+velocity = 104
+length_steps = 1
+
+[[songs.sources.pattern.notes]]
+step = 11
+note = 62
+velocity = 92
+length_steps = 1
+
+[[songs.sources.pattern.notes]]
+step = 14
+note = 57
+velocity = 106
+length_steps = 2
+
+[[songs]]
+sample_id = "train-04"
+composition = "comp-train-d"
+seed = 1104
+bpm = 96.0
+duration_seconds = 8.0
+tail_seconds = 1.5
+notes = "self-generated train family song; builtin sampler voices only"
+
+[[songs.sources]]
+id = "s01"
+gain = 0.35
+center_note = 48
+preset_ref = "aat/train/pad-v1"
+sample_ref = "generated/train/pad-v1"
+sample = { type = "pad", seed = 11040, params = { duration_seconds = 2.0, freq_hz = 261.626, attack_seconds = 0.4, release_seconds = 0.9, detune_cents = 6.0, stereo = true } }
+amp = { attack_ms = 4.0, decay_ms = 0.0, sustain = 1.0, release_ms = 500.0 }
+effects = [ { type = "filter", mode = "low", frequency_hz = 3200.0, q = 0.707107, gain = 1.0 } ]
+
+[songs.sources.pattern]
+step_seconds = 1.0
+loop_steps = 8
+
+[[songs.sources.pattern.notes]]
+step = 0
+note = 48
+velocity = 82
+length_steps = 3
+
+[[songs.sources.pattern.notes]]
+step = 3
+note = 55
+velocity = 86
+length_steps = 3
+
+[[songs.sources]]
+id = "s02"
+gain = 0.9
+center_note = 36
+preset_ref = "aat/train/kick-v1"
+sample_ref = "generated/train/kick-v1"
+sample = { type = "kick", seed = 11041, params = { duration_seconds = 0.6, freq_start_hz = 120.0, freq_end_hz = 45.0, decay_seconds = 0.35, click = 0.4 } }
+amp = { attack_ms = 1.0, decay_ms = 0.0, sustain = 1.0, release_ms = 40.0 }
+
+[songs.sources.pattern]
+step_seconds = 0.25
+loop_steps = 32
+
+[[songs.sources.pattern.notes]]
+step = 1
+note = 36
+velocity = 110
+length_steps = 1
+
+[[songs.sources.pattern.notes]]
+step = 5
+note = 36
+velocity = 98
+length_steps = 1
+
+[[songs.sources.pattern.notes]]
+step = 9
+note = 36
+velocity = 118
+length_steps = 1
+
+[[songs.sources.pattern.notes]]
+step = 13
+note = 36
+velocity = 94
+length_steps = 1
+
+[[songs.sources.pattern.notes]]
+step = 17
+note = 36
+velocity = 112
+length_steps = 1
+
+[[songs.sources.pattern.notes]]
+step = 21
+note = 36
+velocity = 100
+length_steps = 1
+
+[[songs.sources.pattern.notes]]
+step = 25
+note = 36
+velocity = 116
+length_steps = 1
+
+[[songs.sources.pattern.notes]]
+step = 29
+note = 36
+velocity = 96
+length_steps = 1
+
+[[songs.sources]]
+id = "s03"
+gain = 0.6
+center_note = 45
+preset_ref = "aat/train/pluck-v1"
+sample_ref = "generated/train/pluck-v1"
+sample = { type = "pluck", seed = 11042, params = { duration_seconds = 1.2, freq_hz = 110.0, decay_seconds = 0.8, damping = 0.5 } }
+amp = { attack_ms = 2.0, decay_ms = 0.0, sustain = 1.0, release_ms = 150.0 }
+effects = [ { type = "filter", mode = "low", frequency_hz = 1400.0, q = 0.9, gain = 1.0 } ]
+
+[songs.sources.pattern]
+step_seconds = 0.5
+loop_steps = 16
+
+[[songs.sources.pattern.notes]]
+step = 0
+note = 52
+velocity = 100
+length_steps = 2
+
+[[songs.sources.pattern.notes]]
+step = 4
+note = 50
+velocity = 94
+length_steps = 1
+
+[[songs.sources.pattern.notes]]
+step = 7
+note = 55
+velocity = 106
+length_steps = 1
+
+[[songs.sources.pattern.notes]]
+step = 10
+note = 52
+velocity = 98
+length_steps = 2
+
+[[songs.sources.pattern.notes]]
+step = 13
+note = 57
+velocity = 102
+length_steps = 1
+
+[[songs]]
+sample_id = "val-01"
+composition = "comp-val-a"
+seed = 2101
+bpm = 96.0
+duration_seconds = 8.0
+tail_seconds = 1.5
+notes = "self-generated val family song; builtin sampler voices only"
+
+[[songs.sources]]
+id = "s01"
+gain = 0.6
+center_note = 45
+preset_ref = "aat/val/pluck-v1"
+sample_ref = "generated/val/pluck-v1"
+sample = { type = "pluck", seed = 21010, params = { duration_seconds = 1.1, freq_hz = 138.59, decay_seconds = 0.6, damping = 0.35 } }
+amp = { attack_ms = 3.0, decay_ms = 0.0, sustain = 1.0, release_ms = 200.0 }
+effects = [ { type = "filter", mode = "low", frequency_hz = 1800.0, q = 1.1, gain = 1.0 } ]
+
+[songs.sources.pattern]
+step_seconds = 0.5
+loop_steps = 16
+
+[[songs.sources.pattern.notes]]
+step = 0
+note = 53
+velocity = 104
+length_steps = 2
+
+[[songs.sources.pattern.notes]]
+step = 3
+note = 57
+velocity = 94
+length_steps = 1
+
+[[songs.sources.pattern.notes]]
+step = 6
+note = 55
+velocity = 100
+length_steps = 2
+
+[[songs.sources.pattern.notes]]
+step = 10
+note = 60
+velocity = 108
+length_steps = 1
+
+[[songs.sources.pattern.notes]]
+step = 13
+note = 53
+velocity = 96
+length_steps = 1
+
+[[songs.sources]]
+id = "s02"
+gain = 0.35
+center_note = 65
+preset_ref = "aat/val/pad-v1"
+sample_ref = "generated/val/pad-v1"
+sample = { type = "pad", seed = 21011, params = { duration_seconds = 2.2, freq_hz = 196.0, attack_seconds = 0.5, release_seconds = 1.1, detune_cents = 9.0, stereo = true } }
+amp = { attack_ms = 8.0, decay_ms = 0.0, sustain = 1.0, release_ms = 700.0 }
+effects = [ { type = "filter", mode = "low", frequency_hz = 2600.0, q = 0.8, gain = 1.0 } ]
+
+[songs.sources.pattern]
+step_seconds = 1.0
+loop_steps = 8
+
+[[songs.sources.pattern.notes]]
+step = 0
+note = 65
+velocity = 84
+length_steps = 4
+
+[[songs.sources.pattern.notes]]
+step = 4
+note = 60
+velocity = 82
+length_steps = 4
+
+[[songs.sources]]
+id = "s03"
+gain = 0.9
+center_note = 36
+preset_ref = "aat/val/kick-v1"
+sample_ref = "generated/val/kick-v1"
+sample = { type = "kick", seed = 21012, params = { duration_seconds = 0.5, freq_start_hz = 150.0, freq_end_hz = 55.0, decay_seconds = 0.25, click = 0.6 } }
+amp = { attack_ms = 1.0, decay_ms = 0.0, sustain = 1.0, release_ms = 30.0 }
+
+[songs.sources.pattern]
+step_seconds = 0.25
+loop_steps = 32
+
+[[songs.sources.pattern.notes]]
+step = 0
+note = 36
+velocity = 112
+length_steps = 1
+
+[[songs.sources.pattern.notes]]
+step = 7
+note = 36
+velocity = 96
+length_steps = 1
+
+[[songs.sources.pattern.notes]]
+step = 12
+note = 36
+velocity = 106
+length_steps = 1
+
+[[songs.sources.pattern.notes]]
+step = 18
+note = 36
+velocity = 118
+length_steps = 1
+
+[[songs.sources.pattern.notes]]
+step = 25
+note = 36
+velocity = 94
+length_steps = 1
+
+[[songs]]
+sample_id = "val-02"
+composition = "comp-val-b"
+seed = 2102
+bpm = 96.0
+duration_seconds = 8.0
+tail_seconds = 1.5
+notes = "self-generated val family song; builtin sampler voices only"
+
+[[songs.sources]]
+id = "s01"
+gain = 0.6
+center_note = 45
+preset_ref = "aat/val/pluck-v1"
+sample_ref = "generated/val/pluck-v1"
+sample = { type = "pluck", seed = 21020, params = { duration_seconds = 1.1, freq_hz = 138.59, decay_seconds = 0.6, damping = 0.35 } }
+amp = { attack_ms = 3.0, decay_ms = 0.0, sustain = 1.0, release_ms = 200.0 }
+effects = [ { type = "filter", mode = "low", frequency_hz = 1800.0, q = 1.1, gain = 1.0 } ]
+
+[songs.sources.pattern]
+step_seconds = 0.5
+loop_steps = 16
+
+[[songs.sources.pattern.notes]]
+step = 1
+note = 48
+velocity = 98
+length_steps = 1
+
+[[songs.sources.pattern.notes]]
+step = 4
+note = 52
+velocity = 106
+length_steps = 2
+
+[[songs.sources.pattern.notes]]
+step = 8
+note = 50
+velocity = 92
+length_steps = 1
+
+[[songs.sources.pattern.notes]]
+step = 11
+note = 55
+velocity = 104
+length_steps = 2
+
+[[songs.sources.pattern.notes]]
+step = 14
+note = 48
+velocity = 100
+length_steps = 1
+
+[[songs.sources]]
+id = "s02"
+gain = 0.35
+center_note = 55
+preset_ref = "aat/val/pad-v1"
+sample_ref = "generated/val/pad-v1"
+sample = { type = "pad", seed = 21021, params = { duration_seconds = 2.2, freq_hz = 196.0, attack_seconds = 0.5, release_seconds = 1.1, detune_cents = 9.0, stereo = true } }
+amp = { attack_ms = 8.0, decay_ms = 0.0, sustain = 1.0, release_ms = 700.0 }
+effects = [ { type = "filter", mode = "low", frequency_hz = 2600.0, q = 0.8, gain = 1.0 } ]
+
+[songs.sources.pattern]
+step_seconds = 1.0
+loop_steps = 8
+
+[[songs.sources.pattern.notes]]
+step = 0
+note = 55
+velocity = 86
+length_steps = 4
+
+[[songs.sources.pattern.notes]]
+step = 4
+note = 62
+velocity = 80
+length_steps = 4
+
+[[songs.sources]]
+id = "s03"
+gain = 0.55
+center_note = 36
+preset_ref = "aat/val/snare-v1"
+sample_ref = "generated/val/snare-v1"
+sample = { type = "snare", seed = 21022, params = { duration_seconds = 0.4, tone_hz = 220.0, tone_decay_seconds = 0.1, noise_decay_seconds = 0.15, noise_level = 0.8 } }
+amp = { attack_ms = 1.0, decay_ms = 0.0, sustain = 1.0, release_ms = 50.0 }
+
+[songs.sources.pattern]
+step_seconds = 0.25
+loop_steps = 32
+
+[[songs.sources.pattern.notes]]
+step = 2
+note = 36
+velocity = 96
+length_steps = 1
+
+[[songs.sources.pattern.notes]]
+step = 10
+note = 36
+velocity = 112
+length_steps = 1
+
+[[songs.sources.pattern.notes]]
+step = 18
+note = 36
+velocity = 88
+length_steps = 1
+
+[[songs.sources.pattern.notes]]
+step = 26
+note = 36
+velocity = 108
+length_steps = 1
+
+[[songs]]
+sample_id = "test-01"
+composition = "comp-test-a"
+seed = 3101
+bpm = 96.0
+duration_seconds = 8.0
+tail_seconds = 1.5
+notes = "self-generated test family song; builtin sampler voices only"
+
+[[songs.sources]]
+id = "s01"
+gain = 0.6
+center_note = 45
+preset_ref = "aat/test/pluck-v1"
+sample_ref = "generated/test/pluck-v1"
+sample = { type = "pluck", seed = 31010, params = { duration_seconds = 1.4, freq_hz = 164.81, decay_seconds = 0.9, damping = 0.6 } }
+amp = { attack_ms = 4.0, decay_ms = 0.0, sustain = 1.0, release_ms = 250.0 }
+effects = [ { type = "filter", mode = "low", frequency_hz = 1100.0, q = 0.7, gain = 1.0 } ]
+
+[songs.sources.pattern]
+step_seconds = 0.5
+loop_steps = 16
+
+[[songs.sources.pattern.notes]]
+step = 0
+note = 55
+velocity = 106
+length_steps = 2
+
+[[songs.sources.pattern.notes]]
+step = 3
+note = 51
+velocity = 92
+length_steps = 1
+
+[[songs.sources.pattern.notes]]
+step = 6
+note = 58
+velocity = 102
+length_steps = 2
+
+[[songs.sources.pattern.notes]]
+step = 10
+note = 55
+velocity = 98
+length_steps = 1
+
+[[songs.sources.pattern.notes]]
+step = 13
+note = 60
+velocity = 110
+length_steps = 1
+
+[[songs.sources]]
+id = "s02"
+gain = 0.35
+center_note = 63
+preset_ref = "aat/test/pad-v1"
+sample_ref = "generated/test/pad-v1"
+sample = { type = "pad", seed = 31011, params = { duration_seconds = 1.8, freq_hz = 329.63, attack_seconds = 0.3, release_seconds = 0.7, detune_cents = 4.0, stereo = false } }
+amp = { attack_ms = 6.0, decay_ms = 0.0, sustain = 1.0, release_ms = 450.0 }
+effects = [ { type = "filter", mode = "low", frequency_hz = 3600.0, q = 0.9, gain = 1.0 } ]
+
+[songs.sources.pattern]
+step_seconds = 1.0
+loop_steps = 8
+
+[[songs.sources.pattern.notes]]
+step = 0
+note = 63
+velocity = 84
+length_steps = 4
+
+[[songs.sources.pattern.notes]]
+step = 4
+note = 56
+velocity = 82
+length_steps = 4
+
+[[songs]]
+sample_id = "test-02"
+composition = "comp-test-b"
+seed = 3102
+bpm = 96.0
+duration_seconds = 8.0
+tail_seconds = 1.5
+notes = "self-generated test family song; builtin sampler voices only"
+
+[[songs.sources]]
+id = "s01"
+gain = 0.6
+center_note = 45
+preset_ref = "aat/test/pluck-v1"
+sample_ref = "generated/test/pluck-v1"
+sample = { type = "pluck", seed = 31020, params = { duration_seconds = 1.4, freq_hz = 164.81, decay_seconds = 0.9, damping = 0.6 } }
+amp = { attack_ms = 4.0, decay_ms = 0.0, sustain = 1.0, release_ms = 250.0 }
+effects = [ { type = "filter", mode = "low", frequency_hz = 1100.0, q = 0.7, gain = 1.0 } ]
+
+[songs.sources.pattern]
+step_seconds = 0.5
+loop_steps = 16
+
+[[songs.sources.pattern.notes]]
+step = 2
+note = 50
+velocity = 96
+length_steps = 1
+
+[[songs.sources.pattern.notes]]
+step = 5
+note = 53
+velocity = 108
+length_steps = 2
+
+[[songs.sources.pattern.notes]]
+step = 9
+note = 57
+velocity = 92
+length_steps = 1
+
+[[songs.sources.pattern.notes]]
+step = 12
+note = 50
+velocity = 102
+length_steps = 2
+
+[[songs.sources.pattern.notes]]
+step = 15
+note = 55
+velocity = 98
+length_steps = 1
+
+[[songs.sources]]
+id = "s02"
+gain = 0.35
+center_note = 58
+preset_ref = "aat/test/pad-v1"
+sample_ref = "generated/test/pad-v1"
+sample = { type = "pad", seed = 31021, params = { duration_seconds = 1.8, freq_hz = 329.63, attack_seconds = 0.3, release_seconds = 0.7, detune_cents = 4.0, stereo = false } }
+amp = { attack_ms = 6.0, decay_ms = 0.0, sustain = 1.0, release_ms = 450.0 }
+effects = [ { type = "filter", mode = "low", frequency_hz = 3600.0, q = 0.9, gain = 1.0 } ]
+
+[songs.sources.pattern]
+step_seconds = 1.0
+loop_steps = 8
+
+[[songs.sources.pattern.notes]]
+step = 1
+note = 58
+velocity = 80
+length_steps = 4
+
+[[songs.sources.pattern.notes]]
+step = 5
+note = 65
+velocity = 86
+length_steps = 4
+
+[[songs.sources]]
+id = "s03"
+gain = 0.55
+center_note = 36
+preset_ref = "aat/test/snare-v1"
+sample_ref = "generated/test/snare-v1"
+sample = { type = "snare", seed = 31022, params = { duration_seconds = 0.45, tone_hz = 170.0, tone_decay_seconds = 0.14, noise_decay_seconds = 0.25, noise_level = 0.65 } }
+amp = { attack_ms = 1.0, decay_ms = 0.0, sustain = 1.0, release_ms = 55.0 }
+
+[songs.sources.pattern]
+step_seconds = 0.25
+loop_steps = 32
+
+[[songs.sources.pattern.notes]]
+step = 0
+note = 36
+velocity = 90
+length_steps = 1
+
+[[songs.sources.pattern.notes]]
+step = 8
+note = 36
+velocity = 108
+length_steps = 1
+
+[[songs.sources.pattern.notes]]
+step = 16
+note = 36
+velocity = 94
+length_steps = 1
+
+[[songs.sources.pattern.notes]]
+step = 24
+note = 36
+velocity = 110
+length_steps = 1
+
