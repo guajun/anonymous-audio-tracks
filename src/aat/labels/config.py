@@ -67,10 +67,14 @@ class LabelConfig:
 
     The effective "on" threshold is
     ``max(absolute_threshold_dbfs, min(noise_floor_dbfs + noise_floor_margin_db,
-    peak_dbfs - peak_relative_threshold_db))``: the absolute threshold keeps
-    very quiet material quiet, the noise-floor gate keeps the label above the
-    measured floor, and the relative-to-peak gate prevents an adaptive floor
-    from swallowing a continuous signal.  The state machine then switches off
+    peak_dbfs - peak_relative_threshold_db))``.  The ``min`` deliberately caps
+    the adaptive noise gate at ``peak - peak_relative_threshold_db`` so a floor
+    estimate that rose to the signal level cannot silence a continuous signal;
+    as a consequence the threshold is *not* guaranteed to stay above the
+    measured noise floor when the noise is within ``peak_relative_threshold_db``
+    of the peak, and background noise can be labeled active in such low-SNR
+    material (the summary ``low_snr`` flag is only a hint).  The absolute
+    threshold keeps very quiet material quiet.  The state machine switches off
     only below ``on_dbfs - hysteresis_db`` and holds a short release tail.
     """
 

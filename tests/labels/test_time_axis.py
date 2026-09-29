@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import numpy as np
 import pytest
 
 from aat.labels import LabelConfig, label_stems
+from aat.windowing import extract_windows_at_times
 
 from . import signals
 
@@ -88,3 +91,65 @@ def test_hop_controls_row_grid():
     result = run(buffer, RATE, 2.0, config=config)
     assert result.activity.center_times.size == 51
     assert result.activity.hop_seconds == 0.04
+
+
+@pytest.mark.parametrize(
+    ("rate", "frames", "center_window_seconds", "hop_seconds", "origin"),
+    [
+        (16000, 10, 3.0 / 16000, 1.0 / 16000, 0.0),
+        (16000, 10, 4.0 / 16000, 1.0 / 16000, 0.0),
+        (16000, 8000, 0.01, 0.002, 0.0),
+        (22050, 2205, 101.0 / 22050, 10.0 / 22050, 0.0),
+        (44100, 4410, 0.0005, 0.0001, 0.0),
+        (44100, 4410, 3.0 / 44100, 7.0 / 44100, 12.0),
+        (16000, 8000, 0.05, 0.01, 12.0),
+    ],
+)
+def test_valid_matches_shared_window_extraction(
+    rate, frames, center_window_seconds, hop_seconds, origin
+):
+    audio = np.linspace(-0.5, 0.5, frames, dtype=np.float64)
+    config = replace(
+        LabelConfig(),
+        hop_seconds=hop_seconds,
+        center_window_seconds=center_window_seconds,
+    )
+    result = label_stems(
+        {"s01": audio},
+        source_ids=("s01",),
+        sample_rate=rate,
+        duration_seconds=frames / rate,
+        track_start_seconds=origin,
+        config=config,
+    )
+    _, mask = extract_windows_at_times(
+        audio,
+        result.activity.center_times,
+        rate,
+        center_window_seconds,
+        origin_seconds=origin,
+    )
+    np.testing.assert_array_equal(result.activity.valid, mask.all(axis=1))
+
+
+def test_valid_accepts_window_starting_at_sample_zero():
+    rate = 16000
+    audio = np.zeros(10, dtype=np.float64)
+    config = replace(
+        LabelConfig(),
+        hop_seconds=1.0 / rate,
+        center_window_seconds=3.0 / rate,
+    )
+    result = label_stems(
+        {"s01": audio},
+        source_ids=("s01",),
+        sample_rate=rate,
+        duration_seconds=10.0 / rate,
+        track_start_seconds=0.0,
+        config=config,
+    )
+    times = result.activity.center_times
+    first = int(np.argmin(np.abs(times - 1.0 / rate)))
+    assert result.activity.valid[first]  # window [0, 3) is fully inside
+    beyond = int(np.argmin(np.abs(times - 9.0 / rate)))
+    assert not result.activity.valid[beyond]  # window [8, 11) is not

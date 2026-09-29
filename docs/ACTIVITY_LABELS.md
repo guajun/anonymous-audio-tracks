@@ -37,9 +37,13 @@
    ```
 
    - 绝对阈值保证很安静的素材不会被强行标成活动；
-   - 噪声底门限保证标签高于本分轨测得的底噪；
-   - 相对峰值门限上限防止“持续信号把自适应底噪抬到自己身上”导致全静音；
-   - 三者都是配置项，随 `label_params` 快照保存并可用 SHA-256 校验。
+   - 噪声底门限在底噪远离峰值时抬高阈值；
+   - `min(noise_floor_gate, relative_gate)` 把自适应门限封顶在
+     `peak - peak_relative_threshold_db`，防止“持续信号把自适应底噪抬到自己身上”
+     导致全静音；代价是当噪声与峰值相差小于 `peak_relative_threshold_db` 时，
+     阈值不保证高于底噪，背景噪声可能被标成活动（`low_snr` 只是提示）。
+   - 三者都是配置项，随 `label_params` 快照保存并可用 SHA-256 校验；默认值是
+     M1 分析起点，尚未在真实分轨上校准。
 3. **滞回与尾音**：状态机在电平达到 `on_threshold` 时打开，只有低于 `off_threshold`
    才关闭；关闭后再保留 `release_hold_seconds` 的尾音。因此 note-off 之后仍在衰减的
    尾音可以继续保持活动，而 note-on（`controls.json` 中的事件）从不参与状态机，
@@ -79,15 +83,18 @@ uv run --no-sync python scripts/label_sample.py <sample_dir> [--config label_con
 
 1. 加载 `manifest.json`、`sources.json`、`controls.json`，校验 `sources` 引用和
    `manifest.stem_paths` 与 `sources.source_ids` 完全一致（列顺序按 `sources.json`）。
-2. **在写入任何文件之前**逐一核对 `manifest.content_sha256` 中的每个路径摘要；
-   缺失或摘要不符立即失败。
-3. 读取每个 stem 的 PCM WAV：采样率必须等于 `manifest.sample_rate`，时长与
+2. **在写入任何文件之前**先解析并检查所有输出路径：分别解析
+   `activity.json`、`activity.npz`、summary 与 manifest 的最终路径，拒绝绝对路径、
+   盘符路径和 `..` 穿越；任何输出与其他输出或输入（manifest、sources、controls、
+   `mix.wav`、各 stem）碰撞时立即失败，因此自定义 summary 文件名不能覆盖受保护文件。
+3. 逐一核对 `manifest.content_sha256` 中的每个路径摘要；缺失或摘要不符立即失败。
+4. 读取每个 stem 的 PCM WAV：采样率必须等于 `manifest.sample_rate`，时长与
    `manifest.duration_seconds` 的差不得超过 `--duration-tolerance-seconds`（默认
-   0.01 s）。支持 PCM 8/16/24/32-bit、IEEE float 32/64-bit 与
-   `WAVE_FORMAT_EXTENSIBLE`；压缩格式直接拒绝。
-4. 生成 `activity.json` + `activity.npz`（通过 `ActivityData.save`，写后重新
+   0.01 s；必须是有限且非负的值，`NaN`/`Inf` 会被拒绝）。支持 PCM 8/16/24/32-bit、
+   IEEE float 32/64-bit 与 `WAVE_FORMAT_EXTENSIBLE`；压缩格式直接拒绝。
+5. 生成 `activity.json` + `activity.npz`（通过 `ActivityData.save`，写后重新
    `ActivityData.load` 校验），并写 `activity_summary.json`。
-5. 默认把 manifest 推进到 `stage = labeled`，写入两个标签路径和两条 SHA-256；
+6. 默认把 manifest 推进到 `stage = labeled`，写入两个标签路径和两条 SHA-256；
    其余渲染摘要保持不变。`--no-manifest-update` 可只写标签文件。
 
 `--config` 接受 JSON 或 TOML：扁平字段直接覆盖 `LabelConfig`；TOML 中若存在
@@ -122,7 +129,13 @@ uv run --no-sync python scripts/label_sample.py <sample_dir> [--config label_con
   WAV 解码、协议校验、manifest 摘要与 CLI 端到端。没有真实 DawDreamer/Surge 分轨
   参与校准，默认阈值只是 M1 起点。
 - 立体声按等功率平均合并；未验证强空间化或相位相反的素材。
-- 不做重采样：stem 采样率必须与 manifest 一致。
-- `valid` 使用 manifest 的 `duration_seconds`（中心时间网格与预测窗保持一致）；
-  超出该时长的渲染尾音不会产生新的行。
+- 不做重采样：stem 采样率必须与 manifest 一致。公共 API 要求 declared
+  `duration_seconds` 与解码帧数之差不超过容差（默认 0.01 s），网格仍由 declared
+  duration 生成以对齐预测窗；`valid` 依据实际样本边界与
+  `centered_window_bounds` 语义计算，越界/补零中心为 `False`，不会把最后一个样本
+  重复当作越界中心的能量。
+- `valid` 依据实际解码样本边界和 `aat.windowing` 的 half-up 采样换算与
+  `centered_window_bounds` 语义计算（有与
+  `extract_windows_at_times(...).mask.all(axis=1)` 的对照测试），包括奇数窗宽、
+  非整数样本窗、44.1 kHz 和非零原曲起点。
 - 阈值是声学代理，不是主观可听性真值；未知歌曲不自动生成“真值”。

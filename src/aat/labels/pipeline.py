@@ -15,13 +15,21 @@ from typing import Any, Mapping, Sequence
 import numpy as np
 
 from ..contracts import ActivityData
-from ..windowing import center_times, seconds_to_samples
+from ..windowing import (
+    center_times,
+    centered_window_bounds,
+    seconds_to_samples,
+    window_sample_count,
+)
 from .activity import active_segments, label_envelope
 from .config import LabelConfig
-from .energy import SILENCE_DBFS, compute_thresholds, envelope_db
+from .energy import (
+    SILENCE_DBFS,
+    compute_thresholds,
+    envelope_db,
+    envelope_db_at_samples,
+)
 from .errors import LabelError
-
-_VALID_TOLERANCE = 1e-9
 
 
 @dataclass(frozen=True)
@@ -79,20 +87,36 @@ def label_stems(
     sample_rate: int,
     duration_seconds: float,
     track_start_seconds: float,
+    duration_tolerance_seconds: float = 0.01,
     config: LabelConfig | None = None,
     sample_id: str | None = None,
 ) -> LabelResult:
     """Label every stem at the protocol center grid.
 
     ``source_ids`` defines the column order and must match the ``stems`` keys
-    exactly.  All stems must share the same frame count; the CLI additionally
-    checks each stem against the manifest sample rate and duration.
+    exactly.  All stems must share the same frame count, and the declared
+    ``duration_seconds`` must agree with the decoded frames within
+    ``duration_tolerance_seconds`` (default 0.01 s).  The protocol ``valid``
+    mask is computed against the *actual* sample boundary with the shared
+    windowing semantics, so centers past the rendered audio are neither
+    repeated from the last sample nor marked valid.
     """
 
     config = config if config is not None else LabelConfig()
     if not isinstance(config, LabelConfig):
         raise LabelError("config: expected a LabelConfig")
     rate = _check_sample_rate(sample_rate)
+    if (
+        isinstance(duration_tolerance_seconds, bool)
+        or not isinstance(duration_tolerance_seconds, (int, float))
+        or not np.isfinite(float(duration_tolerance_seconds))
+        or float(duration_tolerance_seconds) < 0.0
+    ):
+        raise LabelError(
+            "duration_tolerance_seconds: expected a finite value >= 0, "
+            f"got {duration_tolerance_seconds!r}"
+        )
+    duration_tolerance = float(duration_tolerance_seconds)
     ids = tuple(source_ids)
     if len(set(ids)) != len(ids):
         raise LabelError("source_ids: values must be unique")
@@ -138,39 +162,61 @@ def label_stems(
             )
     if frames is None:
         frames = 0
+    elif abs(frames / rate - duration) > duration_tolerance:
+        raise LabelError(
+            f"duration_seconds: declared {duration} s is inconsistent with "
+            f"{frames} decoded frame(s) at {rate} Hz ({frames / rate} s); "
+            f"allowed difference is {duration_tolerance} s"
+        )
 
     centers = center_times(duration, config.hop_seconds, origin_seconds=track_start)
-    half_window = config.center_window_seconds / 2.0
-    tolerance = _VALID_TOLERANCE * max(1.0, duration)
-    end = track_start + duration
-    valid = (centers - half_window >= track_start - tolerance) & (
-        centers + half_window <= end + tolerance
-    )
-
+    try:
+        center_width = window_sample_count(config.center_window_seconds, rate)
+    except ValueError as exc:
+        raise LabelError(f"center_window_seconds: {exc}") from exc
     local_seconds = centers - track_start
-    if frames > 0:
-        center_samples = np.floor(local_seconds * rate + 0.5).astype(np.int64)
-        np.clip(center_samples, 0, frames - 1, out=center_samples)
-    else:
-        center_samples = np.empty(0, dtype=np.int64)
+    center_samples = np.floor(local_seconds * rate + 0.5).astype(np.int64)
+
+    # ``valid`` mirrors ``aat.windowing.extract_windows_at_times``: the same
+    # half-up sample conversion and ``centered_window_bounds`` semantics, but
+    # checked against the decoded sample boundary without materialising every
+    # window.  Out-of-range or zero-padded windows are never valid.
+    valid = np.zeros(centers.shape, dtype=bool)
+    if center_samples.size:
+        bounds = [
+            centered_window_bounds(int(center), center_width)
+            for center in center_samples
+        ]
+        starts = np.array([bound[0] for bound in bounds], dtype=np.int64)
+        stops = np.array([bound[1] for bound in bounds], dtype=np.int64)
+        valid = (starts >= 0) & (stops <= frames)
 
     hold_samples = seconds_to_samples(config.release_hold_seconds, rate)
+    max_center_sample = int(center_samples[-1]) if center_samples.size else -1
 
     activity = np.zeros((centers.size, len(ids)), dtype=np.float32)
     summaries: list[SourceSummary] = []
     for column, source_id in enumerate(ids):
-        levels = envelope_db(stems[source_id], rate, config.energy_window_seconds)
+        if max_center_sample >= frames:
+            state_indices = np.arange(max_center_sample + 1, dtype=np.int64)
+            state_levels = envelope_db_at_samples(
+                stems[source_id], rate, config.energy_window_seconds, state_indices
+            )
+            levels = state_levels[:frames]
+        else:
+            levels = envelope_db(stems[source_id], rate, config.energy_window_seconds)
+            state_levels = levels
         thresholds = compute_thresholds(levels, config)
         labels = label_envelope(
-            levels, thresholds.on_dbfs, thresholds.off_dbfs, hold_samples
+            state_levels, thresholds.on_dbfs, thresholds.off_dbfs, hold_samples
         )
-        center_levels = levels[center_samples]
+        center_levels = state_levels[center_samples]
         center_active = labels.active[center_samples]
         activity[:, column] = center_active.astype(np.float32)
         summaries.append(
             _build_summary(
                 source_id,
-                labels.active,
+                labels.active[:frames],
                 thresholds,
                 center_levels,
                 center_active,

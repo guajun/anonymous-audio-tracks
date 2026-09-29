@@ -49,20 +49,9 @@ def _window_samples(window_seconds: Any, sample_rate: int) -> int:
     return width
 
 
-def mean_square_envelope(
-    audio: Any,
-    sample_rate: int,
-    window_seconds: float,
-) -> np.ndarray:
-    """Per-sample mean square over a centered rectangular window.
+def _mono_power(audio: Any) -> np.ndarray:
+    """Per-sample power; multi-channel input uses an equal-power average."""
 
-    ``audio`` may be mono ``(N,)`` or multi-channel ``(N, C)``; channels are
-    combined with an equal-power average (mean of squared samples).  Window
-    edges average only the samples that exist, so a constant tone keeps its
-    level at the boundary instead of fading into zero padding.
-    """
-
-    rate = _check_sample_rate(sample_rate)
     array = np.asarray(audio, dtype=np.float64)
     if array.ndim == 1:
         power = array * array
@@ -76,23 +65,80 @@ def mean_square_envelope(
         )
     if not np.all(np.isfinite(power)):
         raise LabelError("audio: contains NaN or infinite samples")
+    return power
 
-    width = _window_samples(window_seconds, rate)
+
+def _windowed_mean_square(
+    power: np.ndarray, width: int, sample_indices: Any
+) -> np.ndarray:
+    """Mean square of the centered window at each sample index.
+
+    Window bounds follow ``aat.windowing.centered_window_bounds``
+    (``[index - width // 2, index - width // 2 + width)``) and are clipped to
+    the real audio, so indices at or past the end are not repetitions of the
+    last sample.  A window without any real sample yields 0.  Edges average
+    only the samples that exist, so a constant tone keeps its level at the
+    boundary instead of fading into zero padding.
+    """
+
+    indices = np.asarray(sample_indices, dtype=np.int64)
+    if indices.ndim != 1:
+        raise LabelError("sample_indices: expected a 1-D array")
     frames = power.shape[0]
-    if frames == 0:
+    if indices.size == 0:
         return np.empty(0, dtype=np.float64)
+    if frames == 0:
+        return np.zeros(indices.shape, dtype=np.float64)
     if width == 1:
-        return power
+        inside = (indices >= 0) & (indices < frames)
+        result = np.zeros(indices.shape, dtype=np.float64)
+        result[inside] = power[indices[inside]]
+        return result
 
     half = width // 2
-    starts = np.arange(frames, dtype=np.int64) - half
+    starts = indices - half
     stops = starts + width
     clipped_starts = np.clip(starts, 0, frames)
     clipped_stops = np.clip(stops, 0, frames)
     totals = np.concatenate(([0.0], np.cumsum(power)))
     sums = totals[clipped_stops] - totals[clipped_starts]
-    counts = np.maximum(clipped_stops - clipped_starts, 1)
-    return np.maximum(sums / counts, 0.0)
+    counts = clipped_stops - clipped_starts
+    result = np.zeros(indices.shape, dtype=np.float64)
+    np.divide(sums, counts, out=result, where=counts > 0)
+    return np.maximum(result, 0.0)
+
+
+def mean_square_envelope(
+    audio: Any,
+    sample_rate: int,
+    window_seconds: float,
+) -> np.ndarray:
+    """Per-sample mean square over a centered rectangular window.
+
+    ``audio`` may be mono ``(N,)`` or multi-channel ``(N, C)``; channels are
+    combined with an equal-power average (mean of squared samples).
+    """
+
+    rate = _check_sample_rate(sample_rate)
+    power = _mono_power(audio)
+    width = _window_samples(window_seconds, rate)
+    return _windowed_mean_square(
+        power, width, np.arange(power.shape[0], dtype=np.int64)
+    )
+
+
+def mean_square_at_samples(
+    audio: Any,
+    sample_rate: int,
+    window_seconds: float,
+    sample_indices: Any,
+) -> np.ndarray:
+    """Mean square of the local window at arbitrary (possibly past-end) samples."""
+
+    rate = _check_sample_rate(sample_rate)
+    power = _mono_power(audio)
+    width = _window_samples(window_seconds, rate)
+    return _windowed_mean_square(power, width, sample_indices)
 
 
 def rms_envelope(audio: Any, sample_rate: int, window_seconds: float) -> np.ndarray:
@@ -101,13 +147,31 @@ def rms_envelope(audio: Any, sample_rate: int, window_seconds: float) -> np.ndar
     return np.sqrt(mean_square_envelope(audio, sample_rate, window_seconds))
 
 
-def envelope_db(audio: Any, sample_rate: int, window_seconds: float) -> np.ndarray:
-    """RMS envelope in dBFS, floored at :data:`SILENCE_DBFS`."""
-
-    mean_square = mean_square_envelope(audio, sample_rate, window_seconds)
+def _db_from_mean_square(mean_square: np.ndarray) -> np.ndarray:
     if mean_square.size == 0:
         return np.empty(0, dtype=np.float64)
     return 10.0 * np.log10(np.maximum(mean_square, _POWER_FLOOR))
+
+
+def envelope_db(audio: Any, sample_rate: int, window_seconds: float) -> np.ndarray:
+    """RMS envelope in dBFS, floored at :data:`SILENCE_DBFS`."""
+
+    return _db_from_mean_square(
+        mean_square_envelope(audio, sample_rate, window_seconds)
+    )
+
+
+def envelope_db_at_samples(
+    audio: Any,
+    sample_rate: int,
+    window_seconds: float,
+    sample_indices: Any,
+) -> np.ndarray:
+    """dBFS level of the local window at arbitrary (possibly past-end) indices."""
+
+    return _db_from_mean_square(
+        mean_square_at_samples(audio, sample_rate, window_seconds, sample_indices)
+    )
 
 
 def estimate_noise_floor_db(envelope_values: Any, percentile: float) -> float:

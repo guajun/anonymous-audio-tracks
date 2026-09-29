@@ -11,7 +11,9 @@ from aat.labels import (
     LabelError,
     compute_thresholds,
     envelope_db,
+    envelope_db_at_samples,
     estimate_noise_floor_db,
+    mean_square_at_samples,
     mean_square_envelope,
     rms_envelope,
 )
@@ -94,3 +96,33 @@ def test_thresholds_combine_absolute_relative_and_noise_floor():
 def test_nan_audio_is_rejected():
     with pytest.raises(LabelError):
         envelope_db(np.array([0.0, np.nan]), 16000, 0.05)
+
+
+def test_mean_square_at_samples_uses_the_window_at_that_index():
+    audio = np.ones(100, dtype=np.float64)
+    indices = np.array([0, 50, 94, 99, 104, 105, 106])
+    values = mean_square_at_samples(audio, 1000, 0.01, indices)  # 10-sample window
+    assert values[0] == pytest.approx(1.0)  # [0, 5) at the start
+    assert values[1] == pytest.approx(1.0)  # [45, 55)
+    assert values[3] == pytest.approx(1.0)  # [94, 100) fully inside
+    assert values[4] == pytest.approx(1.0)  # [99, 100): one real sample
+    assert values[5] == 0.0  # past the end: not a repetition of sample 99
+    assert values[6] == 0.0
+
+
+def test_envelope_db_at_samples_is_floored_past_the_end():
+    audio = np.ones(50, dtype=np.float64)
+    levels = envelope_db_at_samples(audio, 1000, 0.01, np.array([49, 54, 55]))
+    assert levels[0] == pytest.approx(0.0)
+    assert levels[1] == pytest.approx(0.0)
+    assert levels[2] == SILENCE_DBFS
+
+
+def test_mean_square_at_samples_matches_full_envelope_in_range():
+    rate = 8000
+    tone = sine(rate, 0.5)
+    envelope = mean_square_envelope(tone, rate, 0.05)
+    indices = np.arange(tone.size, dtype=np.int64)
+    np.testing.assert_allclose(
+        mean_square_at_samples(tone, rate, 0.05, indices), envelope
+    )

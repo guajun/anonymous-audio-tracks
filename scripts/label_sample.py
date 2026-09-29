@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import sys
 from collections import Counter
 from collections.abc import Mapping, Sequence
@@ -28,6 +29,8 @@ if _SRC.is_dir() and str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
 from aat.contracts import (  # noqa: E402
+    ACTIVITY_ARRAYS_FILENAME,
+    ACTIVITY_METADATA_FILENAME,
     ActivityData,
     Controls,
     SampleManifest,
@@ -79,6 +82,69 @@ def sha256_file(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1 << 20), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _resolve_inside(sample_dir: Path, name: str, label: str) -> Path:
+    """Resolve a relative name inside the sample directory.
+
+    Absolute paths, drive-relative names and ``..`` traversal are rejected, so
+    an output can never escape the sample directory.
+    """
+
+    if not isinstance(name, str) or not name:
+        raise LabelError(f"{label}: expected a non-empty relative path")
+    candidate = Path(name)
+    if candidate.is_absolute() or candidate.drive:
+        raise LabelError(f"{label}: absolute paths are not allowed ({name!r})")
+    if ".." in candidate.parts:
+        raise LabelError(f"{label}: path traversal ('..') is not allowed ({name!r})")
+    base = sample_dir.resolve()
+    resolved = (sample_dir / candidate).resolve()
+    if not resolved.is_relative_to(base):
+        raise LabelError(f"{label}: must stay inside the sample directory ({name!r})")
+    return resolved
+
+
+def _check_output_conflicts(
+    *,
+    manifest_path: Path,
+    metadata_path: Path,
+    arrays_path: Path,
+    summary_path: Path,
+    inputs: Mapping[str, Path],
+    update_manifest: bool,
+) -> None:
+    """Reject output paths that collide with an input or with each other.
+
+    The check runs before any write, so a custom ``--summary-name`` can never
+    overwrite ``sources.json``, ``controls.json``, a stem, ``mix.wav``, the
+    manifest or the protocol activity files.
+    """
+
+    outputs: list[tuple[str, Path]] = [
+        ("activity metadata", metadata_path),
+        ("activity arrays", arrays_path),
+        ("summary", summary_path),
+    ]
+    if update_manifest:
+        outputs.append(("manifest", manifest_path))
+    seen: dict[Path, str] = {}
+    for output_label, output_path in outputs:
+        if output_path in seen:
+            raise LabelError(
+                f"{output_label} output path {output_path} collides with the "
+                f"{seen[output_path]} output"
+            )
+        seen[output_path] = output_label
+    for output_label, output_path in outputs:
+        for input_label, input_path in inputs.items():
+            if output_label == "manifest" and input_label == "manifest":
+                continue  # the manifest is updated in place, by design
+            if output_path == input_path:
+                raise LabelError(
+                    f"{output_label} output path {output_path} collides with the "
+                    f"{input_label} input"
+                )
 
 
 def load_label_config(path: Path) -> LabelConfig:
@@ -149,11 +215,30 @@ def run_labeling(
 ) -> dict[str, Any]:
     """Label one sample directory and return a report for printing."""
 
+    sample_dir = Path(sample_dir)
     config = config if config is not None else LabelConfig()
-    if duration_tolerance_seconds < 0.0:
-        raise LabelError("duration_tolerance_seconds: must be >= 0")
+    if (
+        isinstance(duration_tolerance_seconds, bool)
+        or not isinstance(duration_tolerance_seconds, (int, float))
+        or not math.isfinite(float(duration_tolerance_seconds))
+        or float(duration_tolerance_seconds) < 0.0
+    ):
+        raise LabelError(
+            "duration_tolerance_seconds: expected a finite value >= 0, "
+            f"got {duration_tolerance_seconds!r}"
+        )
+    tolerance = float(duration_tolerance_seconds)
 
-    manifest = SampleManifest.load(sample_dir / manifest_name)
+    manifest_path = _resolve_inside(sample_dir, manifest_name, "manifest name")
+    summary_path = _resolve_inside(sample_dir, summary_name, "summary name")
+    metadata_path = _resolve_inside(
+        sample_dir, ACTIVITY_METADATA_FILENAME, "activity metadata name"
+    )
+    arrays_path = _resolve_inside(
+        sample_dir, ACTIVITY_ARRAYS_FILENAME, "activity arrays name"
+    )
+
+    manifest = SampleManifest.load(manifest_path)
     sources = SourceRegistry.load(sample_dir / manifest.sources_path)
     if sources.sample_id is not None and sources.sample_id != manifest.sample_id:
         raise LabelError(
@@ -167,6 +252,27 @@ def run_labeling(
             f"manifest has {sorted(manifest.stem_paths)}, "
             f"sources has {list(sources.source_ids)}"
         )
+
+    inputs: dict[str, Path] = {
+        "manifest": manifest_path,
+        "sources": _resolve_inside(sample_dir, manifest.sources_path, "sources path"),
+        "controls": _resolve_inside(
+            sample_dir, manifest.controls_path, "controls path"
+        ),
+        "mix": _resolve_inside(sample_dir, manifest.mix_path, "mix path"),
+    }
+    for source_id, relative in manifest.stem_paths.items():
+        inputs[f"stem {source_id}"] = _resolve_inside(
+            sample_dir, relative, f"stem {source_id} path"
+        )
+    _check_output_conflicts(
+        manifest_path=manifest_path,
+        metadata_path=metadata_path,
+        arrays_path=arrays_path,
+        summary_path=summary_path,
+        inputs=inputs,
+        update_manifest=update_manifest,
+    )
 
     _verify_content_hashes(sample_dir, manifest)
 
@@ -183,11 +289,11 @@ def run_labeling(
                 f"manifest {manifest.sample_rate} Hz"
             )
         difference = abs(wav.duration_seconds - manifest.duration_seconds)
-        if difference > duration_tolerance_seconds:
+        if difference > tolerance:
             raise LabelError(
                 f"stem {source_id!r}: duration {wav.duration_seconds:.6f} s differs "
                 f"from manifest {manifest.duration_seconds:.6f} s by more than "
-                f"{duration_tolerance_seconds} s"
+                f"{tolerance} s"
             )
         stem_samples[source_id] = wav.samples
 
@@ -197,11 +303,12 @@ def run_labeling(
         sample_rate=manifest.sample_rate,
         duration_seconds=manifest.duration_seconds,
         track_start_seconds=manifest.track_start_seconds,
+        duration_tolerance_seconds=tolerance,
         config=config,
         sample_id=manifest.sample_id,
     )
 
-    metadata_path, arrays_path = result.activity.save(sample_dir)
+    result.activity.save(sample_dir)
     # Re-read through the protocol validator so a bad write cannot pass silently.
     ActivityData.load(sample_dir)
 
@@ -234,7 +341,7 @@ def run_labeling(
             "controls.json is recorded for reference only and never changes the labels.",
         ],
     }
-    dump_json(sample_dir / summary_name, summary)
+    dump_json(summary_path, summary)
 
     manifest_updated = False
     if update_manifest:
@@ -244,7 +351,7 @@ def run_labeling(
         payload["activity_arrays_path"] = arrays_path.name
         payload["content_sha256"][metadata_path.name] = sha256_file(metadata_path)
         payload["content_sha256"][arrays_path.name] = sha256_file(arrays_path)
-        SampleManifest.from_json_dict(payload).save(sample_dir / manifest_name)
+        SampleManifest.from_json_dict(payload).save(manifest_path)
         manifest_updated = True
 
     return {

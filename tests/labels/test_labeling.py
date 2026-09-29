@@ -216,3 +216,59 @@ def test_no_sources_yields_empty_columns():
     )
     assert result.activity.activity.shape == (51, 0)
     assert result.summaries == ()
+
+
+def test_declared_duration_beyond_audio_is_rejected():
+    buffer = np.full(RATE, 0.2)
+    with pytest.raises(LabelError, match="duration_seconds"):
+        label_stems(
+            {"s01": buffer},
+            source_ids=("s01",),
+            sample_rate=RATE,
+            duration_seconds=3.0,
+            track_start_seconds=0.0,
+        )
+    with pytest.raises(LabelError, match="duration_seconds"):
+        label_stems(
+            {"s01": buffer},
+            source_ids=("s01",),
+            sample_rate=RATE,
+            duration_seconds=0.5,
+            track_start_seconds=0.0,
+        )
+
+
+@pytest.mark.parametrize(
+    "tolerance", [float("nan"), float("inf"), -0.1, "0.01", True]
+)
+def test_duration_tolerance_must_be_finite_and_non_negative(tolerance):
+    buffer = np.zeros(RATE)
+    with pytest.raises(LabelError, match="duration_tolerance_seconds"):
+        label_stems(
+            {"s01": buffer},
+            source_ids=("s01",),
+            sample_rate=RATE,
+            duration_seconds=1.0,
+            track_start_seconds=0.0,
+            duration_tolerance_seconds=tolerance,
+        )
+
+
+def test_within_tolerance_grid_uses_the_actual_sample_boundary():
+    buffer = np.full(RATE, 0.2)
+    config = replace(LabelConfig(), center_window_seconds=0.01)
+    result = label_stems(
+        {"s01": buffer},
+        source_ids=("s01",),
+        sample_rate=RATE,
+        duration_seconds=1.005,  # inside the default 0.01 s tolerance
+        track_start_seconds=0.0,
+        config=config,
+    )
+    times = result.activity.center_times
+    at_end = int(np.argmin(np.abs(times - 1.0)))
+    assert times[at_end] == pytest.approx(1.0)
+    # window [15920, 16080) is not fully inside the 16000 decoded samples
+    assert not result.activity.valid[at_end]
+    earlier = int(np.argmin(np.abs(times - 0.98)))
+    assert result.activity.valid[earlier]

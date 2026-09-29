@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 import numpy as np
+import pytest
 
 from aat.contracts import ActivityData, SampleManifest, load_json
 from aat.labels import LabelConfig
@@ -87,6 +88,8 @@ def test_duration_mismatch_is_rejected(tmp_path, capsys):
     support.update_manifest_hash(root, "stems/s01.wav")
     assert run_cli([str(root)]) == 2
     assert "duration" in capsys.readouterr().err
+    assert not (root / "activity.json").exists()
+    assert not (root / "activity.npz").exists()
 
 
 def test_controls_are_reference_only(tmp_path):
@@ -218,3 +221,61 @@ def test_missing_stem_file_is_rejected(tmp_path, capsys):
     (root / "stems" / "s01.wav").unlink()
     assert run_cli([str(root)]) == 2
     assert "not found" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "sources.json",
+        "controls.json",
+        "mix.wav",
+        "stems/s01.wav",
+        "manifest.json",
+        "activity.json",
+        "activity.npz",
+    ],
+)
+def test_summary_output_conflicts_are_rejected(tmp_path, capsys, name):
+    root = support.make_sample_dir(tmp_path / "sample", stems={"s01": pulse_buffer()})
+    protected = [
+        "sources.json",
+        "controls.json",
+        "mix.wav",
+        "stems/s01.wav",
+        "manifest.json",
+    ]
+    snapshots = {relative: (root / relative).read_bytes() for relative in protected}
+    assert run_cli([str(root), "--summary-name", name]) == 2
+    assert "collides" in capsys.readouterr().err
+    assert not (root / "activity.json").exists()
+    assert not (root / "activity.npz").exists()
+    for relative, blob in snapshots.items():
+        assert (root / relative).read_bytes() == blob
+
+
+def test_summary_path_escape_is_rejected(tmp_path, capsys):
+    root = support.make_sample_dir(tmp_path / "sample", stems={"s01": pulse_buffer()})
+    outside = tmp_path / "escape.json"
+    assert run_cli([str(root), "--summary-name", "../escape.json"]) == 2
+    assert "traversal" in capsys.readouterr().err
+    assert run_cli([str(root), "--summary-name", str(outside)]) == 2
+    assert "absolute" in capsys.readouterr().err
+    assert not outside.exists()
+    assert not (root / "activity.json").exists()
+
+
+def test_manifest_name_escape_is_rejected(tmp_path, capsys):
+    root = support.make_sample_dir(tmp_path / "sample", stems={"s01": pulse_buffer()})
+    assert run_cli([str(root), "--manifest-name", "../manifest.json"]) == 2
+    assert "traversal" in capsys.readouterr().err
+    assert not (root / "activity.json").exists()
+
+
+@pytest.mark.parametrize("value", ["nan", "inf", "-1"])
+def test_duration_tolerance_must_be_finite_and_non_negative(
+    tmp_path, capsys, value
+):
+    root = support.make_sample_dir(tmp_path / "sample", stems={"s01": pulse_buffer()})
+    assert run_cli([str(root), "--duration-tolerance-seconds", value]) == 2
+    assert "duration_tolerance_seconds" in capsys.readouterr().err
+    assert not (root / "activity.json").exists()
