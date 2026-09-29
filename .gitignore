@@ -44,6 +44,11 @@ wandb/
 *.fxp
 *.vstpreset
 
+# The asset rule ``models/`` above also matches source code directories named
+# ``models``; keep the tracked head and test packages visible to git.
+!src/aat/models/
+!tests/models/
+
 # Editors and OS
 .idea/
 .vscode/

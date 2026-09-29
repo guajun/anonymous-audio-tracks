@@ -25,7 +25,9 @@ jobs:
         with:
           version: "0.12.19"
           enable-cache: true
-      - name: Sync locked environment (no models, no data, no secrets)
-        run: uv sync --locked
-      - name: Run contract and windowing tests
+      - name: Sync locked environment with the ml extra (CPU torch; no models, no data)
+        run: uv sync --locked --extra ml
+      - name: Verify the CPU-only ml extra is installed
+        run: uv run --no-sync python -c "import torch; assert '+cpu' in torch.__version__, torch.__version__; print(torch.__version__)"
+      - name: Run contract, windowing and model-head tests
         run: uv run --no-sync pytest -q

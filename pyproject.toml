@@ -18,12 +18,25 @@ dependencies = [
 render = []
 # Optional feature/training stack owned by the AuT and head issues (#5, #7).
 # Entries are added and locked by those issues; never install a GPU stack by default.
-ml = []
+ml = [
+    "torch>=2.5,<3",
+]
 
 [dependency-groups]
 dev = [
     "pytest>=8.3,<9",
 ]
+
+# The head/loss tests need torch.  Resolve it from the CPU-only wheel index so a
+# plain ``uv sync --extra ml`` never pulls the default CUDA/nvidia stack.  The
+# index is explicit and only used for the packages mapped in [tool.uv.sources].
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/aat"]
