@@ -7,6 +7,8 @@
 保留合成集评估、以及一对固定真实音乐片段的客观抽查证据；**尚未宣称 M3 研究成功、M5 完成，也没有 LED 谱面接入**。
 本文中的窗口、步长与模型选择仍以实测文档为准，代表性结论与失败例见
 [docs/reports/issue-11-integration.md](docs/reports/issue-11-integration.md) 与 [docs/TRAINING.md](docs/TRAINING.md)。
+issue #24 的 DETR 研究阶段 A（设计与诊断）见 [docs/reports/issue-24-stage-a.md](docs/reports/issue-24-stage-a.md)：
+该报告未执行阶段 B、未替换主模型，也未宣称 DETR 或端点拼接有效。
 
 ## 当前状态与快速开始
 

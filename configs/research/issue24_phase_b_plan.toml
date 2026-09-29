@@ -1,0 +1,244 @@
+# Phase B design checklist for issue #24 -- DESCRIPTION ONLY.
+#
+# This file is not a run authorization.  It fixes candidate experiment names,
+# the single variable each candidate changes, budgets, seeds, data isolation,
+# metrics and stop conditions so the main session can review the plan before
+# any experiment starts.  scripts/diagnose_issue24.py validate-plan checks the
+# structure; nothing in the repository reads this file to launch training.
+#
+# Rules that do not change in Phase B:
+#   * public inference stays E[K, 128] and center P[K]; K remains configurable;
+#   * a slot number is never a track id; no per-frame re-matching in training;
+#   * GT stem labels are training-only supervision, never inference input;
+#   * fake/mock runs are engineering smoke only, never model evidence.
+
+[plan]
+id = "issue24-phase-b"
+issue = 24
+stage = "design-only"
+authorization = "pending-main-session-approval"
+not_executable = true
+baseline_commit = "eb05eb93300960c7e879330920e53367233fe724"
+seed = 20260929
+verification_seed = 20260930
+proposal_doc = "docs/reports/issue-24-stage-a.md"
+research_report = "docs/reports/issue-24-stage-a.md"
+
+[constraints]
+fake_use = "fake/mock runs are engineering smoke only and are never reported as model evidence"
+not_model_evidence = true
+protocol = "E[K,128] and center P[K] unchanged for B1-B9; auxiliary outputs must not become public inference fields without a separate protocol argument"
+backbone = "frozen Qwen3-Omni AuT; a backbone or window change is a separately argued experiment (B9)"
+dependencies = "no new runtime dependency; no committed audio, weights, checkpoints or runs"
+holdout = "candidate, stop and combination decisions use only train + development validation; the frozen holdout is generated/registered only after configuration freeze and is never a selection input"
+splice = "endpoint splicing is an engineering layer over the original mix only; no stem input, no slot-number reuse, no loose confirmation gate, reference-zone alignment per side must be reliable before any confirm"
+
+[data]
+renderer = "DawDreamer via configs/train/dataset_local.toml (4 train / 2 development val / 2 historical test songs)"
+train = "train-01..04"
+development_validation = "val-01/02 (development only; all candidate, threshold, stop and combination decisions use train + this split)"
+historically_observed_test = "test-01/02 (already observed during issue #8/#11; reported only as historical evidence, never used for candidate/threshold/stop decisions and never presented as a virgin holdout)"
+frozen_holdout = "generated and registered only after the final configuration is frozen; disjoint composition/preset/sample_origin families; each of the pre-declared baseline and the selected candidate is evaluated exactly once; NOT generated in Phase A"
+isolation = [
+  "candidate/stop/combination decisions use only train + development validation membership; the historical test is never a selection input",
+  "the frozen holdout is not generated, inspected or registered until configuration freeze, and never feeds back into tuning",
+  "selection by composition/preset/sample_origin connected components",
+  "real user music is excluded from training and from all reported accuracy numbers; fixed clips may only be used for engineering-layer post-processing diagnostics",
+]
+overfit_subset = "two fixed train songs, four fixed non-adjacent windows each, fixed with diagnostics before B0; never a val/test/holdout song"
+long_gap_pairs = "synthetic pairs constructed inside one rendered composition: end clip from one activity segment, start clip from a later segment of the same source, plus hard negatives from a different source of the same song; each side keeps far-from-seam reference centers whose windows are sample-identical to the original inference windows"
+
+[metrics]
+# Names used in [[experiments]].metrics.
+model_layer = [
+  "activity_f1_micro", "activity_precision_micro", "activity_recall_micro",
+  "source_count_abs_error", "id_switch_count", "ambiguous_owner_frame_count",
+  "boundary_onset_mae", "boundary_offset_mae",
+]
+supervision = [
+  "ambiguous_group_ratio", "identity_masked_group_ratio",
+  "positive_terms", "negative_terms", "identity_anchor_coverage",
+  "sampled_center_gap_min_median_max",
+]
+engineering = [
+  "duplicate_overlap_frames", "candidate_recall_at_n", "splice_confirmed_precision",
+  "splice_false_merge", "splice_missed_link", "splice_inference_seconds",
+  "reference_zone_alignment_accuracy", "reference_zone_alignment_uniqueness",
+  "reference_zone_e_reproducibility_error", "splice_uncertain_count",
+]
+holdout = [
+  "activity_f1_micro", "activity_precision_micro", "activity_recall_micro",
+  "id_switch_count", "source_count_abs_error", "identity_anchor_coverage",
+]
+notes = [
+  "duplicate_overlap_frames requires a small evaluation-report extension (planned); it is not reported today",
+  "splice metrics are only defined on the synthetic long-gap pair set with engineered same/different-source GT",
+  "reference_zone_alignment_* measure the per-side reference-zone track alignment against engineered GT; reference_zone_e_reproducibility_error compares original vs splice-run E at sample-identical reference centers",
+  "the frozen holdout is a one-time final check, not a tuning loop",
+]
+
+[decision_rules]
+overfit_gate = "B0 must pass before any B1-B9 comparison is started"
+single_variable = "each candidate changes exactly one declared factor fixed in advance; no 'or ... chosen before the run' alternatives; B7 only after its parent experiments have been reported"
+repetition = "a positive claim needs the same direction on seeds 20260929 and 20260930; otherwise record it as unstable"
+selection_input = "only train + development validation may influence candidate selection, thresholds, stopping or combination"
+historical_test = "the issue #8/#11 test split is historical evidence only; it is never a selection input and is not a virgin holdout"
+frozen_holdout = "after configuration freeze, register the frozen holdout before generating any of its audio; evaluate exactly the pre-declared baseline and selected candidate once each; no changes after seeing it"
+honest_negative = "no improvement is reported as a negative result; do not extend budgets to rescue it"
+no_fake_conclusion = "fake/mock outputs may validate the pipeline but never support a model-quality or method conclusion"
+
+[[experiments]]
+id = "b0-overfit-gate"
+kind = "gate"
+status = "proposed"
+question = "Can the current head + loss structure fit a fixed tiny real-feature batch at all before any architecture comparison?"
+single_variable = "none (gate): fixed two-song overfit subset, current supervision and head unchanged"
+baseline = "zero-logit BCE 0.6931 and the issue #7 fake-feature overfit evidence (docs/MODEL_HEAD.md section 5)"
+data = "overfit_subset only (train songs, fixed windows); no validation/test/holdout data"
+budget = { steps = 300, gpu_minutes_upper = 15, runs = 1 }
+seed = 20260929
+metrics = ["activity_f1_micro", "positive_terms", "negative_terms", "identity_anchor_coverage"]
+stop_condition = "If activity F1 < 0.99 on the fixed batch or no identity term executes even on this unambiguous subset, stop and fix supervision/data selection before B1; do not proceed to decoder ablations"
+
+[[experiments]]
+id = "b1-baseline-current"
+kind = "training"
+status = "proposed"
+question = "What does the current head/loss do on the fixed rendered split at the frozen short-training budget, re-run at the Phase B code SHA?"
+single_variable = "none (baseline): replicate configs/train/aut_short.toml parameters on the Phase B commit"
+baseline = "issue #8 aut_short (100 steps, seed 20260929) and the three constant baselines in docs/TRAINING.md"
+data = "train-01..04 for training; val-01/02 for all decisions; test-01/02 retained only as historical comparison, never for selection"
+budget = { steps = 100, gpu_minutes_upper = 10, runs = 2 }
+seed = 20260929
+metrics = ["activity_f1_micro", "activity_precision_micro", "activity_recall_micro", "source_count_abs_error", "id_switch_count", "boundary_onset_mae", "ambiguous_group_ratio", "identity_masked_group_ratio", "sampled_center_gap_min_median_max"]
+stop_condition = "If the re-run differs materially from the recorded #8 baseline, diagnose the difference first; do not compare later candidates against an unreproduced baseline"
+
+[[experiments]]
+id = "b2-supervision-ambiguity"
+kind = "training"
+status = "proposed"
+question = "Does replacing whole-group identity masking with unambiguous-source-only identity supervision change identity coverage or local activity quality?"
+single_variable = "identity supervision masking policy (group-level mask -> per-source support only; activity/empty terms unchanged)"
+baseline = "b1-baseline-current"
+data = "same as b1"
+budget = { steps = 100, gpu_minutes_upper = 10, runs = 2 }
+seed = 20260929
+metrics = ["identity_anchor_coverage", "positive_terms", "negative_terms", "activity_f1_micro", "id_switch_count"]
+stop_condition = "If identity coverage rises but validation F1 and ID switch do not move, record no effect and do not stack this change into B7"
+
+[[experiments]]
+id = "b3a-supervision-negative-scope"
+kind = "training"
+status = "proposed"
+question = "Does restricting the negative term to same-composition identities help or hurt relative to the batch-global scope?"
+single_variable = "negative term scope (batch-global -> same-composition-only); all else as b1"
+baseline = "b1-baseline-current"
+data = "same as b1"
+budget = { steps = 100, gpu_minutes_upper = 10, runs = 2 }
+seed = 20260929
+metrics = ["negative_terms", "positive_terms", "activity_f1_micro", "id_switch_count"]
+stop_condition = "If the same-composition scope has no measurable effect over two seeds, keep the simpler batch-global term and record the null result"
+
+[[experiments]]
+id = "b3b-supervision-negative-off"
+kind = "training"
+status = "proposed"
+question = "Does the cross-identity negative term contribute at all, or is activity supervision already sufficient?"
+single_variable = "negative term weight (w_neg 1.0 -> 0.0); all else as b1"
+baseline = "b1-baseline-current"
+data = "same as b1"
+budget = { steps = 100, gpu_minutes_upper = 10, runs = 2 }
+seed = 20260929
+metrics = ["positive_terms", "activity_f1_micro", "id_switch_count", "identity_anchor_coverage"]
+stop_condition = "This is a control ablation, not a proposed fix; if removing the term does not change validation metrics over two seeds, record that the current negative term is not measurably contributing"
+
+[[experiments]]
+id = "b4-sampling-context"
+kind = "training"
+status = "proposed"
+question = "Do positives built on the closest allowed pairs (maximum possible 95% overlap) teach identity, or only shared-context stability?"
+single_variable = "group window sampling minimum distance (min_center_gap 5 -> 25 grid steps): the closest allowed center spacing rises from 0.1 s to 0.5 s and the maximum possible overlap of the closest allowed pair falls from 95% to 75%; centers_per_item fixed"
+baseline = "b1-baseline-current"
+data = "same as b1; group/step counts unchanged"
+budget = { steps = 100, gpu_minutes_upper = 10, runs = 2 }
+seed = 20260929
+metrics = ["identity_anchor_coverage", "positive_terms", "activity_f1_micro", "id_switch_count", "boundary_onset_mae", "sampled_center_gap_min_median_max"]
+stop_condition = "If fewer anchors or no metric change over two seeds, record that the current positive term is a context-stability term and stop tuning it blindly"
+
+[[experiments]]
+id = "b5-decoder-self-attention"
+kind = "training"
+status = "proposed"
+question = "Does adding query self-attention plus iterative decoder refinement (the missing DETR decoder parts) improve local activity/duplicate-slot behaviour under the b1 supervision?"
+single_variable = "head architecture only: add K-query self-attention and iterative refinement; E/P public interface unchanged"
+baseline = "b1-baseline-current"
+data = "same as b1"
+budget = { steps = 100, gpu_minutes_upper = 15, runs = 2 }
+seed = 20260929
+metrics = ["activity_f1_micro", "source_count_abs_error", "id_switch_count", "duplicate_overlap_frames", "boundary_onset_mae"]
+stop_condition = "If B5 does not improve over B1 at the same budget and seed on two seeds, stop the decoder direction; do not compensate by increasing steps"
+
+[[experiments]]
+id = "b6-time-mask-aux"
+kind = "training"
+status = "gated"
+question = "Do boundary errors need an auxiliary per-source temporal activity mask (Dice/IoU) while center P stays the public output?"
+single_variable = "auxiliary temporal activity mask head and mask loss only; public E[K,128]/P[K] unchanged"
+baseline = "best of b1-b5 for boundary metrics"
+data = "same as b1 plus auxiliary target masks derived from the same rendered stem labels (training only)"
+budget = { steps = 100, gpu_minutes_upper = 15, runs = 2 }
+seed = 20260929
+metrics = ["boundary_onset_mae", "boundary_offset_mae", "activity_f1_micro", "duplicate_overlap_frames"]
+stop_condition = "Only start if b1-b5 show boundary errors not explained by supervision; if mask loss does not reduce boundary MAE, stop and keep the public protocol unchanged (no time-mask protocol)"
+
+[[experiments]]
+id = "b7-combination"
+kind = "training"
+status = "gated"
+question = "Do the best supervision change and the best decoder change compose, or do they conflict?"
+single_variable = "combination of the best reported supervision change (b2/b3a/b3b/b4) with the best reported decoder change (b5/b6); nothing new"
+baseline = "the two winning parents; b1 for the non-changed factors"
+data = "same as b1"
+budget = { steps = 100, gpu_minutes_upper = 15, runs = 2 }
+seed = 20260929
+metrics = ["activity_f1_micro", "identity_anchor_coverage", "id_switch_count", "source_count_abs_error", "boundary_onset_mae"]
+stop_condition = "Only start after both parents report; if the combination does not beat the best parent on two seeds, report the conflict and stop the combination direction"
+
+[[experiments]]
+id = "b8-endpoint-splice-postproc"
+kind = "engineering-postprocess"
+status = "proposed"
+question = "Does reference-zone-aligned splice re-run confirmation add precision/recall over direct endpoint-embedding matching for long-gap candidate association?"
+single_variable = "association confirmation mechanism: direct E matching vs reference-zone-aligned splice re-run tracker (retrieval policy and candidate list fixed)"
+baseline = "direct E similarity on the original mix endpoints, same candidate list and no loose gate"
+data = "synthetic long-gap pairs (same source and different source of one composition) plus, separately reported and never as accuracy, fixed user clips without GT; no stems"
+budget = { steps = 0, inference_pairs = 60, gpu_minutes_upper = 30, runs = 1 }
+seed = 20260929
+metrics = ["candidate_recall_at_n", "splice_confirmed_precision", "splice_false_merge", "splice_missed_link", "splice_inference_seconds", "reference_zone_alignment_accuracy", "reference_zone_alignment_uniqueness", "reference_zone_e_reproducibility_error", "splice_uncertain_count", "id_switch_count"]
+stop_condition = "If splice confirmation does not beat direct E matching on the engineered synthetic pairs, or if reference-zone alignment is ambiguous/not reproducible, or if seam/order/volume controls change the decision, stop the splice direction; allowed rejection is required (no forced merges)"
+
+[[experiments]]
+id = "b9-window-context"
+kind = "training"
+status = "gated"
+question = "Would a longer analysis window reduce boundary errors enough to justify a protocol change?"
+single_variable = "analysis window W (2.0 s -> 4.0 s); needs a separate protocol argument because it changes the public window semantics"
+baseline = "b1-baseline-current at W=2.0 s"
+data = "same as b1 (labels are regenerated for the new window; split isolation unchanged)"
+budget = { steps = 100, gpu_minutes_upper = 15, runs = 2 }
+seed = 20260929
+metrics = ["boundary_onset_mae", "boundary_offset_mae", "activity_f1_micro", "source_count_abs_error"]
+stop_condition = "Do not start without explicit approval of the protocol change; if boundary MAE does not improve, keep W=2.0 s and record the negative result"
+
+[[experiments]]
+id = "b10-frozen-holdout-check"
+kind = "evaluation"
+status = "gated"
+question = "Do the pre-declared baseline and the finally selected candidate behave consistently on a holdout that was never available during development?"
+single_variable = "none (final one-time check): the pre-declared baseline and the selected candidate on the frozen holdout"
+baseline = "the pre-declared b1 configuration and the selected candidate, both fixed in writing before the holdout is generated"
+data = "frozen_holdout: generated and registered only after configuration freeze, with disjoint composition/preset/sample_origin families; exactly one evaluation per pre-declared configuration"
+budget = { steps = 0, gpu_minutes_upper = 15, runs = 2 }
+seed = 20260929
+metrics = ["activity_f1_micro", "activity_precision_micro", "activity_recall_micro", "id_switch_count", "source_count_abs_error", "identity_anchor_coverage"]
+stop_condition = "One-time check only; do not generate the holdout before freeze, do not tune after seeing it, and do not treat a holdout failure as a reason to iterate on it"
