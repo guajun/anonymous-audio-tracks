@@ -211,10 +211,13 @@ def evaluate_trajectory(
     reference_truth = reference_active & reference_valid[:, None]
 
     tracks = tuple(prediction.tracks)
-    aligned, predicted_only_active, masked_points = _align_tracks(
+    aligned, observed, predicted_only_active, masked_points = _align_tracks(
         tracks, reference_times, reference_valid, tolerance, threshold
     )
-    predicted_active = aligned >= threshold
+    # Binarise observed predictions only: fill zeros where no point exists must
+    # not become "active" at a legitimate threshold of 0, and invalid columns
+    # are masked explicitly even if a stray value ever landed there.
+    predicted_active = (aligned >= threshold) & observed & reference_valid[None, :]
 
     mapping_pairs = _global_mapping(reference_truth, predicted_active)
     mapping = {source_ids[source]: tracks[track].track_id for source, track in mapping_pairs}
@@ -373,17 +376,20 @@ def _align_tracks(
     reference_valid: np.ndarray,
     tolerance: float,
     threshold: float,
-) -> tuple[np.ndarray, np.ndarray, list[np.ndarray]]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, list[np.ndarray]]:
     """Align every track to the full reference grid, then apply the valid mask.
 
-    Returns ``(aligned, predicted_only_active, masked_points)`` where
+    Returns ``(aligned, observed, predicted_only_active, masked_points)`` where
     ``aligned`` is ``(tracks, frames)`` activity on the full grid (invalid
-    columns stay zero), ``predicted_only_active`` counts active points with no
-    reference frame within tolerance, and ``masked_points[track]`` marks points
-    that landed on an explicitly invalid frame (ignored, not false positives).
+    columns stay zero), ``observed[index, frame]`` marks cells backed by an
+    actual predicted point, ``predicted_only_active`` counts active points with
+    no reference frame within tolerance, and ``masked_points[track]`` marks
+    points that landed on an explicitly invalid frame (ignored, not false
+    positives).
     """
 
     aligned = np.zeros((len(tracks), reference_times.shape[0]), dtype=np.float64)
+    observed = np.zeros((len(tracks), reference_times.shape[0]), dtype=bool)
     predicted_only_active = np.zeros(len(tracks), dtype=np.int64)
     masked_points: list[np.ndarray] = []
     for index, track in enumerate(tracks):
@@ -398,6 +404,7 @@ def _align_tracks(
             if not reference_valid[frame]:
                 masked[point] = True
                 continue
+            observed[index, frame] = True
             if track_activity[point] > aligned[index, frame]:
                 aligned[index, frame] = track_activity[point]
         if np.any(unmatched):
@@ -405,7 +412,7 @@ def _align_tracks(
                 np.count_nonzero(track_activity[unmatched] >= threshold)
             )
         masked_points.append(masked)
-    return aligned, predicted_only_active, masked_points
+    return aligned, observed, predicted_only_active, masked_points
 
 
 def _map_point_times(
@@ -463,30 +470,36 @@ def _id_switch_counts(
 ) -> tuple[np.ndarray, np.ndarray]:
     """Frame-wise owner changes per source with explicit ambiguity counting.
 
-    A frame with exactly one active track gives a discernible owner; several
-    active tracks are ambiguous and never resolved arbitrarily.  The last
-    discernible owner is kept across silence, masked frames and ambiguous
-    frames, so a reappearance on a different track is counted as a switch.
+    A frame only yields a discernible owner for a source when that frame has
+    exactly one valid active reference source *and* exactly one active predicted
+    track; overlapping-source frames cannot attribute a track by activity alone.
+    Frames with predictions but multiple active sources or tracks are counted as
+    ambiguous per affected source and never resolved arbitrarily; frames without
+    any active track are missing.  The last discernible owner is kept across
+    missing, silent and ambiguous frames, so a reappearance on a different track
+    is counted as a switch.
     """
 
     frame_count, source_count = reference_truth.shape
     switches = np.zeros(source_count, dtype=np.int64)
     ambiguous = np.zeros(source_count, dtype=np.int64)
+    active_sources_per_frame = reference_truth.sum(axis=1)
+    active_tracks_per_frame = predicted_active.sum(axis=0)
     for source in range(source_count):
         last_owner: int | None = None
         for frame in range(frame_count):
             if not reference_truth[frame, source]:
                 continue
-            active_tracks = np.flatnonzero(predicted_active[:, frame])
-            if active_tracks.size == 0:
+            if active_tracks_per_frame[frame] == 0:
                 continue
-            if active_tracks.size > 1:
+            if active_tracks_per_frame[frame] == 1 and active_sources_per_frame[frame] == 1:
+                owner = int(np.flatnonzero(predicted_active[:, frame])[0])
+                if last_owner is not None and owner != last_owner:
+                    switches[source] += 1
+                last_owner = owner
+            else:
+                # Several active sources and/or tracks: no unique owner possible.
                 ambiguous[source] += 1
-                continue
-            owner = int(active_tracks[0])
-            if last_owner is not None and owner != last_owner:
-                switches[source] += 1
-            last_owner = owner
     return switches, ambiguous
 
 

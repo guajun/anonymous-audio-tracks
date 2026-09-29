@@ -376,6 +376,145 @@ def test_owner_change_after_gap_is_a_switch():
     assert result.id_switch_count == 1
 
 
+def test_overlapping_sources_do_not_fabricate_owner_switches():
+    times = np.arange(3) * 0.02
+    reference = helpers.activity(
+        times, [[1.0, 1.0, 1.0], [0.0, 1.0, 0.0]], ["s1", "s2"]
+    )
+    prediction = helpers.trajectory(
+        [
+            {"track_id": "a", "times": times, "activity": [1.0, 0.0, 1.0]},
+            {"track_id": "b", "times": times, "activity": [0.0, 1.0, 0.0]},
+        ]
+    )
+
+    result = evaluate_trajectory(reference, prediction)
+
+    # The middle frame has two active GT sources, so b cannot be attributed to
+    # either of them by activity alone: it is a missed detection for s1 and a
+    # correct detection for s2, not two identity switches.
+    assert result.mapping == {"s1": "a", "s2": "b"}
+    assert result.id_switch_count == 0
+    assert result.per_source["s1"].id_switch_count == 0
+    assert result.per_source["s2"].id_switch_count == 0
+    assert result.ambiguous_owner_frames == 2
+
+
+def test_same_owner_before_and_after_gt_overlap_is_not_a_switch():
+    times = np.arange(5) * 0.02
+    reference = helpers.activity(
+        times,
+        [[1.0, 1.0, 1.0, 1.0, 1.0], [0.0, 0.0, 1.0, 0.0, 0.0]],
+        ["s1", "s2"],
+    )
+    prediction = helpers.trajectory(
+        [
+            {"track_id": "a", "times": times, "activity": [1.0, 1.0, 0.0, 1.0, 1.0]},
+            {"track_id": "b", "times": times, "activity": [0.0, 0.0, 1.0, 0.0, 0.0]},
+        ]
+    )
+
+    result = evaluate_trajectory(reference, prediction)
+
+    assert result.id_switch_count == 0
+    assert result.ambiguous_owner_frames == 2  # frame 2 affects both sources
+
+
+def test_switch_after_ambiguity_is_counted_once():
+    times = np.arange(5) * 0.02
+    reference = helpers.activity(
+        times,
+        [[1.0, 1.0, 1.0, 1.0, 1.0], [0.0, 0.0, 1.0, 0.0, 0.0]],
+        ["s1", "s2"],
+    )
+    prediction = helpers.trajectory(
+        [
+            {"track_id": "a", "times": times, "activity": [1.0, 1.0, 1.0, 0.0, 0.0]},
+            {"track_id": "b", "times": times, "activity": [0.0, 0.0, 0.0, 1.0, 1.0]},
+        ]
+    )
+
+    result = evaluate_trajectory(reference, prediction)
+
+    assert result.id_switch_count == 1
+    assert result.ambiguous_owner_frames == 2
+
+
+def test_zero_threshold_does_not_fabricate_predictions_on_invalid_frames():
+    times = np.arange(3) * 0.02
+    reference = helpers.activity(
+        times, [[1.0, 1.0, 1.0]], ["s1"], valid=[False, False, False]
+    )
+    prediction = helpers.trajectory(
+        [{"track_id": "a", "times": times, "activity": [1.0, 1.0, 1.0]}]
+    )
+
+    result = evaluate_trajectory(
+        reference, prediction, EvaluationConfig(activity_threshold=0.0)
+    )
+
+    assert result.true_positives == 0
+    assert result.false_positives == 0
+    assert result.false_negatives == 0
+    assert result.reference_source_count == 0
+    assert result.predicted_track_count == 0
+    assert result.precision is None
+    assert result.recall is None
+    assert result.f1 is None
+    assert result.mapping == {}
+
+
+def test_zero_threshold_keeps_valid_observed_activity_active():
+    times = np.arange(3) * 0.02
+    reference = helpers.activity(
+        times, [[1.0, 1.0, 1.0]], ["s1"], valid=[False, True, True]
+    )
+    prediction = helpers.trajectory(
+        [{"track_id": "a", "times": times, "activity": [1.0, 1.0, 1.0]}]
+    )
+
+    result = evaluate_trajectory(
+        reference, prediction, EvaluationConfig(activity_threshold=0.0)
+    )
+
+    assert result.true_positives == 2
+    assert result.false_positives == 0
+    assert result.false_negatives == 0
+    assert result.f1 == pytest.approx(1.0)
+
+
+def test_zero_threshold_does_not_activate_frames_without_prediction_points():
+    times = np.arange(3) * 0.02
+    reference = helpers.activity(times, [[1.0, 1.0, 1.0]], ["s1"])
+    prediction = helpers.trajectory(
+        [{"track_id": "a", "times": [0.02], "activity": [1.0]}]
+    )
+
+    result = evaluate_trajectory(
+        reference, prediction, EvaluationConfig(activity_threshold=0.0)
+    )
+
+    assert result.true_positives == 1
+    assert result.false_positives == 0
+    assert result.false_negatives == 2
+
+
+def test_zero_threshold_keeps_observed_zero_activity_active():
+    times = np.arange(2) * 0.02
+    reference = helpers.activity(times, [[1.0, 1.0]], ["s1"])
+    prediction = helpers.trajectory(
+        [{"track_id": "a", "times": times, "activity": [0.0, 0.0]}]
+    )
+
+    result = evaluate_trajectory(
+        reference, prediction, EvaluationConfig(activity_threshold=0.0)
+    )
+
+    assert result.true_positives == 2
+    assert result.false_positives == 0
+    assert result.false_negatives == 0
+
+
 def test_global_mapping_maximises_total_overlap_not_pair_count():
     times = np.arange(102) * 0.02
     reference = helpers.activity(
