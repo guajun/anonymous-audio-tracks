@@ -104,15 +104,23 @@ def _validate_audio(config: RenderConfig, rendered) -> None:
         raise RenderValidationError("render produced invalid audio: " + "; ".join(problems))
 
 
-def _required_tail_seconds(config: RenderConfig, score) -> float:
-    """Latest absolute output time any note can reach (note-off + release)."""
+def required_tail_seconds(config: RenderConfig, score) -> float:
+    """Latest note-off + release in render-local seconds (0 = start of mix.wav).
 
+    The value is deliberately in the same coordinate system as the rendered
+    buffer: ``track_start_seconds`` is subtracted from every absolute control
+    time before the boundary is computed.
+    """
+
+    offset = config.track_start_seconds
     required = 0.0
     for event in score:
         source = config.sources[event.source_index]
         required = max(
             required,
-            event.start_seconds + event.duration_seconds + source.amp.release_ms / 1000.0,
+            (event.start_seconds - offset)
+            + event.duration_seconds
+            + source.amp.release_ms / 1000.0,
         )
     return required
 
@@ -120,20 +128,22 @@ def _required_tail_seconds(config: RenderConfig, score) -> float:
 def _check_tail(config: RenderConfig, score, mix: np.ndarray) -> dict:
     guard = min(0.05, config.tail_seconds / 4.0) if config.tail_seconds > 0.0 else 0.0
     total = mix.shape[1] / config.sample_rate
-    required = _required_tail_seconds(config, score)
+    required = required_tail_seconds(config, score)
     margin = total - required
     ratio = analysis.tail_decay_ratio(mix, config.sample_rate, 0.1)
     evidence = {
         "required_seconds": float(required),
+        "required_absolute_seconds": float(required + config.track_start_seconds),
         "rendered_seconds": float(total),
         "tail_seconds": float(config.tail_seconds),
+        "track_start_seconds": float(config.track_start_seconds),
         "margin_seconds": float(margin),
         "final_window_rms_ratio": float(ratio),
         "decayed": bool(ratio <= TAIL_DECAY_RATIO_LIMIT),
     }
     if margin <= guard:
         raise RenderValidationError(
-            f"tail is truncated: last release reaches {required:.3f}s but only "
+            f"tail is truncated: last release reaches {required:.3f}s (render-local) but only "
             f"{total:.3f}s were rendered (increase render.tail_seconds)"
         )
     if ratio > TAIL_DECAY_RATIO_LIMIT:
@@ -309,12 +319,33 @@ def render_sample(
         relative = stem_relative_path(source.source_id)
         digest_paths[relative] = sha256_file(target / relative)
 
-    onset_offsets = [
-        row["onset_offset_seconds"]
-        for row in source_rows
-        if row["onset_offset_seconds"] is not None
-    ]
-    render_latency_seconds = max([0.0, *onset_offsets])
+    # ``render_latency_seconds`` is reserved for independently measured
+    # plugin/engine latency.  Source attack is acoustic evidence only and must
+    # not silently shift downstream labels; when a chain could not be measured
+    # the optional manifest field is omitted instead of guessed.
+    effect_latencies = {
+        source.source_id: rendered.effect_latency_seconds.get(source.source_id)
+        for source in config.sources
+    }
+    measured = [value for value in effect_latencies.values() if value is not None]
+    latency_complete = len(measured) == len(effect_latencies) and len(measured) > 0
+    render_latency_seconds = max(measured) if latency_complete else None
+    render_latency_evidence = {
+        "scope": "source effect/gain chains measured with a unit-impulse probe",
+        "per_source_seconds": effect_latencies,
+        "per_source_samples": {
+            source.source_id: rendered.effect_latency_samples.get(source.source_id)
+            for source in config.sources
+        },
+        "complete": bool(latency_complete),
+        "value_seconds": render_latency_seconds,
+        "omitted_reason": (
+            None
+            if latency_complete
+            else "not all source chains produced a measurable impulse response"
+        ),
+        "onset_offsets_are_acoustic_evidence": True,
+    }
     manifest = build_manifest(
         config,
         digest_paths=digest_paths,
@@ -322,8 +353,9 @@ def render_sample(
         render_latency_seconds=render_latency_seconds,
         tail_seconds=config.tail_seconds,
         notes=(
-            "dry references: dry/<source_id>.wav; per-source latency and onset "
-            "evidence: render_report.json"
+            "dry references: dry/<source_id>.wav; render_latency_seconds covers "
+            "independently measured source effect/gain chains (unit impulse), not "
+            "acoustic onsets; per-source onset evidence: render_report.json"
         ),
     )
     manifest.save(target / MANIFEST_FILENAME)
@@ -370,6 +402,7 @@ def render_sample(
         "mix_stats": _buffer_stats(mix, config.sample_rate),
         "stem_sum": stem_sum,
         "tail": tail_evidence,
+        "render_latency": render_latency_evidence,
         "sources": source_rows,
         "surge_probe": (
             {"status": "not_run", "reason": "no_surge_plugin_path_configured"}
@@ -382,4 +415,4 @@ def render_sample(
     return RenderResult(out_dir=target, manifest=manifest, report=report, surge=surge_result)
 
 
-__all__ = ["RenderResult", "TAIL_DECAY_RATIO_LIMIT", "render_sample"]
+__all__ = ["RenderResult", "TAIL_DECAY_RATIO_LIMIT", "render_sample", "required_tail_seconds"]

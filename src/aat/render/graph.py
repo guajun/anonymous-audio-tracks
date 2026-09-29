@@ -131,12 +131,22 @@ def render_graph(config: RenderConfig, score: tuple[ScoreEvent, ...]) -> Rendere
     dry: dict[str, np.ndarray] = {}
     dry_names: dict[str, str] = {}
     stem_names: dict[str, str] = {}
+    # DawDreamer timelines always start at the beginning of the rendered
+    # buffer, while controls/report times are absolute original-track seconds.
+    # Convert to render-local time here and keep the metadata untouched.
+    offset = config.track_start_seconds
 
     for source in config.sources:
         sampler = engine.make_sampler_processor(_dry_name(source.source_id), _source_sample(source, config))
         _configure_sampler(sampler, source)
         for event in by_source[source.source_id]:
-            sampler.add_midi_note(event.note, event.velocity, event.start_seconds, event.duration_seconds)
+            local_start = event.start_seconds - offset
+            if local_start < 0.0:
+                raise RenderValidationError(
+                    f"source {source.source_id!r}: note at absolute {event.start_seconds}s "
+                    f"precedes the render window start {offset}s"
+                )
+            sampler.add_midi_note(event.note, event.velocity, local_start, event.duration_seconds)
         sampler.record = True
 
         graph.append((sampler, []))

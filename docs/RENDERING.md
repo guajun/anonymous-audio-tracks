@@ -62,9 +62,10 @@ runs/render/smoke-0001/
 
 - **stem 求和容差**：`mix.wav` 与全部 `stems/*.wav` 读回为 int16 后逐样本求和。每个样本最多贡献半 LSB 的舍入误差，因此容差取
   `tolerance_lsb = 0.5 * (num_stems + 1) + 1`（`analysis.stem_sum_tolerance_lsb`），报告同时给出 `max_abs_error_lsb` 与对应的浮点值。超过容差会抛 `StemSumError` 而不是放行。
-- **控制触发→声学起音延迟**：对每个来源，取该来源第一个 `note_on` 绝对时间与分轨首个超过阈值样本的时间差，报告 `onset_offset_seconds`；`manifest.render_latency_seconds` 记录所有来源中的最大偏移。
-- **效果链延迟**：对每个来源，用单样本脉冲跑同一条效果+增益链，报告 `effect_latency_samples/seconds`。内置 sampler/filter/gain 链为 0 samples。
-- **尾音**：`tail.required_seconds` = 最后一个 note 的 `start + duration + release`；必须小于渲染总长并保留 guard，且最后 100 ms 的 RMS 比例低于 `TAIL_DECAY_RATIO_LIMIT = 0.05`。否则报 `RenderValidationError` 并提示增大 `tail_seconds`，不会静默截断。
+- **原曲绝对时间与渲染局部时间**：`controls.json`、`sources.json`、报告中的事件时刻始终是原曲绝对秒；DawDreamer 引擎时间轴从渲染缓冲区起点开始，因此 `graph.py` 在送入 MIDI 时减去 `track_start_seconds`，`pipeline.required_tail_seconds` 也以局部秒计算并与实际渲染长度比较。报告同时给出 `tail.required_seconds`（局部）与 `tail.required_absolute_seconds`（绝对）。只改变 `track_start_seconds` 元数据时，PCM 内容、延迟、尾音 margin 完全不变，控制事件与 onset 绝对时刻整体平移（集成测试覆盖 0 / 0.1 / 12 s）。
+- **控制触发→声学起音延迟**：对每个来源，取该来源第一个 `note_on` 绝对时间与分轨首个超过阈值样本的时间差，报告 `onset_offset_seconds`。这是**声学证据**，包含音源 attack，不写入 `manifest.render_latency_seconds`。
+- **插件/引擎延迟**：对每个来源，用单样本脉冲跑同一条效果+增益链，报告 `effect_latency_samples/seconds`。`manifest.render_latency_seconds` 只取这些独立测量值的最大值，并在 `render_latency` 证据块中说明scope与覆盖情况；如有来源无法测得，则省略该可选字段并给出 `omitted_reason`。内置 sampler/filter/gain 链为 0 samples。
+- **尾音**：`tail.required_seconds` = 局部坐标系下最后一个 note 的 `start + duration + release`；必须小于渲染总长并保留 guard，且最后 100 ms 的 RMS 比例低于 `TAIL_DECAY_RATIO_LIMIT = 0.05`。否则报 `RenderValidationError` 并提示增大 `tail_seconds`，不会静默截断。
 - **异常检测**：空音频、NaN/Inf、混音或分轨削波（`|x| >= 1.0`）在写出 JSON 前报错；报告固定包含 `clipped_samples`、`non_finite_samples`、`silent`、`peak_dbfs`、`rms_dbfs`。
 - **配置可追溯**：报告含 `config_sha256`（规范化配置摘要）、`config_file_sha256`（配置文件摘要，仅 basename，不含本机路径）、`seed`、`git_commit`（可用时）与完整解析后配置。
 
