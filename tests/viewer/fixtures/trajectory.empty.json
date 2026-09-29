@@ -1,0 +1,12 @@
+{
+  "schema_version": "0.1.0",
+  "kind": "trajectory",
+  "sample_id": "fixture-empty",
+  "audio": { "duration_seconds": 0.0, "track_start_seconds": 0.0 },
+  "provenance": {
+    "run_id": "fixture-empty-01",
+    "data_kind": "mock",
+    "notes": "空轨迹边界：duration=0 且 tracks=[]。"
+  },
+  "tracks": []
+}

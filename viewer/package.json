@@ -1,0 +1,9 @@
+{
+  "name": "anonymous-audio-tracks-viewer",
+  "private": true,
+  "type": "module",
+  "description": "Static local viewer for protocol 0.1.0 trajectory JSON plus a user-selected audio file. No runtime dependencies.",
+  "scripts": {
+    "test": "node --test ../../tests/viewer/"
+  }
+}

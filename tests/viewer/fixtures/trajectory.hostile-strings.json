@@ -1,0 +1,20 @@
+{
+  "schema_version": "0.1.0",
+  "kind": "trajectory",
+  "sample_id": "<img src=x onerror=\"window.__pwned_sample=1\">",
+  "audio": { "duration_seconds": 2.0, "track_start_seconds": 0.0 },
+  "provenance": {
+    "run_id": "fixture-hostile-01",
+    "data_kind": "mock",
+    "model_id": "<script>window.__pwned_model=1</script>",
+    "notes": "<img src=x onerror=\"window.__pwned_notes=1\">"
+  },
+  "tracks": [
+    {
+      "track_id": "trk-<b>html</b>",
+      "center_times": [0.0, 1.0],
+      "activity": [0.4, 0.6],
+      "notes": "<svg onload=window.__pwned_track=1>"
+    }
+  ]
+}

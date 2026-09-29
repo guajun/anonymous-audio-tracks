@@ -1,0 +1,303 @@
+:root {
+  color-scheme: dark;
+  --bg: #0d1015;
+  --panel: #161a22;
+  --panel-border: #262d3a;
+  --text: #e6e9ef;
+  --muted: #98a2b3;
+  --accent: #4cc9f0;
+  --warn: #ffd166;
+  --error: #ff6b6b;
+  --ok: #06d6a0;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 0 0 48px;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.55 system-ui, "Segoe UI", "Microsoft YaHei", sans-serif;
+}
+
+header,
+main,
+footer {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 0 16px;
+}
+
+header {
+  padding-top: 20px;
+}
+
+h1 {
+  margin: 0 0 6px;
+  font-size: 22px;
+}
+
+h2 {
+  margin: 0 0 10px;
+  font-size: 15px;
+  color: var(--accent);
+}
+
+h3 {
+  margin: 0 0 6px;
+  font-size: 14px;
+}
+
+.subtitle {
+  margin: 4px 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+code,
+.mono {
+  font-family: ui-monospace, Consolas, "Courier New", monospace;
+  font-size: 13px;
+}
+
+.panel {
+  margin-top: 14px;
+  padding: 14px;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+}
+
+.file-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.file-row label {
+  min-width: 280px;
+}
+
+.file-name {
+  color: var(--muted);
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 12px;
+}
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin: 8px 0;
+}
+
+button {
+  padding: 6px 10px;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  background: #1e2531;
+  color: var(--text);
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+select,
+input[type="file"] {
+  padding: 4px 6px;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  background: #1e2531;
+  color: var(--text);
+}
+
+input[type="range"] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.threshold-row input[type="range"] {
+  width: 260px;
+  vertical-align: middle;
+}
+
+.seek-row {
+  display: block;
+  margin-top: 6px;
+}
+
+.seek-row input {
+  margin-top: 4px;
+}
+
+.time-readout {
+  color: var(--muted);
+}
+
+.time-readout .mono {
+  color: var(--text);
+  font-size: 14px;
+}
+
+.status {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.status.ok {
+  color: var(--ok);
+}
+
+.status.pending {
+  color: var(--accent);
+}
+
+.status.warn {
+  color: var(--warn);
+}
+
+.status.error {
+  color: var(--error);
+}
+
+.error-panel {
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid var(--error);
+  border-radius: 6px;
+  background: rgba(255, 107, 107, 0.08);
+}
+
+.error-panel ul {
+  margin: 6px 0 0;
+  padding-left: 20px;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 12px;
+}
+
+.hint {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+#provenance {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 14px;
+  margin: 0;
+}
+
+#provenance dt {
+  color: var(--muted);
+}
+
+#provenance dd {
+  margin: 0;
+  word-break: break-word;
+}
+
+.data-kind.mock {
+  color: var(--warn);
+}
+
+.data-kind.annotation {
+  color: var(--accent);
+}
+
+.data-kind.model {
+  color: var(--ok);
+}
+
+.overview,
+.timeline {
+  display: block;
+  width: 100%;
+  background: #12151c;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+}
+
+.overview {
+  height: 64px;
+  cursor: crosshair;
+}
+
+.timeline {
+  height: 220px;
+  cursor: crosshair;
+}
+
+.track-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: baseline;
+  padding: 6px 4px;
+  border-bottom: 1px solid var(--panel-border);
+}
+
+.track-row:last-child {
+  border-bottom: none;
+}
+
+.track-toggle {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  min-width: 200px;
+}
+
+.track-id {
+  font-family: ui-monospace, Consolas, monospace;
+}
+
+.chip {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.track-value {
+  min-width: 76px;
+  font-family: ui-monospace, Consolas, monospace;
+}
+
+.badge {
+  padding: 1px 6px;
+  border: 1px solid var(--panel-border);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.badge.active {
+  border-color: var(--ok);
+  color: var(--ok);
+}
+
+.track-nearest {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+footer {
+  margin-top: 18px;
+  color: var(--muted);
+  font-size: 12px;
+}
