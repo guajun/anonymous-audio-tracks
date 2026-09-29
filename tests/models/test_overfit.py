@@ -3,7 +3,9 @@
 This is the issue #7 end-to-end acceptance check: it actually optimizes the head
 on a synthetic batch (not only forward mocks), then asserts that
 
-* the loss really decreases and beats the all-zero baseline;
+* the loss really decreases and beats the zero-logits (P = 0.5) BCE baseline,
+  while an all-inactive (P = 0) predictor gets F1 = 0 on positive-containing
+  data - these are two different baselines and both are reported;
 * center activity is learned as *center* activity (neighbors active + center
   silent must yield low ``P``; isolated center-active must yield high ``P``);
 * same-identity embeddings are closer than different-identity embeddings;
@@ -100,7 +102,7 @@ def _evaluate(batch, model):
         assert matching.optimal.num_optimal == 1 and not matching.optimal.truncated
         assignment = matching.optimal.assignments[0]
         for local, source in enumerate(matching.source_indices):
-            slot = matching.slot_indices[assignment[local]]
+            slot = assignment[local]  # original slot index, already remapped
             matched[group, :, source] = probabilities[group, :, slot]
             usable[group, :, source] = batch.center_valid[group]
     return result, matched, usable, embeddings
@@ -112,7 +114,7 @@ def _pairwise_cosines(batch, embeddings, result):
     for group in range(batch.num_groups):
         matching = result.matching.groups[group]
         assignment = matching.optimal.assignments[0]
-        slots = [matching.slot_indices[assignment[local]] for local in range(len(matching.source_indices))]
+        slots = [assignment[local] for local in range(len(matching.source_indices))]
         unit = F.normalize(embeddings[group][:, slots, :], dim=-1)
         active = batch.activity[group] >= 0.5
         for left in range(active.shape[1]):
@@ -137,10 +139,11 @@ def test_small_distinguishable_data_overfits_and_beats_zero_baseline(trained_run
     batch, model, losses = trained_run
     first = losses[0].summary()
     last = losses[-1].summary()
+    zero_logits_baseline = math.log(2.0)  # BCE of logits 0, i.e. P = 0.5 everywhere
     assert math.isfinite(last["total"])
     assert last["total"] < first["total"] * 0.5
     assert last["activity"] < 0.1
-    assert last["activity"] < math.log(2.0) - 0.4  # far below the all-zero baseline
+    assert last["activity"] < zero_logits_baseline - 0.4
     assert losses[-1].stats.positive_terms > 0
 
     result, matched, usable, _ = _evaluate(batch, model)
@@ -156,10 +159,19 @@ def test_small_distinguishable_data_overfits_and_beats_zero_baseline(trained_run
     assert float(probabilities[targets >= 0.5].mean()) > 0.8
     assert float(probabilities[targets < 0.5].mean()) < 0.2
 
+    # Explicit all-inactive (P = 0) baseline: with positives in the data it can
+    # never be perfect, and its conventional F1 is 0.
+    all_inactive = torch.zeros_like(targets)
+    inactive_accuracy = float((all_inactive == targets).float().mean())
+    inactive_f1 = 0.0
+    assert inactive_accuracy < 1.0
+    assert f1 > inactive_f1 + 0.9
+
     print(
         f"[overfit] loss {first['total']:.4f} -> {last['total']:.4f}; "
         f"activity {first['activity']:.4f} -> {last['activity']:.6f} "
-        f"(all-zero baseline {math.log(2.0):.4f}); F1={f1:.3f}; "
+        f"(zero-logits/P=0.5 BCE baseline {zero_logits_baseline:.4f}); "
+        f"F1={f1:.3f} (all-inactive F1={inactive_f1:.3f} acc={inactive_accuracy:.3f}); "
         f"P(active)={float(probabilities[targets >= 0.5].mean()):.4f} "
         f"P(inactive)={float(probabilities[targets < 0.5].mean()):.4f}"
     )

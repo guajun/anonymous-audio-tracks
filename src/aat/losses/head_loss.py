@@ -13,12 +13,14 @@ terms:
 * ``negative``      - hinge against other identities' prototypes.
 
 Padding is excluded everywhere.  Ambiguous groups (multiple optimal
-assignments) are reported and either symmetrically averaged (activity /
-empty-slot terms) or masked out of identity supervision; truncated enumeration
-skips identity and empty-slot terms so nothing depends on an arbitrary
-assignment choice.  Every term keeps a zero-gradient path, so empty sources,
-all-silent batches and all-invalid centers backpropagate finite zeros instead
-of raising or fabricating success.
+assignments under complete enumeration) are reported and symmetrically averaged
+for activity / empty-slot terms, while identity supervision is masked out.
+When enumeration itself is truncated, no assignment is certified
+permutation-symmetric, so every supervised term of that group is skipped and
+counted as ``supervision_masked_groups``; no arbitrary assignment is used.
+Every term keeps a zero-gradient path, so empty sources, all-silent batches and
+all-invalid centers backpropagate finite zeros instead of raising or
+fabricating success.
 """
 
 from __future__ import annotations
@@ -61,6 +63,7 @@ class HeadLossStats:
     ambiguous_groups: int
     truncated_groups: int
     identity_masked_groups: int
+    supervision_masked_groups: int
     activity_terms: int
     empty_terms: int
     positive_terms: int
@@ -276,6 +279,7 @@ def head_loss(
     ambiguous_groups = 0
     truncated_groups = 0
     identity_masked_groups = 0
+    supervision_masked_groups = 0
     reliable_groups: list[int] = []
 
     for g in range(num_groups):
@@ -295,23 +299,25 @@ def head_loss(
 
         matched_groups += 1
         if group.optimal.truncated:
+            # Enumeration stopped before the full optimal set is known, so no
+            # single assignment is certified permutation-symmetric; skip every
+            # supervised term for this group instead of using an arbitrary one.
             truncated_groups += 1
             identity_masked_groups += 1
-        elif group.optimal.num_optimal > 1:
+            supervision_masked_groups += 1
+            continue
+        if group.optimal.num_optimal > 1:
             ambiguous_groups += 1
             identity_masked_groups += 1
         else:
             reliable_groups.append(g)
 
-        if group.optimal.truncated:
-            assignments = group.optimal.assignments[:1]
-            assignment_weight = 1.0
-        else:
-            assignments = group.optimal.assignments
-            assignment_weight = 1.0 / len(assignments)
-
+        assignments = group.optimal.assignments
+        assignment_weight = 1.0 / len(assignments)
         for assignment in assignments:
-            matched_slots = [group.slot_indices[local] for local in assignment]
+            # ``assignment`` already contains original slot indices; never
+            # remap it through ``group.slot_indices`` again.
+            matched_slots = list(assignment)
             for local_source, source in enumerate(group.source_indices):
                 slot = matched_slots[local_source]
                 mask = center_valid_t[g] & slot_valid_t[g, :, slot]
@@ -319,13 +325,12 @@ def head_loss(
                     activity_numerator + assignment_weight * (bce_all[g, :, slot, source] * mask).sum()
                 )
                 activity_denominator += assignment_weight * float(mask.sum())
-            if not group.optimal.truncated:
-                for slot in group.slot_indices:
-                    if slot in matched_slots:
-                        continue
-                    mask = center_valid_t[g] & slot_valid_t[g, :, slot]
-                    empty_numerator = empty_numerator + assignment_weight * (bce_empty[g, :, slot] * mask).sum()
-                    empty_denominator += assignment_weight * float(mask.sum())
+            for slot in group.slot_indices:
+                if slot in matched_slots:
+                    continue
+                mask = center_valid_t[g] & slot_valid_t[g, :, slot]
+                empty_numerator = empty_numerator + assignment_weight * (bce_empty[g, :, slot] * mask).sum()
+                empty_denominator += assignment_weight * float(mask.sum())
 
     # ---- identity contrast (unique assignments only) -----------------------
     positive_numerator = zero
@@ -338,7 +343,7 @@ def head_loss(
             group = matching.groups[g]
             assignment = group.optimal.assignments[0]
             for local_source, source in enumerate(group.source_indices):
-                slot = group.slot_indices[assignment[local_source]]
+                slot = assignment[local_source]
                 key = (composition_ids[g], source_ids[g][source])
                 active = (
                     center_valid_t[g]
@@ -398,6 +403,7 @@ def head_loss(
         ambiguous_groups=ambiguous_groups,
         truncated_groups=truncated_groups,
         identity_masked_groups=identity_masked_groups,
+        supervision_masked_groups=supervision_masked_groups,
         activity_terms=int(round(activity_denominator)),
         empty_terms=int(round(empty_denominator)),
         positive_terms=int(positive_denominator),

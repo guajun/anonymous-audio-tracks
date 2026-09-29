@@ -70,8 +70,9 @@ Z_g       = argmin_{单射 z : S_g → K_g} Σ_{s ∈ S_g} C_g[s, z(s)]         
 
 - 精确求解：小 K 用位掩码 DP（`aat.losses.matching.enumerate_optimal_assignments`），同时枚举**所有**最优 assignment，并用饱和计数给出 `num_optimal`；K 超过 `max_exact_slots`（默认 16）直接报错，不退回贪心或在线 tracker 式的基数优先近似。
 - 若 `|S_g| > K_g`，说明来源数超过槽位容量，拒绝并报错。
-- 不可辨来源（例如活动序列完全相同）会产生并列最优：`Z_g` 有多个元素。对**完整枚举**的等价 assignment 在活动项与空槽项上做对称平均；身份项属于“无依据的身份约束”，对并列组整体 mask（不算作假监督）。“对称平均”与“mask 掉无依据身份约束”都是事前确认允许的等价处理，这里按后者处理身份、前者处理活动/空槽，绝不任意固定列制造虚假真值。`MatchingResult` 显式报告 `ambiguous`、`num_optimal`、`truncated`。
-- 枚举达到 `max_optimal_assignments`（默认 64）仍未穷尽时 `truncated=True`：活动项仍用任意一个最优 assignment（所有最优的活动值相等，总损失不变），空槽项与身份项跳过（它们的值依赖具体 assignment），并计入 `identity_masked_groups`。既不偏置排列不变性，也不假装监督了无法枚举的约束。
+- 不可辨来源（例如活动序列完全相同）会产生并列最优：`Z_g` 有多个元素。对**完整枚举**的等价 assignment 在活动项与空槽项上做对称平均；身份项属于“无依据的身份约束”，对并列组整体 mask（不算作假监督）。“对称平均”与“mask 掉无依据身份约束”都是事前确认允许的等价处理，这里按后者处理身份、前者处理活动/空槽，绝不任意固定列制造虚假真值。`MatchingResult` 显式报告 `ambiguous`、`num_optimal`、`truncated`，且 `GroupMatching.identity_masked` 对并列与截断都为 True。
+- 枚举达到 `max_optimal_assignments`（默认 64）仍未穷尽时 `truncated=True`：无法认证完整最优集合，故该组活动、空槽、身份项**全部 mask**（不采用任何未认证的 assignment；等值前向下的梯度也会因列选择而不同，不能用“值相等”当作对称性）；`truncated_groups` / `supervision_masked_groups` 计数，`activity_terms` 不计入该组。不贪心退化，也不假装监督了无法枚举的约束。
+- 索引约定：`GroupMatching.optimal.assignments[j]` 是来源 `source_indices[j]` 的**原始槽位下标**；`match_sources` 已把 `enumerate_optimal_assignments` 的局部下标映射回 batch 原始下标，消费方不得再经 `slot_indices` 重映射。
 - 并列判等用 `atol/rtol = 1e-9`；枚举按槽位下标升序，结果稳定。
 
 ## 3. 训练损失（`aat.losses.head_loss`）
@@ -148,21 +149,21 @@ CI 在原 `unit` / `render` job 之外新增 `ml` job，执行 `pytest -m ml` �
 | 命令 | 结果 |
 |---|---|
 | `uv lock && uv sync --locked --extra ml` | 解析并安装 CPU wheel `2.14.0+cpu`，`torch.version.cuda is None` |
-| `uv run --no-sync pytest -q`（ml + render 组合） | 437 passed |
+| `uv run --no-sync pytest -q`（ml + render 组合） | 442 passed |
 | `uv sync --locked && uv run --no-sync pytest -q -m "not ml"` | 395 passed, 6 skipped（无 torch 时 ml 模块 importorskip，不报错） |
-| `uv run --no-sync pytest tests/models -q` | 38 passed |
+| `uv run --no-sync pytest tests/models -q` | 43 passed |
 
 过拟合实验（`tests/models/test_overfit.py`，合成 fake features：3 组 × 5 个非相邻窗口 × 3 来源，K=4，250 步 Adam，CPU）：
 
 ```text
-loss 1.6938 -> 0.0219; activity 0.6881 -> 0.000094 (all-zero baseline 0.6931);
-F1=1.000; P(active)=0.9999 P(inactive)=0.0001
+loss 1.6938 -> 0.0219; activity 0.6881 -> 0.000094 (zero-logits / P=0.5 baseline 0.6931);
+F1=1.000; all-inactive (P=0) F1=0.000, accuracy=0.422; P(active)=0.9999 P(inactive)=0.0001
 boundary P=0.000111 (n=7)   # 前后文有来源、中心静音
 isolated P=0.999930 (n=12)  # 中心有声、前后文静音
 identity cos same=0.9998 different=0.1593 (pairs 56/126)
 ```
 
-全零预测的 BCE 为 `ln 2 ≈ 0.6931`，明显高于训练后的 0.000094；持续静音 batch 的反传与优化步保持 finite；活动、空槽、正例、负例四个分项及歧义统计都有独立断言。
+零 logits（P=0.5）基线 BCE 为 `ln 2 ≈ 0.6931`，明显高于训练后的 0.000094；全静音预测（P=0）在该数据上 F1=0、准确率=负例占比（有正例时不可能完美）。持续静音 batch 的反传与优化步保持 finite；活动、空槽、正例、负例四个分项及歧义/截断统计都有独立断言。
 
 ## 6. 与既有模块的边界
 

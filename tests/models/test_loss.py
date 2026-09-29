@@ -113,6 +113,8 @@ def test_identical_activity_columns_report_ambiguity_and_mask_identity():
         source_ids=[["a", "b"]],
     )
     assert result.matching.groups[0].optimal.num_optimal == 2
+    assert result.matching.groups[0].ambiguous is True
+    assert result.matching.groups[0].identity_masked is True
     assert result.stats.ambiguous_groups == 1
     assert result.stats.identity_masked_groups == 1
     assert result.stats.positive_terms == 0
@@ -130,14 +132,13 @@ def test_identical_activity_columns_report_ambiguity_and_mask_identity():
     torch.testing.assert_close(result.empty_slots, permuted.empty_slots)
 
 
-def test_truncated_enumeration_skips_identity_and_empty_terms():
+def test_truncated_enumeration_masks_all_supervision():
     target = torch.ones(1, 1, 4)
     logits = torch.zeros(1, 1, 5)
+    logits.requires_grad_(True)
     embeddings = torch.randn(1, 1, 5, 128, requires_grad=True)
     embeddings = torch.nn.functional.normalize(embeddings, dim=-1)
     embeddings.retain_grad()
-    logits = torch.zeros(1, 1, 5)
-    logits.requires_grad_(True)
 
     result = head_loss(
         embeddings,
@@ -147,16 +148,154 @@ def test_truncated_enumeration_skips_identity_and_empty_terms():
         source_ids=[["a", "b", "c", "d"]],
         max_optimal_assignments=5,
     )
+    assert result.matching.groups[0].truncated is True
+    assert result.matching.groups[0].identity_masked is True
     assert result.stats.truncated_groups == 1
     assert result.stats.identity_masked_groups == 1
+    assert result.stats.supervision_masked_groups == 1
+    assert result.stats.activity_terms == 0
     assert result.stats.empty_terms == 0
     assert result.stats.positive_terms == 0
     assert result.stats.negative_terms == 0
+    assert float(result.total.detach()) == 0.0
+
     result.total.backward()
-    assert embeddings.grad is not None
-    assert logits.grad is not None
-    assert bool(torch.isfinite(embeddings.grad).all())
-    assert bool(torch.isfinite(logits.grad).all())
+    assert embeddings.grad is not None and float(embeddings.grad.abs().max().detach()) == 0.0
+    # Logits are not part of any supervised term for a truncated group, so the
+    # autograd graph need not reach them at all.
+    assert logits.grad is None or float(logits.grad.abs().max().detach()) == 0.0
+
+
+def test_truncated_groups_are_permutation_symmetric():
+    target = torch.ones(1, 1, 3)
+    embeddings = torch.randn(1, 1, 4, 128, requires_grad=True)
+    embeddings = torch.nn.functional.normalize(embeddings, dim=-1)
+    embeddings.retain_grad()
+    logits = torch.zeros(1, 1, 4, requires_grad=True)
+
+    base = head_loss(
+        embeddings,
+        logits,
+        activity_target=target,
+        composition_ids=["c"],
+        source_ids=[["a", "b", "c"]],
+        max_optimal_assignments=2,
+    )
+    source_permutation = [2, 0, 1]
+    slot_permutation = [3, 1, 2, 0]
+    permuted = head_loss(
+        embeddings[:, :, slot_permutation],
+        logits[:, :, slot_permutation],
+        activity_target=target[:, :, source_permutation],
+        composition_ids=["c"],
+        source_ids=[[["a", "b", "c"][index] for index in source_permutation]],
+        max_optimal_assignments=2,
+    )
+    assert base.stats.truncated_groups == permuted.stats.truncated_groups == 1
+    assert base.stats.supervision_masked_groups == permuted.stats.supervision_masked_groups == 1
+    torch.testing.assert_close(base.total, permuted.total)
+    assert float(base.total.detach()) == 0.0
+    assert float(permuted.total.detach()) == 0.0
+
+    # Gradient symmetry too: the masked group contributes exactly zero to the
+    # embedding gradient in both index conventions.
+    base.total.backward(retain_graph=True)
+    base_gradient = embeddings.grad.detach().clone()
+    embeddings.grad = None
+    logits.grad = None
+    permuted.total.backward()
+    permuted_gradient = embeddings.grad.detach().clone()
+    assert float(base_gradient.abs().max()) == 0.0
+    assert float(permuted_gradient.abs().max()) == 0.0
+    assert logits.grad is None or float(logits.grad.abs().max().detach()) == 0.0
+
+
+def test_noncontiguous_slot_mask_uses_original_slot_indices():
+    embeddings = torch.zeros(1, 2, 3, 128)
+    embeddings[..., 0] = 1.0
+    target = torch.ones(1, 2, 1)
+    slot_valid = torch.tensor([[[False, True, True], [False, True, True]]])
+    expected = torch.nn.functional.binary_cross_entropy_with_logits(
+        torch.full((2,), 8.0), torch.ones(2)
+    )
+
+    for preferred_slot in (1, 2):
+        logits = torch.full((1, 2, 3), -8.0)
+        logits[:, :, preferred_slot] = 8.0
+        result = head_loss(
+            embeddings,
+            logits,
+            activity_target=target,
+            composition_ids=["c"],
+            source_ids=[["a"]],
+            slot_valid=slot_valid,
+        )
+        assert result.matching.groups[0].slot_indices == (1, 2)
+        assert result.matching.groups[0].optimal.assignments == ((preferred_slot,),)
+        assert result.stats.activity_terms == 2
+        torch.testing.assert_close(result.activity, expected)
+
+
+def test_noncontiguous_source_mask_identity_gradients_use_original_indices():
+    embeddings = torch.zeros(1, 2, 3, 128)
+    embeddings[0, 0, 0] = _one_hot(0)
+    embeddings[0, 1, 0] = _one_hot(1)
+    embeddings[0, 0, 2] = _one_hot(2)
+    embeddings[0, 1, 2] = _one_hot(2)
+    embeddings.requires_grad_(True)
+    target = torch.tensor([[[1.0, 0.0, 1.0], [1.0, 0.0, 0.0]]])
+    logits = torch.tensor([[[20.0, -20.0, 20.0], [20.0, -20.0, -20.0]]])
+    source_valid = torch.tensor([[True, False, True]])
+
+    result = head_loss(
+        embeddings,
+        logits,
+        activity_target=target,
+        source_valid=source_valid,
+        composition_ids=["c"],
+        source_ids=[["a", "unused", "b"]],
+    )
+    # Source 0 keeps slot 0, source 2 keeps slot 2 (original indices, not
+    # positions inside [True, False, True]).
+    assert result.matching.groups[0].source_indices == (0, 2)
+    assert result.matching.groups[0].optimal.assignments == ((0, 2),)
+    assert result.stats.positive_terms == 2  # source 0 active in both windows
+    assert float(result.positive.detach()) > 0.0  # window 1 flips e0 -> e1
+
+    result.total.backward()
+    # Identity gradients land on the matched slot of each original source;
+    # the unused middle slot must stay untouched by every embedding term.
+    assert float(embeddings.grad[0, :, 1].abs().max().detach()) == 0.0
+    assert float(embeddings.grad[0, 1, 0].abs().max().detach()) > 0.0
+
+
+def test_slot_permutation_invariance_of_the_loss():
+    torch.manual_seed(21)
+    embeddings = torch.nn.functional.normalize(torch.randn(1, 2, 3, 128), dim=-1)
+    logits = torch.randn(1, 2, 3)
+    target = torch.tensor([[[1.0, 0.0], [0.0, 1.0]]])
+    slot_valid = torch.ones(1, 2, 3, dtype=torch.bool)
+    slot_permutation = [2, 0, 1]
+
+    base = head_loss(
+        embeddings,
+        logits,
+        activity_target=target,
+        composition_ids=["c"],
+        source_ids=[["a", "b"]],
+        slot_valid=slot_valid,
+    )
+    permuted = head_loss(
+        embeddings[:, :, slot_permutation],
+        logits[:, :, slot_permutation],
+        activity_target=target,
+        composition_ids=["c"],
+        source_ids=[["a", "b"]],
+        slot_valid=slot_valid[:, :, slot_permutation],
+    )
+    assert base.matching.groups[0].optimal.num_optimal == 1
+    for name in ("total", "activity", "empty_slots", "positive", "negative"):
+        torch.testing.assert_close(getattr(base, name), getattr(permuted, name))
 
 
 def test_same_source_id_in_different_compositions_is_negative_not_positive():

@@ -100,6 +100,15 @@ def test_match_sources_excludes_padding_and_uses_original_indices():
     assert group.slot_indices == (0, 1, 3)
     sub = cost[0][np.ix_((0, 2), (0, 1, 3))]
     assert np.isclose(group.optimal.optimal_cost, _brute_force(sub)[0])
+    # Assignments are expressed in original slot indices, not positions inside
+    # ``slot_indices``.
+    for assignment in group.optimal.assignments:
+        assert all(entry in group.slot_indices for entry in assignment)
+        assert len(set(assignment)) == len(assignment)
+        assert all(
+            np.isfinite(cost[0, source, slot])
+            for source, slot in zip(group.source_indices, assignment)
+        )
 
     # Invalid source rows may contain anything (NaN), they are never used.
     cost_with_nan = cost.copy()
@@ -120,6 +129,20 @@ def test_match_sources_rejects_more_sources_than_slots():
     slot_valid[0] = [True, True, False, False]
     with pytest.raises(MatchingError):
         match_sources(cost, source_valid, slot_valid)
+
+
+def test_identity_masked_property_covers_ambiguity_and_truncation():
+    unique = match_sources(np.array([[[0.0, 5.0, 5.0], [5.0, 0.0, 5.0]]]))
+    assert unique.groups[0].identity_masked is False
+
+    ambiguous = match_sources(np.zeros((1, 2, 3)))
+    assert ambiguous.groups[0].ambiguous is True
+    assert ambiguous.groups[0].identity_masked is True
+
+    truncated = match_sources(np.zeros((1, 2, 3)), max_optimal=2)
+    assert truncated.groups[0].ambiguous is False
+    assert truncated.groups[0].truncated is True
+    assert truncated.groups[0].identity_masked is True
 
 
 def test_optimal_cost_is_permutation_invariant():

@@ -41,7 +41,9 @@ class OptimalAssignments:
     """All optimal assignments of one cost matrix (capped enumeration).
 
     ``assignments`` is a tuple of tuples: element ``i`` is the slot used by the
-    ``i``-th (locally indexed) source; every entry is a local slot index.
+    ``i``-th row of the cost matrix passed to this function, i.e. a *local*
+    index into ``[0, K)``.  :func:`match_sources` remaps these to the original
+    batch slot indices when it builds :class:`GroupMatching`.
     ``num_optimal`` is the true count saturated at ``len(assignments) + 1`` when
     more than the cap exist, and ``truncated`` says whether enumeration stopped
     at the cap.
@@ -172,7 +174,14 @@ def enumerate_optimal_assignments(
 
 @dataclass(frozen=True)
 class GroupMatching:
-    """Matching result of one training group (original index space)."""
+    """Matching result of one training group, in original batch indices.
+
+    ``source_indices[j]`` is the original source column matched to
+    ``optimal.assignments[j]``, and every entry of every assignment tuple is an
+    **original slot index**: :func:`match_sources` already remapped the solver's
+    local indices.  Consumers must use ``assignment[j]`` directly and must not
+    index ``slot_indices`` with it again.
+    """
 
     source_indices: tuple[int, ...]
     slot_indices: tuple[int, ...]
@@ -183,8 +192,19 @@ class GroupMatching:
         return self.optimal.num_optimal > 1 and not self.optimal.truncated
 
     @property
-    def identity_masked(self) -> bool:
+    def truncated(self) -> bool:
         return self.optimal.truncated
+
+    @property
+    def identity_masked(self) -> bool:
+        """Whether identity supervision is masked for this group.
+
+        Both complete-enumeration ambiguity and truncated enumeration leave the
+        identity assignment unsupported, so the arranged loss masks identity
+        terms in either case (see ``docs/MODEL_HEAD.md``).
+        """
+
+        return self.optimal.truncated or self.optimal.num_optimal > 1
 
 
 @dataclass(frozen=True)
@@ -215,6 +235,9 @@ def match_sources(
     sources / unavailable slots are excluded per group before solving, so
     padding cannot change the result.  Raises :class:`MatchingError` when a
     group has more valid sources than available slots.
+
+    The returned :class:`GroupMatching` assignments are expressed in original
+    batch slot indices; the solver's local indices never escape this function.
     """
 
     cost = _to_numpy(cost)
