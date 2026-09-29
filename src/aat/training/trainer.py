@@ -48,7 +48,7 @@ from .checkpoint import (
 from .config import TrainConfig
 from .dataset import dataset_fingerprint, index_file_sha256, load_verified_index
 from .encoding import EncoderAdapter, build_encoder, window_start_seconds
-from .errors import ResumeMismatchError, TrainingError
+from .errors import CheckpointError, ResumeMismatchError, TrainingError
 from .evaluate import evaluate_split
 from .inference import HeadInference, build_head_from_model_config
 
@@ -102,6 +102,7 @@ class TrainingSummary:
     git: Mapping[str, Any]
     uv_lock_sha256: str | None
     versions: Mapping[str, Any]
+    resources: Mapping[str, Any]
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -123,6 +124,7 @@ class TrainingSummary:
             "git": dict(self.git),
             "uv_lock_sha256": self.uv_lock_sha256,
             "versions": dict(self.versions),
+            "resources": dict(self.resources),
         }
 
 
@@ -146,6 +148,17 @@ class Trainer:
         self.config = config
         self.log = log if log is not None else (lambda _message: None)
         self.device = torch.device(device or config.run.device)
+        # Resource measurement starts before the encoder is loaded so the
+        # recorded CUDA peak covers encoder residency plus training/eval.
+        self._resources_started = time.perf_counter()
+        peak_index = self._cuda_device_index()
+        if peak_index is not None:
+            # An explicit device index is rejected before the CUDA context
+            # exists on torch 2.14, so initialize/select the device first.
+            torch.cuda.init()
+            if peak_index != int(torch.cuda.current_device()):
+                torch.cuda.set_device(peak_index)
+            torch.cuda.reset_peak_memory_stats(peak_index)
         self.encoder: EncoderAdapter = build_encoder(config.encoder, device=str(self.device))
 
         self.index_path = Path(config.data.index)
@@ -257,6 +270,7 @@ class Trainer:
         self.run_dir = target
         self.checkpoint_path = checkpoint_path
         self.train_log_path = target / "train_log.jsonl"
+        self._reconcile_train_log(int(payload["step"]))
         self.model = build_head_from_model_config(stored_model_config)
         self.model.to(self.device)
         self.optimizer = self._build_optimizer()
@@ -298,7 +312,158 @@ class Trainer:
     def _write_json(self, path: Path, payload: Mapping[str, Any]) -> None:
         path.write_text(dumps_json(dict(payload)) + "\n", encoding="utf-8", newline="\n")
 
-    def _write_run_json(self, *, status: str) -> None:
+    def _cuda_device_index(self) -> int | None:
+        """Integer CUDA index for allocator stats, or ``None`` when not on CUDA."""
+
+        if self.device.type != "cuda" or not torch.cuda.is_available():
+            return None
+        if self.device.index is not None:
+            return int(self.device.index)
+        return int(torch.cuda.current_device())
+
+    def _resource_snapshot(self, *, state: str) -> dict[str, Any]:
+        """Device/timing/peak-memory record with explicit scope and reset semantics.
+
+        CUDA values are per-process torch allocator statistics and are ``None``
+        on CPU (never a fabricated zero).
+        """
+
+        payload: dict[str, Any] = {
+            "state": state,
+            "device": str(self.device),
+            "cuda_available": bool(torch.cuda.is_available()),
+            "elapsed_seconds": round(time.perf_counter() - self._resources_started, 6),
+            "measurement_scope": (
+                "per-process torch CUDA allocator statistics from Trainer construction "
+                "(before encoder load) through this point; other processes are not observable"
+            ),
+            "reset_semantics": (
+                "torch.cuda.reset_peak_memory_stats(device) once at Trainer construction "
+                "before the encoder is loaded; values are per-process peaks"
+            ),
+            "peak_allocated_bytes": None,
+            "peak_reserved_bytes": None,
+        }
+        if self.device.type == "cuda" and torch.cuda.is_available():
+            index = (
+                int(self.device.index)
+                if self.device.index is not None
+                else int(torch.cuda.current_device())
+            )
+            payload["device_index"] = index
+            payload["peak_allocated_bytes"] = int(torch.cuda.max_memory_allocated(index))
+            payload["peak_reserved_bytes"] = int(torch.cuda.max_memory_reserved(index))
+        else:
+            payload["unavailable_reason"] = (
+                "CUDA allocator peaks are unavailable for this device (not applicable); "
+                "null is reported instead of a fabricated zero"
+            )
+        return payload
+
+    def _reconcile_train_log(self, checkpoint_step: int) -> None:
+        """Drop unaudited log tail and keep the canonical log aligned with state.
+
+        Records after ``checkpoint_step`` were written by a step that never
+        produced a checkpoint, so after resume they are recomputed from the
+        same per-step seed.  The discarded tail (and any partial last line from
+        an interrupted write) is preserved as ``train_log.discarded-<stamp>.jsonl``
+        evidence; the canonical log is atomically rewritten to the checkpoint
+        prefix.  A prefix that does not exactly cover steps ``0..checkpoint_step``
+        is refused instead of being silently spliced.
+        """
+
+        if not self.train_log_path.exists():
+            raise CheckpointError(
+                f"train log {self.train_log_path} is missing but the checkpoint is at "
+                f"step {checkpoint_step}; cannot resume with a fabricated history"
+            )
+        try:
+            text = self.train_log_path.read_text(encoding="utf-8")
+        except UnicodeDecodeError as error:
+            raise CheckpointError(
+                f"train log {self.train_log_path} is not valid UTF-8: {error}"
+            ) from error
+
+        partial = ""
+        if text and not text.endswith("\n"):
+            cutoff = text.rfind("\n")
+            if cutoff == -1:
+                partial, text = text, ""
+            else:
+                partial, text = text[cutoff + 1 :], text[: cutoff + 1]
+
+        kept: list[str] = []
+        discarded: list[str] = []
+        corrupt = False
+        for index, line in enumerate(text.splitlines()):
+            if not line.strip():
+                continue
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                corrupt = True
+                discarded.append(line)
+                continue
+            step = record.get("step")
+            if not isinstance(step, int) or isinstance(step, bool):
+                raise CheckpointError(
+                    f"train log {self.train_log_path} record {index}: missing integer 'step'"
+                )
+            if corrupt:
+                discarded.append(line)
+                continue
+            if step <= checkpoint_step:
+                if step != len(kept):
+                    raise CheckpointError(
+                        f"train log {self.train_log_path} is incompatible with checkpoint step "
+                        f"{checkpoint_step}: expected prefix step {len(kept)} at record {index}, "
+                        f"found {step}; refusing to splice"
+                    )
+                kept.append(line)
+            else:
+                discarded.append(line)
+        if len(kept) != checkpoint_step + 1:
+            raise CheckpointError(
+                f"train log {self.train_log_path} is incompatible with checkpoint step "
+                f"{checkpoint_step}: usable prefix has {len(kept)} record(s), expected "
+                f"{checkpoint_step + 1}"
+            )
+        if discarded or partial:
+            evidence = self.run_dir / f"train_log.discarded-{_archive_stamp()}.jsonl"
+            suffix = 0
+            while evidence.exists():
+                suffix += 1
+                evidence = self.run_dir / (
+                    f"train_log.discarded-{_archive_stamp()}-{suffix}.jsonl"
+                )
+            body = list(discarded)
+            if partial:
+                body.append(partial)
+            evidence.write_text("\n".join(body) + "\n", encoding="utf-8", newline="\n")
+            self.log(
+                f"preserved {len(body)} discarded/partial train-log line(s) as {evidence.name}"
+            )
+        temporary = self.train_log_path.with_name(self.train_log_path.name + ".tmp")
+        temporary.write_text("\n".join(kept) + "\n", encoding="utf-8", newline="\n")
+        os.replace(temporary, self.train_log_path)
+
+    def _write_run_json(
+        self, *, status: str, resources: Mapping[str, Any] | None = None
+    ) -> None:
+        """Write run metadata; the final call replaces the running snapshot."""
+
+        if resources is None:
+            resources = {
+                "state": "running",
+                "device": str(self.device),
+                "measurement_scope": (
+                    "per-process torch CUDA allocator statistics from Trainer construction "
+                    "(before encoder load) through run end; measured on finish"
+                ),
+                "reset_semantics": (
+                    "torch.cuda.reset_peak_memory_stats(device) once at Trainer construction"
+                ),
+            }
         fingerprint = self.dataset_identity.fingerprint
         payload = {
             "run": self.config.run.name,
@@ -327,6 +492,7 @@ class Trainer:
                 "cross_split_assets": self.index.summary.get("cross_split_assets"),
             },
             "sampler": {"scheme": "seed-sequence-v1", "base_seed": self.config.run.seed},
+            "resources": dict(resources),
         }
         self._write_json(self.run_dir / "run.json", payload)
 
@@ -535,6 +701,7 @@ class Trainer:
             encoder_provenance=self.encoder.provenance(),
             last_step_record=self.last_step_record,
             totals=self.totals,
+            resources=self._resource_snapshot(state="in_progress"),
         )
 
     # -- orchestration ------------------------------------------------------ #
@@ -602,6 +769,9 @@ class Trainer:
                     f"recall={micro['recall']} (valid_centers={report['effective']['valid_centers']})"
                 )
 
+        if self.device.type == "cuda" and torch.cuda.is_available():
+            torch.cuda.synchronize(self._cuda_device_index())
+        resources = self._resource_snapshot(state="finished")
         summary = TrainingSummary(
             run_dir=str(self.run_dir),
             status=status,
@@ -621,9 +791,10 @@ class Trainer:
             git=dict(self.git),
             uv_lock_sha256=self.uv_lock,
             versions=dict(self.versions),
+            resources=resources,
         )
         self._write_json(self.run_dir / "summary.json", summary.to_dict())
-        self._write_run_json(status=status)
+        self._write_run_json(status=status, resources=resources)
         return summary
 
 

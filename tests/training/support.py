@@ -31,6 +31,7 @@ def smoke_config(
     slots: int = 8,
     valid_only: bool = True,
     run_seed: int = 20260929,
+    dropout: float = 0.0,
     index_path: str | None = None,
     data_root: str | None = None,
 ) -> TrainConfig:
@@ -51,7 +52,7 @@ def smoke_config(
             "min_center_gap": min_center_gap,
             "valid_only": valid_only,
         },
-        "head": {"slots": slots},
+        "head": {"slots": slots, "dropout": dropout},
         "optim": {"steps": steps, "lr": lr},
         "checkpoint": {"interval_steps": interval_steps or steps},
         "eval": {"enabled": eval_enabled, "splits": list(eval_splits), "max_songs": max_songs},

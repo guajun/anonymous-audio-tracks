@@ -311,6 +311,7 @@ def save_checkpoint(
     encoder_provenance: Mapping[str, Any],
     last_step_record: Mapping[str, Any] | None,
     totals: Mapping[str, Any],
+    resources: Mapping[str, Any] | None = None,
 ) -> Path:
     """Atomically write the latest checkpoint."""
 
@@ -341,6 +342,7 @@ def save_checkpoint(
         },
         "last_step": dict(last_step_record) if last_step_record is not None else None,
         "totals": dict(totals),
+        "resources": dict(resources) if resources is not None else None,
     }
     temporary = target.with_name(target.name + ".tmp")
     try:

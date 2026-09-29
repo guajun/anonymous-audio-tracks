@@ -222,3 +222,101 @@ def test_overwrite_is_explicit_and_archives(smoke_corpus, tmp_path: Path):
     backups = sorted(path.name for path in out.glob("*.bak-*"))
     assert backups, "overwrite must archive, not delete"
     assert (out / "checkpoint.pt").is_file()
+
+
+def test_resume_after_crash_between_checkpoints_reconciles_log(smoke_corpus, tmp_path: Path):
+    """Interrupted *between* checkpoints: tail is evidence, canonical log stays unique."""
+
+    from aat.training.trainer import Trainer
+
+    out = tmp_path / "crash"
+    config = smoke_config(smoke_corpus, out, steps=4, interval_steps=2)
+    trainer = Trainer(config, log=lambda _message: None)
+    original = trainer._run_step
+
+    def crash(step):
+        if step == 3:
+            raise RuntimeError("simulated interruption")
+        return original(step)
+
+    trainer._run_step = crash
+    with pytest.raises(RuntimeError, match="simulated interruption"):
+        trainer.run()
+
+    assert [record["step"] for record in read_log(trainer.train_log_path)] == [0, 1, 2]
+    checkpoint = load_checkpoint(trainer.checkpoint_path)
+    assert checkpoint["step"] == 1
+    # Simulate a partial write of the next JSONL line.
+    with open(trainer.train_log_path, "a", encoding="utf-8", newline="\n") as handle:
+        handle.write('{"step": 2, "partial"')
+
+    resumed_config = smoke_config(smoke_corpus, out, steps=4, interval_steps=2)
+    summary = train_from_config(resumed_config, resume_from=out)
+    assert summary.steps_completed == 4
+    assert [record["step"] for record in read_log(out / "train_log.jsonl")] == [0, 1, 2, 3]
+
+    evidence_files = sorted(out.glob("train_log.discarded-*.jsonl"))
+    assert len(evidence_files) == 1
+    evidence = evidence_files[0].read_text(encoding="utf-8").splitlines()
+    parsed_evidence = [json.loads(line) for line in evidence if line.startswith("{") and line.endswith("}")]
+    assert any(record.get("step") == 2 for record in parsed_evidence)
+    assert any("partial" in line for line in evidence)
+
+    # A real interruption must resume to exactly the uninterrupted state.
+    uninterrupted_out = tmp_path / "uninterrupted"
+    train_from_config(smoke_config(smoke_corpus, uninterrupted_out, steps=4, interval_steps=2))
+    left = load_checkpoint(uninterrupted_out / "checkpoint.pt")
+    right = load_checkpoint(out / "checkpoint.pt")
+    assert left["step"] == right["step"] == 3
+    for key in left["model_state"]:
+        assert torch.equal(left["model_state"][key], right["model_state"][key]), key
+    assert _optimizer_state_equal(left["optimizer_state"], right["optimizer_state"])
+    assert torch.equal(torch.as_tensor(left["rng"]["torch"]), torch.as_tensor(right["rng"]["torch"]))
+    left_log = read_log(uninterrupted_out / "train_log.jsonl")
+    right_log = read_log(out / "train_log.jsonl")
+    assert [record["batch_sha256"] for record in left_log] == [
+        record["batch_sha256"] for record in right_log
+    ]
+    for first, second in zip(left_log, right_log):
+        for name in ("total", "activity", "empty_slots", "positive", "negative"):
+            assert first["loss"][name] == second["loss"][name]
+
+
+def test_resume_refuses_incompatible_log_prefix(smoke_corpus, tmp_path: Path):
+    from aat.training.errors import CheckpointError
+
+    out = tmp_path / "bad-prefix"
+    config = smoke_config(smoke_corpus, out, steps=2, interval_steps=1)
+    train_from_config(config)
+    log_path = out / "train_log.jsonl"
+    lines = log_path.read_text(encoding="utf-8").splitlines()
+    lines[0] = json.dumps({**json.loads(lines[0]), "step": 5})
+    log_path.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
+    with pytest.raises(CheckpointError, match="incompatible"):
+        train_from_config(
+            smoke_config(smoke_corpus, out, steps=3, interval_steps=1),
+            resume_from=out,
+        )
+
+
+def test_cpu_resources_are_explicit_not_fabricated(smoke_corpus, tmp_path: Path):
+    out = tmp_path / "resources"
+    config = smoke_config(smoke_corpus, out, steps=1, interval_steps=1)
+    summary = train_from_config(config)
+    resources = summary.resources
+    assert resources["device"] == "cpu"
+    assert resources["cuda_available"] is False
+    assert resources["peak_allocated_bytes"] is None
+    assert resources["peak_reserved_bytes"] is None
+    assert "unavailable" in resources["unavailable_reason"]
+    assert resources["elapsed_seconds"] > 0
+    assert "measurement_scope" in resources and "reset_semantics" in resources
+
+    summary_json = json.loads((out / "summary.json").read_text(encoding="utf-8"))
+    assert summary_json["resources"]["peak_allocated_bytes"] is None
+    run_json = json.loads((out / "run.json").read_text(encoding="utf-8"))
+    assert run_json["resources"]["state"] == "finished"
+    assert run_json["resources"]["peak_reserved_bytes"] is None
+    payload = load_checkpoint(summary.checkpoint_path)
+    assert payload["resources"]["peak_allocated_bytes"] is None
+    assert payload["resources"]["state"] == "in_progress"
