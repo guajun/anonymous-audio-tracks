@@ -9,19 +9,27 @@ Reported quantities
 
 * activity true/false positives and negatives, precision, recall, F1 (micro and
   per reference source);
-* ID switches: for each reference source, its active frames are split into
-  contiguous runs; each run is attributed to the predicted track with the most
-  active frames (ties by summed predicted activity, then track order).  A switch
-  is counted when consecutive attributed runs change track, which is exactly the
-  "source reappeared and did not reconnect to its original track" failure;
+* ID switches, tracked frame by frame along each source's active span: a frame
+  with a single active track has a discernible owner, frames with several
+  active tracks are counted as ambiguous (never resolved arbitrarily) and
+  preserve the previous owner across them and across silence;
 * source-count error between active reference sources and active predicted
   tracks;
-* activity-boundary error: for each reference source's active run, the mapped
-  track's overlapping predicted run gives onset/offset absolute errors.
+* activity-boundary error for every reference source, including fully missed
+  ones; run edges that touch an explicitly invalid reference frame are not
+  acoustic boundaries and are not scored.
 
-Undefined metrics are ``None`` rather than a fabricated 0: an empty song, an
-all-silent reference or a run with no overlapping prediction doesn't have a
-precision or a boundary error to report.
+Alignment
+
+Predictions are first aligned to the *full* reference grid (valid and invalid
+frames), then the ``valid`` mask decides what is evaluated: a predicted point
+on an explicitly invalid frame is ignored, while a point that falls on no
+reference grid time is a genuine predicted-only frame (false positive when
+active).  Invalid frames split reference runs.
+
+Undefined metrics are ``None`` rather than a fabricated 0: F1 is ``None`` only
+when ``2*TP + FP + FN`` is zero (no positives and no predictions), while
+precision/recall are independently ``None`` when their own denominator is zero.
 """
 
 from __future__ import annotations
@@ -34,7 +42,7 @@ import numpy as np
 
 from aat.contracts.arrays import ActivityData
 from aat.contracts.documents import Trajectory
-from aat.tracking.matching import maximum_assignment
+from aat.tracking.matching import OBJECTIVE_TOTAL_SCORE, maximum_assignment
 
 from .errors import EvaluationError
 
@@ -97,6 +105,7 @@ class SourceEvaluation:
     recall: float | None
     f1: float | None
     id_switch_count: int
+    ambiguous_owner_frames: int
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -109,6 +118,7 @@ class SourceEvaluation:
             "recall": self.recall,
             "f1": self.f1,
             "id_switch_count": self.id_switch_count,
+            "ambiguous_owner_frames": self.ambiguous_owner_frames,
         }
 
 
@@ -125,6 +135,7 @@ class TrajectoryEvaluation:
     recall: float | None
     f1: float | None
     id_switch_count: int
+    ambiguous_owner_frames: int
     reference_source_count: int
     predicted_track_count: int
     source_count_error: int
@@ -148,6 +159,7 @@ class TrajectoryEvaluation:
             "recall": self.recall,
             "f1": self.f1,
             "id_switch_count": self.id_switch_count,
+            "ambiguous_owner_frames": self.ambiguous_owner_frames,
             "reference_source_count": self.reference_source_count,
             "predicted_track_count": self.predicted_track_count,
             "source_count_error": self.source_count_error,
@@ -190,27 +202,30 @@ def evaluate_trajectory(
     threshold = config.activity_threshold
     tolerance = config.time_tolerance_seconds
 
+    reference_times = np.asarray(reference.center_times, dtype=np.float64)
     reference_valid = np.asarray(reference.valid, dtype=bool)
-    valid_indices = np.flatnonzero(reference_valid)
-    reference_times = np.asarray(reference.center_times, dtype=np.float64)[valid_indices]
-    reference_activity = np.asarray(reference.activity, dtype=np.float64)[valid_indices]
+    reference_activity = np.asarray(reference.activity, dtype=np.float64)
     reference_active = reference_activity >= threshold
+    # Labels on invalid frames are masked out everywhere: activity metrics,
+    # runs, ID switches and boundaries.
+    reference_truth = reference_active & reference_valid[:, None]
 
     tracks = tuple(prediction.tracks)
-    aligned, predicted_only_active = _align_tracks(
-        tracks, reference_times, tolerance, threshold
+    aligned, predicted_only_active, masked_points = _align_tracks(
+        tracks, reference_times, reference_valid, tolerance, threshold
     )
     predicted_active = aligned >= threshold
 
-    mapping_pairs = _global_mapping(reference_active, predicted_active)
+    mapping_pairs = _global_mapping(reference_truth, predicted_active)
     mapping = {source_ids[source]: tracks[track].track_id for source, track in mapping_pairs}
     source_to_track = dict(mapping_pairs)
     mapped_tracks = {track for _, track in mapping_pairs}
 
-    switches = _id_switch_counts(reference_active, aligned, predicted_active)
+    switches, ambiguous = _id_switch_counts(reference_truth, predicted_active)
 
     boundary_start_errors: list[float] = []
     boundary_end_errors: list[float] = []
+    boundary_segments_compared = 0
     boundary_segments_missed = 0
 
     micro_tp = 0
@@ -218,7 +233,7 @@ def evaluate_trajectory(
     micro_fn = 0
     per_source: dict[str, SourceEvaluation] = {}
     for source_index, source_id in enumerate(source_ids):
-        ground_truth = reference_active[:, source_index]
+        ground_truth = reference_truth[:, source_index]
         track_index = source_to_track.get(source_index)
         if track_index is None:
             true_positives = 0
@@ -244,6 +259,7 @@ def evaluate_trajectory(
             recall=recall,
             f1=f1,
             id_switch_count=int(switches[source_index]),
+            ambiguous_owner_frames=int(ambiguous[source_index]),
         )
         micro_tp += true_positives
         micro_fp += false_positives
@@ -256,14 +272,21 @@ def evaluate_trajectory(
             predicted_only_active[track_index]
         )
 
-    # Boundaries are measured on the mapped pair only, never by remapping GT.
-    for source_index, track_index in mapping_pairs:
-        ground_truth_segments = _segments(reference_active[:, source_index], reference_times)
-        predicted_segments = _track_segments(tracks[track_index], threshold)
-        for start, end in ground_truth_segments:
+    # Boundaries cover every reference source, including fully missed ones; the
+    # fixed mapping is never re-optimised here.
+    for source_index, _source_id in enumerate(source_ids):
+        ground_truth_segments = _segments(reference_truth[:, source_index], reference_times)
+        track_index = source_to_track.get(source_index)
+        if track_index is None:
+            boundary_segments_missed += len(ground_truth_segments)
+            continue
+        predicted_segments = _track_segments(
+            tracks[track_index], threshold, masked_points[track_index]
+        )
+        for start, end, start_index, end_index in ground_truth_segments:
             best_overlap = 0.0
             best_segment: tuple[float, float] | None = None
-            for candidate_start, candidate_end in predicted_segments:
+            for candidate_start, candidate_end, _, _ in predicted_segments:
                 overlap = _segment_overlap(
                     start, end, candidate_start, candidate_end, tolerance
                 )
@@ -273,13 +296,20 @@ def evaluate_trajectory(
             if best_segment is None:
                 boundary_segments_missed += 1
                 continue
-            boundary_start_errors.append(abs(best_segment[0] - start))
-            boundary_end_errors.append(abs(best_segment[1] - end))
+            boundary_segments_compared += 1
+            if _edge_is_real(
+                start_index, -1, reference_valid, reference_active[:, source_index]
+            ):
+                boundary_start_errors.append(abs(best_segment[0] - start))
+            if _edge_is_real(
+                end_index, +1, reference_valid, reference_active[:, source_index]
+            ):
+                boundary_end_errors.append(abs(best_segment[1] - end))
 
     micro_precision, micro_recall, micro_f1 = _precision_recall_f1(
         micro_tp, micro_fp, micro_fn
     )
-    reference_source_count = int(np.count_nonzero(reference_active.sum(axis=0)))
+    reference_source_count = int(np.count_nonzero(reference_truth.sum(axis=0)))
     predicted_track_count = int(
         np.count_nonzero(predicted_active.sum(axis=1) + predicted_only_active)
     )
@@ -297,13 +327,14 @@ def evaluate_trajectory(
         recall=micro_recall,
         f1=micro_f1,
         id_switch_count=int(switches.sum()),
+        ambiguous_owner_frames=int(ambiguous.sum()),
         reference_source_count=reference_source_count,
         predicted_track_count=predicted_track_count,
         source_count_error=predicted_track_count - reference_source_count,
         source_count_abs_error=abs(predicted_track_count - reference_source_count),
         boundary_onset_mae=float(np.mean(boundary_start_errors)) if boundary_start_errors else None,
         boundary_offset_mae=float(np.mean(boundary_end_errors)) if boundary_end_errors else None,
-        boundary_segments_compared=len(boundary_start_errors),
+        boundary_segments_compared=boundary_segments_compared,
         boundary_segments_missed=boundary_segments_missed,
         mapping=mapping,
         unmapped_track_ids=unmapped_track_ids,
@@ -314,6 +345,13 @@ def evaluate_trajectory(
 def _precision_recall_f1(
     true_positives: int, false_positives: int, false_negatives: int
 ) -> tuple[float | None, float | None, float | None]:
+    """Independent undefined-ness for precision/recall, F1 from its own denominator.
+
+    ``F1 = 2TP / (2TP + FP + FN)`` is defined whenever that denominator is
+    non-zero, so "positives but no predictions" and "predictions but no
+    positives" both give F1 = 0 instead of ``None``.
+    """
+
     precision = (
         true_positives / (true_positives + false_positives)
         if true_positives + false_positives > 0
@@ -324,43 +362,50 @@ def _precision_recall_f1(
         if true_positives + false_negatives > 0
         else None
     )
-    if precision is None or recall is None:
-        f1 = None
-    elif precision + recall == 0.0:
-        f1 = 0.0
-    else:
-        f1 = 2.0 * precision * recall / (precision + recall)
+    denominator = 2 * true_positives + false_positives + false_negatives
+    f1 = (2.0 * true_positives / denominator) if denominator > 0 else None
     return precision, recall, f1
 
 
 def _align_tracks(
     tracks: tuple[Any, ...],
     reference_times: np.ndarray,
+    reference_valid: np.ndarray,
     tolerance: float,
     threshold: float,
-) -> tuple[np.ndarray, np.ndarray]:
-    """Project track curves onto the valid reference grid.
+) -> tuple[np.ndarray, np.ndarray, list[np.ndarray]]:
+    """Align every track to the full reference grid, then apply the valid mask.
 
-    Returns the aligned activity matrix ``(tracks, reference_frames)`` plus the
-    number of active predicted points that had no reference frame within
-    tolerance (they still count as false positives).
+    Returns ``(aligned, predicted_only_active, masked_points)`` where
+    ``aligned`` is ``(tracks, frames)`` activity on the full grid (invalid
+    columns stay zero), ``predicted_only_active`` counts active points with no
+    reference frame within tolerance, and ``masked_points[track]`` marks points
+    that landed on an explicitly invalid frame (ignored, not false positives).
     """
 
     aligned = np.zeros((len(tracks), reference_times.shape[0]), dtype=np.float64)
     predicted_only_active = np.zeros(len(tracks), dtype=np.int64)
+    masked_points: list[np.ndarray] = []
     for index, track in enumerate(tracks):
         track_times = np.asarray(track.center_times, dtype=np.float64)
         track_activity = np.asarray(track.activity, dtype=np.float64)
         mapped, unmatched = _map_point_times(track_times, reference_times, tolerance)
+        masked = np.zeros(track_times.shape[0], dtype=bool)
         for point in range(track_times.shape[0]):
             frame = mapped[point]
-            if frame >= 0 and track_activity[point] > aligned[index, frame]:
+            if frame < 0:
+                continue
+            if not reference_valid[frame]:
+                masked[point] = True
+                continue
+            if track_activity[point] > aligned[index, frame]:
                 aligned[index, frame] = track_activity[point]
         if np.any(unmatched):
             predicted_only_active[index] = int(
                 np.count_nonzero(track_activity[unmatched] >= threshold)
             )
-    return aligned, predicted_only_active
+        masked_points.append(masked)
+    return aligned, predicted_only_active, masked_points
 
 
 def _map_point_times(
@@ -393,67 +438,67 @@ def _map_point_times(
 
 
 def _global_mapping(
-    reference_active: np.ndarray, predicted_active: np.ndarray
+    reference_truth: np.ndarray, predicted_active: np.ndarray
 ) -> list[tuple[int, int]]:
-    """One whole-song source-to-track mapping.
+    """One whole-song source-to-track mapping maximising total overlap (TP).
 
-    Feasible pairs need at least one frame where both are active; the mapping
-    maximises the number of overlapping pairs and then the total overlap.
+    Feasible pairs need at least one frame where both are active.  Unlike the
+    online tracker, the evaluation objective is total overlap rather than pair
+    count: an unmatched source/track is allowed, because maximising total TP is
+    exactly maximising micro-F1 for fixed activity totals.
     """
 
-    source_count = reference_active.shape[1]
+    source_count = reference_truth.shape[1]
     track_count = predicted_active.shape[0]
     if source_count == 0 or track_count == 0:
         return []
-    scores = reference_active.astype(np.int64).T @ predicted_active.astype(np.int64).T
+    scores = reference_truth.astype(np.int64).T @ predicted_active.astype(np.int64).T
     feasible = scores.astype(np.float64)
     feasible[scores == 0] = -np.inf
-    return maximum_assignment(feasible, 0.0)
+    return maximum_assignment(feasible, 0.0, objective=OBJECTIVE_TOTAL_SCORE)
 
 
 def _id_switch_counts(
-    reference_active: np.ndarray, aligned: np.ndarray, predicted_active: np.ndarray
-) -> np.ndarray:
-    source_count = reference_active.shape[1]
+    reference_truth: np.ndarray, predicted_active: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
+    """Frame-wise owner changes per source with explicit ambiguity counting.
+
+    A frame with exactly one active track gives a discernible owner; several
+    active tracks are ambiguous and never resolved arbitrarily.  The last
+    discernible owner is kept across silence, masked frames and ambiguous
+    frames, so a reappearance on a different track is counted as a switch.
+    """
+
+    frame_count, source_count = reference_truth.shape
     switches = np.zeros(source_count, dtype=np.int64)
+    ambiguous = np.zeros(source_count, dtype=np.int64)
     for source in range(source_count):
-        column = reference_active[:, source]
         last_owner: int | None = None
-        index = 0
-        while index < column.shape[0]:
-            if not column[index]:
-                index += 1
+        for frame in range(frame_count):
+            if not reference_truth[frame, source]:
                 continue
-            start = index
-            while index < column.shape[0] and column[index]:
-                index += 1
-            owner = _covering_track(slice(start, index), aligned, predicted_active)
-            if owner is None:
+            active_tracks = np.flatnonzero(predicted_active[:, frame])
+            if active_tracks.size == 0:
                 continue
+            if active_tracks.size > 1:
+                ambiguous[source] += 1
+                continue
+            owner = int(active_tracks[0])
             if last_owner is not None and owner != last_owner:
                 switches[source] += 1
             last_owner = owner
-    return switches
+    return switches, ambiguous
 
 
-def _covering_track(
-    run: slice, aligned: np.ndarray, predicted_active: np.ndarray
-) -> int | None:
-    best_track: int | None = None
-    best_key: tuple[int, float, int] | None = None
-    for track in range(aligned.shape[0]):
-        active_count = int(np.count_nonzero(predicted_active[track, run]))
-        if active_count == 0:
-            continue
-        key = (active_count, float(np.sum(aligned[track, run])), -track)
-        if best_key is None or key > best_key:
-            best_key = key
-            best_track = track
-    return best_track
+def _segments(
+    active: np.ndarray, times: np.ndarray
+) -> list[tuple[float, float, int, int]]:
+    """Contiguous runs as ``(start_time, end_time, start_index, end_index)``.
 
+    Invalid reference frames are ``False`` in ``active``, so they split runs.
+    """
 
-def _segments(active: np.ndarray, times: np.ndarray) -> list[tuple[float, float]]:
-    segments: list[tuple[float, float]] = []
+    segments: list[tuple[float, float, int, int]] = []
     index = 0
     frame_count = active.shape[0]
     while index < frame_count:
@@ -463,14 +508,36 @@ def _segments(active: np.ndarray, times: np.ndarray) -> list[tuple[float, float]
         start = index
         while index < frame_count and active[index]:
             index += 1
-        segments.append((float(times[start]), float(times[index - 1])))
+        end = index - 1
+        segments.append((float(times[start]), float(times[end]), start, end))
     return segments
 
 
-def _track_segments(track: Any, threshold: float) -> list[tuple[float, float]]:
+def _track_segments(
+    track: Any, threshold: float, masked_points: np.ndarray
+) -> list[tuple[float, float, int, int]]:
     times = np.asarray(track.center_times, dtype=np.float64)
     activity = np.asarray(track.activity, dtype=np.float64)
-    return _segments(activity >= threshold, times)
+    active = (activity >= threshold) & ~masked_points
+    return _segments(active, times)
+
+
+def _edge_is_real(
+    index: int,
+    direction: int,
+    reference_valid: np.ndarray,
+    reference_truth: np.ndarray,
+) -> bool:
+    """Whether a run edge is an actual acoustic boundary.
+
+    An edge next to an explicitly invalid frame is unknown, not a boundary, and
+    is skipped; the outer edges of the analyzed grid count as boundaries.
+    """
+
+    neighbour = index + direction
+    if neighbour < 0 or neighbour >= reference_truth.shape[0]:
+        return True
+    return bool(reference_valid[neighbour]) and not bool(reference_truth[neighbour])
 
 
 def _segment_overlap(

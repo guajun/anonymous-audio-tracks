@@ -8,7 +8,15 @@ bitmask dynamic program; larger searches fall back to a deterministic greedy
 assignment (documented limitation).
 
 ``-inf`` scores are allowed and mean "infeasible"; NaN and ``+inf`` are
-rejected.
+rejected.  Two objectives are available:
+
+``cardinality_then_score`` (default)
+    Maximise the number of matched pairs, then the total score.  This is the
+    online tracker rule.
+``total_score``
+    Maximise the total score, allowing pairs to stay unmatched; ties prefer
+    more pairs.  Used by whole-song evaluation because it is equivalent to
+    maximising micro-F1 under a fixed source/track mapping.
 """
 
 from __future__ import annotations
@@ -22,6 +30,11 @@ from .errors import TrackingError
 
 #: Guard for the exact bitmask search: rows * 2**cols must stay below this.
 MAX_EXACT_STATES = 2_000_000
+
+#: Matching objectives accepted by :func:`maximum_assignment`.
+OBJECTIVE_CARDINALITY_THEN_SCORE = "cardinality_then_score"
+OBJECTIVE_TOTAL_SCORE = "total_score"
+OBJECTIVES = (OBJECTIVE_CARDINALITY_THEN_SCORE, OBJECTIVE_TOTAL_SCORE)
 
 
 def _as_2d(value: Any, path: str, *, allow_neg_inf: bool = False) -> np.ndarray:
@@ -59,11 +72,12 @@ def maximum_assignment(
     scores: Any,
     threshold: float,
     *,
+    objective: str = OBJECTIVE_CARDINALITY_THEN_SCORE,
     max_exact_slots: int = 16,
-    max_exact_rows: int = 64,
+    max_exact_rows: int = 256,
     max_exact_states: int = MAX_EXACT_STATES,
 ) -> list[tuple[int, int]]:
-    """Gated one-to-one assignment maximising (match count, total score).
+    """Gated one-to-one assignment under the requested objective.
 
     Parameters
     ----------
@@ -72,10 +86,14 @@ def maximum_assignment(
         Use ``-inf`` to mark a pair infeasible regardless of the threshold.
     threshold:
         Gate applied before assignment.  Pairs below it are disabled.
+    objective:
+        ``"cardinality_then_score"`` maximises (match count, total score);
+        ``"total_score"`` maximises (total score, match count) and allows
+        rows/columns to stay unmatched.
     max_exact_slots, max_exact_rows, max_exact_states:
         Bounds for the exact bitmask search.  Outside them the deterministic
         greedy fallback is used; the fallback is still one-to-one and gated but
-        does not guarantee maximum cardinality.
+        does not guarantee the optimum.
 
     Returns
     -------
@@ -89,6 +107,10 @@ def maximum_assignment(
     gate = float(threshold)
     if not math.isfinite(gate):
         raise TrackingError(f"threshold: must be finite, got {threshold!r}")
+    if objective not in OBJECTIVES:
+        raise TrackingError(
+            f"objective: expected one of {list(OBJECTIVES)}, got {objective!r}"
+        )
     if isinstance(max_exact_slots, bool) or not isinstance(max_exact_slots, int):
         raise TrackingError("max_exact_slots: expected an integer")
     if max_exact_slots < 0:
@@ -98,11 +120,13 @@ def maximum_assignment(
     if rows == 0 or cols == 0:
         return []
     if _exact_possible(rows, cols, max_exact_slots, max_exact_rows, max_exact_states):
-        return _exact_assignment(score_matrix, gate)
+        return _exact_assignment(score_matrix, gate, objective)
     # Assignment is symmetric: a tall, narrow problem can still be solved
     # exactly with the bitmask over the small side.
     if _exact_possible(cols, rows, max_exact_slots, max_exact_rows, max_exact_states):
-        transposed = _exact_assignment(np.ascontiguousarray(score_matrix.T), gate)
+        transposed = _exact_assignment(
+            np.ascontiguousarray(score_matrix.T), gate, objective
+        )
         return sorted((col, row) for row, col in transposed)
     return _greedy_assignment(score_matrix, gate)
 
@@ -121,7 +145,9 @@ def _exact_possible(
     )
 
 
-def _exact_assignment(scores: np.ndarray, threshold: float) -> list[tuple[int, int]]:
+def _exact_assignment(
+    scores: np.ndarray, threshold: float, objective: str
+) -> list[tuple[int, int]]:
     rows, cols = scores.shape
     # node = (count, total_score, previous_mask, slot, created_row)
     initial = (0, 0.0, None, None, -1)
@@ -144,10 +170,9 @@ def _exact_assignment(scores: np.ndarray, threshold: float) -> list[tuple[int, i
                 new_mask = mask | (1 << col)
                 candidate = (count + 1, total + value, mask, col, row)
                 existing = updated.get(new_mask)
-                if existing is None or (candidate[0], candidate[1]) > (
-                    existing[0],
-                    existing[1],
-                ):
+                if existing is None or _objective_key(
+                    candidate, objective
+                ) > _objective_key(existing, objective):
                     updated[new_mask] = candidate
         for mask, node in updated.items():
             if best.get(mask) is not node:
@@ -157,7 +182,9 @@ def _exact_assignment(scores: np.ndarray, threshold: float) -> list[tuple[int, i
     final_mask: int | None = None
     final_node: tuple | None = None
     for mask, node in best.items():
-        if final_node is None or (node[0], node[1]) > (final_node[0], final_node[1]):
+        if final_node is None or _objective_key(node, objective) > _objective_key(
+            final_node, objective
+        ):
             final_mask, final_node = mask, node
     if final_node is None or final_node[0] == 0 or final_mask is None:
         return []
@@ -183,6 +210,12 @@ def _exact_assignment(scores: np.ndarray, threshold: float) -> list[tuple[int, i
     return pairs
 
 
+def _objective_key(node: tuple, objective: str) -> tuple[float, int]:
+    if objective == OBJECTIVE_TOTAL_SCORE:
+        return (node[1], node[0])
+    return (node[0], node[1])
+
+
 def _greedy_assignment(scores: np.ndarray, threshold: float) -> list[tuple[int, int]]:
     rows, cols = scores.shape
     feasible: list[tuple[float, int, int]] = []
@@ -205,4 +238,11 @@ def _greedy_assignment(scores: np.ndarray, threshold: float) -> list[tuple[int, 
     return pairs
 
 
-__all__ = ["MAX_EXACT_STATES", "cosine_similarity", "maximum_assignment"]
+__all__ = [
+    "MAX_EXACT_STATES",
+    "OBJECTIVES",
+    "OBJECTIVE_CARDINALITY_THEN_SCORE",
+    "OBJECTIVE_TOTAL_SCORE",
+    "cosine_similarity",
+    "maximum_assignment",
+]

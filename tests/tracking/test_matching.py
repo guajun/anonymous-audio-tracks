@@ -101,12 +101,11 @@ def test_exact_assignment_matches_brute_force_on_small_random_matrices():
         cols = int(rng.integers(1, 5))
         scores = rng.uniform(-0.2, 1.0, size=(rows, cols))
         threshold = float(rng.choice([0.3, 0.5, 0.7]))
-        best = [0, 0.0]
+        keys: list[tuple[int, float]] = []
 
         def enumerate_assignments(row: int, used: set[int], total: float, count: int) -> None:
             if row == rows:
-                if (count, total) > (best[0], best[1]):
-                    best[0], best[1] = count, total
+                keys.append((count, total))
                 return
             enumerate_assignments(row + 1, used, total, count)
             for col in range(cols):
@@ -117,9 +116,33 @@ def test_exact_assignment_matches_brute_force_on_small_random_matrices():
                 )
 
         enumerate_assignments(0, set(), 0.0, 0)
+        best_cardinality = max(keys, key=lambda item: (item[0], item[1]))
+        best_total = max(keys, key=lambda item: (item[1], item[0]))
+
         pairs = maximum_assignment(scores, threshold)
         total = sum(float(scores[row, col]) for row, col in pairs)
-        assert (len(pairs), total) == (best[0], best[1])
+        assert len(pairs) == best_cardinality[0]
+        assert abs(total - best_cardinality[1]) <= 1e-9
         assert len({row for row, _ in pairs}) == len(pairs)
         assert len({col for _, col in pairs}) == len(pairs)
+
+        total_pairs = maximum_assignment(scores, threshold, objective="total_score")
+        total_score = sum(float(scores[row, col]) for row, col in total_pairs)
+        assert abs(total_score - best_total[1]) <= 1e-9
+        assert len(total_pairs) == best_total[0]
+        assert len({row for row, _ in total_pairs}) == len(total_pairs)
+        assert len({col for _, col in total_pairs}) == len(total_pairs)
         assert all(scores[row, col] >= threshold for row, col in pairs)
+
+
+def test_total_score_objective_allows_unmatched_pairs():
+    # The cardinality-first online rule takes both non-zero pairs (total 2);
+    # whole-song evaluation must be able to keep only the 100-overlap pair.
+    scores = np.array([[100.0, 1.0], [1.0, -np.inf]])
+    assert maximum_assignment(scores, 0.5) == [(0, 1), (1, 0)]
+    assert maximum_assignment(scores, 0.5, objective="total_score") == [(0, 0)]
+
+
+def test_unknown_objective_is_rejected():
+    with pytest.raises(TrackingError):
+        maximum_assignment(np.zeros((1, 1)), 0.5, objective="bogus")
