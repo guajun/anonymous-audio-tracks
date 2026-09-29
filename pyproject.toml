@@ -1,10 +1,33 @@
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
 [project]
 name = "anonymous-audio-tracks"
 version = "0.1.0"
 description = "Anonymous source embeddings and center-time activity trajectories for music-driven LEDs"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
-dependencies = []
+dependencies = [
+    "numpy>=2.0,<3",
+]
 
-[tool.uv]
-package = false
+[project.optional-dependencies]
+# Optional renderer stack owned by the DawDreamer/Surge issue (#3). Empty on purpose:
+# this issue must stay free of model/data downloads.
+render = []
+# Optional feature/training stack owned by the AuT and head issues (#5, #7).
+# Entries are added and locked by those issues; never install a GPU stack by default.
+ml = []
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3,<9",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/aat"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
