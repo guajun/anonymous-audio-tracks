@@ -1,0 +1,77 @@
+# Frozen real AuT minimum training run (issue #8): 100 steps in one short GPU
+# session budget, held-out val/test evaluation afterwards (max 1 song per split).
+#
+# The AuT checkpoint is read-only and supplied at runtime; the committed path is
+# a placeholder and the audited revision is pinned.  Reproduce (after the
+# checkpoint exists locally, see docs/AUT_PROBE.md):
+#
+#   uv sync --locked --extra ml
+#   uv run --no-sync python scripts/train.py train \
+#       --config configs/train/aut_short.toml \
+#       --model-dir /path/to/encoder-checkpoint \
+#       --device cuda:0
+
+[run]
+name = "aut-short"
+out_dir = "runs/train/aut-short"
+seed = 20260929
+device = "cuda:0"
+notes = "frozen AuT head-only short run; host path supplied at runtime"
+
+[encoder]
+mode = "aut"
+feature_dim = 2048
+model_dir = "/path/to/encoder-checkpoint"
+model_id = "Qwen/Qwen3-Omni-30B-A3B-Instruct"
+revision = "26291f793822fb6be9555850f06dfe95f2d7e695"
+layer = "final"
+dtype = "float32"
+attention = "block_diagonal"
+extraction = "independent_windows"
+window_seconds = 2.0
+batch_windows = 8
+
+[data]
+index = "runs/train-index/index.json"
+data_root = "runs/train-data"
+split = "train"
+groups_per_step = 2
+centers_per_item = 4
+min_center_gap = 5
+valid_only = true
+activity_threshold = 0.5
+verify_digests = true
+
+[head]
+slots = 8
+d_model = 128
+num_heads = 4
+dropout = 0.0
+time_frequencies = 6
+base_frequency_hz = 1.0
+ffn_multiplier = 2
+
+[loss]
+w_activity = 1.0
+w_empty_slots = 0.5
+w_positive = 1.0
+w_negative = 1.0
+identity_activity_threshold = 0.5
+negative_margin = 0.25
+max_optimal_assignments = 64
+
+[optim]
+lr = 1e-3
+weight_decay = 0.0
+steps = 100
+grad_clip_norm = 1.0
+
+[checkpoint]
+interval_steps = 50
+
+[eval]
+enabled = true
+splits = ["val", "test"]
+threshold = 0.5
+max_songs = 1
+baselines = true

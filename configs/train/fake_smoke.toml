@@ -1,0 +1,62 @@
+# CPU fake-encoder smoke on the synthetic protocol corpus (issue #8).
+#
+# First prepare the synthetic corpus with the self-contained smoke command, or
+# point [data] at any verified index:
+#   uv sync --locked --extra ml
+#   uv run --no-sync python scripts/train.py smoke --out runs/train/smoke --steps 1
+#   uv run --no-sync python scripts/train.py train --config configs/train/fake_smoke.toml
+#
+# The synthetic corpus is written by aat.training.dataset.make_smoke_dataset
+# (real protocol documents and PCM, no DawDreamer, no weights).
+
+[run]
+name = "fake-smoke"
+out_dir = "runs/train/fake-smoke"
+seed = 20260929
+device = "cpu"
+notes = "synthetic smoke corpus; fake features; pipeline evidence only"
+
+[encoder]
+mode = "fake"
+feature_dim = 16
+fake_seed = 20260929
+batch_windows = 8
+
+[data]
+index = "runs/train/smoke/dataset/index.json"
+data_root = "runs/train/smoke/dataset/samples"
+split = "train"
+groups_per_step = 1
+centers_per_item = 4
+min_center_gap = 5
+valid_only = true
+activity_threshold = 0.5
+verify_digests = true
+
+[head]
+slots = 8
+d_model = 128
+num_heads = 4
+dropout = 0.0
+
+[loss]
+w_activity = 1.0
+w_empty_slots = 0.5
+w_positive = 1.0
+w_negative = 1.0
+
+[optim]
+lr = 3e-3
+weight_decay = 0.0
+steps = 40
+grad_clip_norm = 1.0
+
+[checkpoint]
+interval_steps = 20
+
+[eval]
+enabled = true
+splits = ["val", "test"]
+threshold = 0.5
+max_songs = 4
+baselines = true
