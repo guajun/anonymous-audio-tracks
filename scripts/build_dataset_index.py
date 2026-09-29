@@ -118,6 +118,14 @@ def build_parser() -> argparse.ArgumentParser:
     batch.add_argument("--window-seconds", type=float, default=None)
     batch.add_argument("--slots", type=int, default=None)
     batch.add_argument(
+        "--no-verify-digests",
+        action="store_true",
+        help=(
+            "skip re-hashing the consumed mix/activity files against the index "
+            "digests (unverified consumption; the default verifies)"
+        ),
+    )
+    batch.add_argument(
         "--skip-unusable",
         action="store_true",
         help="skip songs without usable centers instead of failing",
@@ -250,6 +258,7 @@ def cmd_batch(args: argparse.Namespace) -> int:
         on_unusable="skip" if args.skip_unusable else "error",
         window_seconds=args.window_seconds,
         slots=args.slots,
+        verify_digests=not args.no_verify_digests,
     )
     _print_json(batch.to_json_dict())
     return 0

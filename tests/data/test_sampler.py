@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import shutil
+
 import numpy as np
 import pytest
 
@@ -503,6 +505,190 @@ def test_empty_split_returns_empty_batch(tmp_path) -> None:
         sample_batch(index, data, seed=1, split="val", items=1)
 
 
+def test_consumed_mix_digest_is_verified_by_default(tmp_path) -> None:
+    data = tmp_path / "data"
+    duration = 4.0
+    sample = fixtures.make_sample(
+        data,
+        "song",
+        sample_id="song",
+        composition="comp",
+        stems={"s01": np.zeros(round(duration * RATE), dtype=np.float64)},
+    )
+    index = _build(data, slots=2)
+    recorded = index.samples[0].content_sha256["mix.wav"]
+    assert recorded == fixtures.sha256_file(sample / "mix.wav")
+
+    # Same frame count, same manifest, different bytes: load/verify happened
+    # before this rewrite, so only the per-batch check can catch it.
+    fixtures.write_pcm16(
+        sample / "mix.wav",
+        np.full((round(duration * RATE), 1), 0.2),
+        RATE,
+    )
+    assert fixtures.sha256_file(sample / "mix.wav") != recorded
+
+    with pytest.raises(DatasetError, match="mix 'mix.wav' sha256 mismatch"):
+        sample_batch(index, data, seed=1, items=1, centers_per_item=2)
+
+    batch = sample_batch(
+        index, data, seed=1, items=1, centers_per_item=2, verify_digests=False
+    )
+    block = batch.blocks[0]
+    # The block reports the index digest, not the rewritten bytes: opt-out is
+    # explicit unverified consumption, never a silent re-baseline.
+    assert block.mix_sha256 == recorded
+    assert block.mix_sha256 != fixtures.sha256_file(sample / "mix.wav")
+    assert float(np.abs(block.audio).max()) > 0.15
+
+
+def test_consumed_activity_arrays_digest_is_verified(tmp_path) -> None:
+    data = tmp_path / "data"
+    sample = fixtures.make_sample(
+        data,
+        "song",
+        sample_id="song",
+        composition="comp",
+        stems={"s01": _full_source()},
+    )
+    index = _build(data, slots=2)
+
+    with np.load(sample / "activity.npz", allow_pickle=False) as archive:
+        center_times = archive["center_times"]
+        valid = archive["valid"]
+        mutated = np.where(archive["activity"] > 0.5, 0.25, 0.75).astype(np.float32)
+    np.savez(
+        sample / "activity.npz",
+        center_times=center_times,
+        activity=mutated,
+        valid=valid,
+    )
+    with pytest.raises(DatasetError, match="activity arrays 'activity.npz' sha256 mismatch"):
+        sample_batch(index, data, seed=1, items=1, centers_per_item=2)
+    # The opt-out consumes the changed labels explicitly (documented as unverified);
+    # the block digest stays the index value and is not silently re-baselined.
+    batch = sample_batch(
+        index, data, seed=1, items=1, centers_per_item=2, verify_digests=False
+    )
+    block = batch.blocks[0]
+    assert np.array_equal(block.activity[:, :1], mutated[block.center_indices])
+    assert block.activity_sha256 != fixtures.sha256_file(sample / "activity.npz")
+
+
+def test_consumed_activity_metadata_digest_is_verified(tmp_path) -> None:
+    data = tmp_path / "data"
+    sample = fixtures.make_sample(
+        data,
+        "song",
+        sample_id="song",
+        composition="comp",
+        stems={"s01": _full_source()},
+    )
+    index = _build(data, slots=2)
+    fixtures.rewrite_json(
+        sample / "activity.json",
+        lambda payload: payload["label_params"]["config"].__setitem__("hop_seconds", 0.021),
+    )
+    with pytest.raises(
+        DatasetError, match="activity metadata 'activity.json' sha256 mismatch"
+    ):
+        sample_batch(index, data, seed=1, items=1, centers_per_item=2)
+
+
+def test_sampling_from_another_root_is_digest_checked(tmp_path) -> None:
+    root_a = tmp_path / "a"
+    fixtures.make_sample(
+        root_a,
+        "song",
+        sample_id="song",
+        composition="comp",
+        stems={"s01": _full_source()},
+    )
+    index = _build(root_a, slots=2)
+    root_b = tmp_path / "b"
+    shutil.copytree(root_a / "song", root_b / "song")
+    fixtures.write_pcm16(
+        root_b / "song" / "mix.wav",
+        np.full((round(4.0 * RATE), 1), 0.2),
+        RATE,
+    )
+
+    # Same relative path, same shapes, different bytes under another root.
+    with pytest.raises(DatasetError, match="mix 'mix.wav' sha256 mismatch"):
+        sample_batch(index, root_b, seed=1, items=1, centers_per_item=2)
+    batch = sample_batch(index, root_a, seed=1, items=1, centers_per_item=2)
+    assert len(batch) == 1
+    assert batch.blocks[0].mix_sha256 == fixtures.sha256_file(root_a / "song" / "mix.wav")
+
+
+def test_include_invalid_allows_boundary_only_sample(tmp_path) -> None:
+    data = tmp_path / "data"
+    fixtures.make_sample(
+        data,
+        "short",
+        sample_id="short",
+        composition="comp",
+        stems={"s01": fixtures.tone_bursts(0.5, RATE, [(0.0, 0.5)])},
+        duration_seconds=0.5,
+    )
+    index = _build(data, slots=2)
+    entry = index.samples[0]
+    assert entry.labels["center_count"] == 26
+    assert entry.labels["valid_count"] == 0
+    assert entry.usable is False
+    assert any("no valid center windows" in warning for warning in entry.warnings)
+
+    # Default valid_only=True still rejects (or records with on_unusable=skip).
+    with pytest.raises(DatasetError, match="no valid center windows"):
+        sample_batch(index, data, seed=1, items=1, centers_per_item=2)
+    skipped = sample_batch(index, data, seed=1, items=1, on_unusable="skip")
+    assert skipped.blocks == ()
+    assert "no valid center windows" in skipped.skipped[0][1]
+
+    batch = sample_batch(
+        index, data, seed=1, items=1, centers_per_item=2, valid_only=False
+    )
+    assert len(batch) == 1
+    block = batch.blocks[0]
+    assert block.center_indices.size == 2
+    assert not block.center_valid.any()
+    assert not block.audio_valid.all()
+    assert block.same_source_pairs == ()
+    assert block.source_present[:, :1].all()
+    assert np.all(block.activity[:, 1] == 0.0)
+    assert block.activity.shape == (2, 2)
+
+
+def test_zero_center_sample_is_unusable_even_with_include_invalid(tmp_path) -> None:
+    data = tmp_path / "data"
+    manual = fixtures.manual_activity(
+        sample_id="song",
+        source_ids=["s01"],
+        duration_seconds=0.0,
+    )
+    assert manual.center_times.size == 0
+    fixtures.make_sample(
+        data,
+        "song",
+        sample_id="song",
+        composition="comp",
+        stems={"s01": _full_source()},
+        activity=manual,
+    )
+    index = _build(data, slots=2)
+    entry = index.samples[0]
+    assert entry.labels["center_count"] == 0
+    assert entry.usable is False
+    for valid_only in (True, False):
+        with pytest.raises(DatasetError, match="no center times"):
+            sample_batch(index, data, seed=1, items=1, valid_only=valid_only)
+        skipped = sample_batch(
+            index, data, seed=1, items=1, valid_only=valid_only, on_unusable="skip"
+        )
+        assert skipped.blocks == ()
+        assert "no center times" in skipped.skipped[0][1]
+
+
 @pytest.mark.parametrize(
     ("kwargs", "match"),
     [
@@ -517,6 +703,7 @@ def test_empty_split_returns_empty_batch(tmp_path) -> None:
         ({"window_seconds": 0.0}, "window_seconds"),
         ({"slots": 0}, "slots: must be >= 1"),
         ({"valid_only": "yes"}, "valid_only"),
+        ({"verify_digests": "yes"}, "verify_digests"),
     ],
 )
 def test_parameter_validation(tmp_path, kwargs, match: str) -> None:

@@ -5,6 +5,8 @@ from __future__ import annotations
 import functools
 import json
 
+import numpy as np
+
 from . import fixtures
 
 from aat.data import DatasetIndex
@@ -155,3 +157,89 @@ def test_batch_on_empty_split_fails_by_default(tmp_path, capsys) -> None:
     _, out, _ = _build(tmp_path, capsys)
     assert module.main(["batch", "--index", str(out), "--split", "test", "--items", "1"]) == 2
     assert "only 0 sample" in capsys.readouterr().err
+
+
+def test_batch_include_invalid_for_boundary_only_sample(tmp_path, capsys) -> None:
+    module = build_cli()
+    data = tmp_path / "data"
+    fixtures.make_sample(
+        data,
+        "short",
+        sample_id="short",
+        composition="comp",
+        stems={"s01": fixtures.tone_bursts(0.5, RATE, [(0.0, 0.5)])},
+        duration_seconds=0.5,
+    )
+    out = tmp_path / "index" / "index.json"
+    assert (
+        module.main(
+            ["build", "--data-root", str(data), "--out", str(out), "--seed", "1", "--slots", "2"]
+        )
+        == 0
+    )
+    capsys.readouterr()
+
+    assert (
+        module.main(["batch", "--index", str(out), "--split", "train", "--items", "1", "--centers", "2"])
+        == 2
+    )
+    assert "no valid center windows" in capsys.readouterr().err
+
+    assert (
+        module.main(
+            [
+                "batch",
+                "--index",
+                str(out),
+                "--split",
+                "train",
+                "--items",
+                "1",
+                "--centers",
+                "2",
+                "--include-invalid",
+            ]
+        )
+        == 0
+    )
+    payload = json.loads(capsys.readouterr().out)
+    block = payload["blocks"][0]
+    assert block["center_valid"] == [False, False]
+    assert block["same_source_pairs"] == []
+    assert block["source_ids"] == ["s01"]
+    assert block["audio_valid_all"] is False
+
+
+def test_batch_digest_check_and_opt_out(tmp_path, capsys) -> None:
+    module = build_cli()
+    data, out, _ = _build(tmp_path, capsys)
+    fixtures.write_pcm16(
+        data / "s1" / "mix.wav",
+        np.full((round(4.0 * RATE), 1), 0.2),
+        RATE,
+    )
+    assert (
+        module.main(["batch", "--index", str(out), "--split", "train", "--items", "1", "--centers", "2"])
+        == 2
+    )
+    assert "sha256 mismatch" in capsys.readouterr().err
+
+    assert (
+        module.main(
+            [
+                "batch",
+                "--index",
+                str(out),
+                "--split",
+                "train",
+                "--items",
+                "1",
+                "--centers",
+                "2",
+                "--no-verify-digests",
+            ]
+        )
+        == 0
+    )
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["returned_items"] == 1

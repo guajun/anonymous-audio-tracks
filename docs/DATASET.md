@@ -105,7 +105,7 @@ uv run --no-sync python scripts/build_dataset_index.py batch \
 | `controls` | object | `event_count`/`note_on_count`/`note_min`/`note_max` 与逐来源音高范围（仅证据） |
 | `audio` | object | mix 路径、采样率、声道数、帧数、时长 |
 | `content_sha256` | object | manifest 记录的逐文件摘要（相对样本目录） |
-| `usable` | bool | 是否有来源且 `valid_count > 0` |
+| `usable` | bool | 是否有来源且 `valid_count > 0`；即默认 `valid_only=True` 下可用。`valid_only=False` 仍可消费只有无效边界的样本（`center_count > 0`） |
 | `warnings` | array[string] | 逐样本提示（无有效中心、全静音等） |
 | `sample_sha256` | hex | 整条记录（除本字段）的 canonical JSON SHA-256 |
 
@@ -160,6 +160,7 @@ batch = sample_batch(
     min_center_gap=5,         # 中心网格最小间隔（单位：hop 步）
     valid_only=True,          # 只用 activity.valid 为 True 的中心（默认）
     activity_threshold=0.5,   # same_source_pairs 的活动阈值（作用于声学标签）
+    verify_digests=True,      # 默认核验实际消费的 mix/activity 摘要（可关，见 §5.6）
 )
 block = batch.blocks[0]
 ```
@@ -195,6 +196,10 @@ block = batch.blocks[0]
 `window_seconds == label_params.config.center_window_seconds` 时 `audio_valid` 全为 True。
 `valid_only=False` 可显式包含首尾无效行用于检查：此时 `center_valid=False`，
 `audio_valid` 可能出现补零；两者都必须由消费方屏蔽，不能把无效首尾当有效监督。
+当标签窗口大于样本时长（例如 0.5 s 样本 + 2.0 s 窗口）时 `activity.valid` 可能全为
+False：默认 `valid_only=True` 会按 §5.5 拒绝/跳过，而 `valid_only=False` 仍可采样（26
+个中心里的任意非空中心），返回的 `center_valid` 全 False、`audio_valid` 标记补零、
+`same_source_pairs` 为空，消费方必须全部屏蔽。
 `window_seconds` 覆盖成与标签窗口不同时，两个掩码的差别会更明显（有测试覆盖）。
 
 ### 5.3 非相邻窗口与不同音高
@@ -221,11 +226,29 @@ block = batch.blocks[0]
 
 - `S > K`（含静音来源）在 `build` 与 `sample_batch` 都会**明确拒绝**，不静默截断来源；
   `slots` 覆盖更小的 K 同样拒绝。
-- 无有效中心、可用中心少于 `centers_per_item`、`min_center_gap` 不可行时：
-  默认 `on_unusable="error"` 报错；`on_unusable="skip"` 时跳过并在 `DatasetBatch.skipped`
-  记录 `(sample_id, reason)`，`requested_items` 与 `returned_items` 都会体现差额。
+- `valid_only=True`（默认）下 `valid_count == 0` 的样本不可用：默认 `on_unusable="error"`
+  报错；`on_unusable="skip"` 时跳过并在 `DatasetBatch.skipped` 记录
+  `(sample_id, reason)`，`requested_items` 与 `returned_items` 都会体现差额。
+- `valid_only=False` 时不因 `valid_count == 0` 拒绝：只要来源非空且
+  `center_count > 0` 就会尝试采样（仍受 `centers_per_item`/`min_center_gap` 可行性约束）；
+  真正的零中心（`center_count == 0`）与无来源在任何模式下都不可用。
+- 可用中心少于 `centers_per_item`、`min_center_gap` 不可行时也走 `on_unusable` 策略。
 - 空集合采样返回空 batch；显式 `items > 可用样本数` 报错而不是重复采样。
 - 索引记录 `usable` 与逐样本 `warnings`，`verify_dataset` 会重查这些条件。
+
+### 5.6 输入摘要核验与 opt-out
+
+`DatasetIndex.load` 的校验只代表**加载时刻**的数据；采样时可能已换 root、或在 build 之后
+重写了文件。因此 `sample_batch` 默认 `verify_digests=True`：每个 block 在解析前重新计算
+**实际消费的三个文件**（mix、activity metadata、activity arrays）的 SHA-256，并与索引记录
+逐项比对；不一致时报错并给出 `sample_id`、文件角色/相对路径、索引记录值、实际值以及重建
+索引的命令提示。它只哈希这三个文件，不会全库重扫；解析后还会把实际 frames/采样率/来源列/
+标签计数与索引记录再比对一次（同 shape 重写无法蒙混）。
+
+受控热路径可显式传 `sample_batch(..., verify_digests=False)` 或 CLI
+`batch --no-verify-digests`：这表示**明确接受未经验证的输入**，block 的 `mix_sha256`/
+`activity_sha256` 仍写索引记录值而不是实际消费字节的摘要，且不会在采样时回写索引；调用方
+应先自行运行 `verify_dataset`。摘要校验发生在解析之前，同一文件的并发写入竞态不在范围内。
 
 ## 6. 真实证据（2026-09-29，本机 Windows，CPU）
 
@@ -270,8 +293,10 @@ DawDreamer 渲染并在缺少 render extra 时自动 skip。以上单个真实�
   manifest，索引无法发现；这属于上游渲染配置的责任。
 - 切分是确定性的贪心 deficit 分配，不是比例误差最优解；超大组/单连通组会明显偏离请求比例，
   由 `empty_splits`、`split_ratios_actual`、`oversized_components` 与 warnings 如实报告。
-- `sample_batch` 每次调用会重新读取 mix 与 activity；没有特征缓存、DataLoader worker 或
-  `torch` 依赖，面向 M1 规模。后续训练 issue 需要缓存/多进程时另行设计。
+- `sample_batch` 每次调用会重新读取 mix 与 activity；默认还会重算这三个文件的 SHA-256
+  （每个 block 3 次哈希，大 mix 的 I/O 成本可见，可用 `verify_digests=False` 显式关闭），
+  没有特征缓存、DataLoader worker 或 `torch` 依赖，面向 M1 规模。后续训练 issue 需要缓存/
+  多进程时另行设计。
 - 多声道下混采用**算术平均**；标签能量使用等功率平均（见 ACTIVITY_LABELS.md），两者用途不同，
   未验证强空间化/相位相反的素材。
 - 采样选择是“可行区间内带 seed 的随机”，不是均匀分布，也没有按活动比例分层。
@@ -297,3 +322,10 @@ A-B/B-C 传递关联防泄漏；超大组/空集合真实比例；重复 `sample
 来源列不一致、时间越界、音频时长不符、容量超限；静音来源 vs padding 空槽；
 `center_valid`/`audio_valid` 区别；非相邻窗口与同源配对；不同音高证据不改标签；
 44.1 kHz、16 kHz 与非零 `track_start_seconds`；非法 seed/ratio/slots/参数；空数据与空集合。
+
+近一步的过期输入回归：同 shape 重写 mix 后默认 `sample_batch` 报
+`mix 'mix.wav' sha256 mismatch`（`verify_digests=False` 仍可显式消费，但 block 保留索引
+记录摘要、不静默重写）；同 shape 改活动值/标签 metadata 同样被拦；索引与数据根被复制到
+另一个 root 后同名同 shape 的改写也会被检出；边界-only（`valid_count=0`、`center_count>0`）
+样本默认拒绝、`valid_only=False` 可采样并给出全 False/补零掩码，零中心样本两种模式都
+明确不可用。

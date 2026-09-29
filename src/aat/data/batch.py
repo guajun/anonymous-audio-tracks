@@ -30,6 +30,12 @@ Same-source non-adjacent windows are supported through ``min_center_gap`` and
 reported explicitly in ``same_source_pairs``.  ``source_note_ranges`` is
 generation-time evidence copied from ``controls.json``: it records that the
 sample contains different pitches, but MIDI never rewrites the acoustic labels.
+
+By default :func:`sample_batch` re-hashes the three files it is about to parse
+(mix, activity metadata, activity arrays) against the index digests before
+reading them, so a block can never carry the recorded digest while consuming
+rewritten bytes.  ``verify_digests=False`` is the explicit opt-out for a
+controlled hot path and is documented as unverified consumption.
 """
 
 from __future__ import annotations
@@ -46,7 +52,7 @@ from ..contracts.errors import WindowError
 from ..labels import LabelError, read_wav
 from ..windowing import extract_windows_at_times, window_sample_count
 from .errors import DatasetError
-from .index import DatasetIndex, SampleEntry
+from .index import DatasetIndex, SampleEntry, sha256_file
 from .split import SPLITS
 
 
@@ -182,6 +188,7 @@ def sample_batch(
     on_unusable: str = "error",
     window_seconds: float | None = None,
     slots: int | None = None,
+    verify_digests: bool = True,
 ) -> DatasetBatch:
     """Sample one multi-center block per selected song from ``index``.
 
@@ -199,6 +206,12 @@ def sample_batch(
       valid centers / too few usable centers; skips are reported in
       ``DatasetBatch.skipped``.  Exceeding the slot capacity ``K`` always
       raises, regardless of this option.
+    * ``verify_digests``: default ``True`` re-hashes exactly the consumed mix,
+      activity metadata and activity arrays files against the index digests
+      before parsing, so a stale input cannot be consumed while the block still
+      carries the recorded digest.  ``False`` is the documented opt-out for a
+      controlled hot path; the block then reports the index digest, not the
+      consumed bytes, and callers must run ``verify_dataset`` themselves.
 
     The returned blocks never combine two songs.  Requested window extraction
     uses :func:`aat.windowing.extract_windows_at_times`, so time rounding and
@@ -218,6 +231,10 @@ def sample_batch(
     if not isinstance(valid_only, bool):
         raise DatasetError(
             f"valid_only: expected a boolean, got {type(valid_only).__name__}"
+        )
+    if not isinstance(verify_digests, bool):
+        raise DatasetError(
+            f"verify_digests: expected a boolean, got {type(verify_digests).__name__}"
         )
     threshold = _require_threshold(activity_threshold)
     root = Path(data_root)
@@ -255,7 +272,7 @@ def sample_batch(
                 f"sample '{entry.sample_id}': {len(entry.source_ids)} source(s) exceed the "
                 f"slots capacity K={effective_slots}; silent sources still count"
             )
-        reason = _unusable_reason(entry)
+        reason = _unusable_reason(entry, valid_only=valid_only)
         if reason is not None:
             _handle_unusable(entry.sample_id, reason, on_unusable, skipped)
             continue
@@ -271,6 +288,7 @@ def sample_batch(
                     activity_threshold=threshold,
                     window_seconds=override_window,
                     slots=effective_slots,
+                    verify_digests=verify_digests,
                 )
             )
         except _UnusableSample as exc:
@@ -299,8 +317,11 @@ def _build_block(
     activity_threshold: float,
     window_seconds: float | None,
     slots: int,
+    verify_digests: bool,
 ) -> SourceWindowBlock:
     directory = data_root / PurePosixPath(entry.path)
+    if verify_digests:
+        _verify_consumed_inputs(entry, directory)
     metadata = PurePosixPath(str(entry.labels["metadata_path"]))
     try:
         activity = ActivityData.load(directory / metadata.parent, metadata_filename=metadata.name)
@@ -515,14 +536,59 @@ def _same_source_pairs(
     return tuple(pairs)
 
 
-def _unusable_reason(entry: SampleEntry) -> str | None:
+def _unusable_reason(entry: SampleEntry, *, valid_only: bool) -> str | None:
+    """Reasons that prevent any center row from being sampled.
+
+    ``valid_only=True`` (the default) additionally requires at least one
+    ``activity.valid`` row.  ``valid_only=False`` still consumes a sample whose
+    valid mask is empty, as long as it has centers and sources; the returned
+    ``center_valid``/``audio_valid`` masks then mark every row unusable.
+    """
+
     if not entry.source_ids:
         return "no sources"
-    if int(entry.labels["valid_count"]) == 0:
-        return "no valid center windows (activity.valid is all False)"
     if int(entry.labels["center_count"]) == 0:
         return "activity has no center times"
+    if valid_only and int(entry.labels["valid_count"]) == 0:
+        return "no valid center windows (activity.valid is all False)"
     return None
+
+
+def _verify_consumed_inputs(entry: SampleEntry, directory: Path) -> None:
+    """Re-hash exactly the files a block is about to parse.
+
+    Only the consumed mix, activity metadata and activity arrays are hashed (no
+    whole-library rescan).  The digest is checked immediately before parsing;
+    the caller then compares the parsed frame count, sample rate, source
+    columns and label counts with the index record, so a same-shape rewrite
+    cannot silently pass while the block still reports the old digest.
+    """
+
+    label = f"sample '{entry.sample_id}'"
+    inputs = (
+        ("mix", str(entry.audio["mix_path"])),
+        ("activity metadata", str(entry.labels["metadata_path"])),
+        ("activity arrays", str(entry.labels["arrays_path"])),
+    )
+    for role, relative in inputs:
+        expected = entry.content_sha256.get(relative)
+        if expected is None:
+            raise DatasetError(
+                f"{label}: index record has no digest for {role} {relative!r}; rebuild the index"
+            )
+        path = directory / PurePosixPath(relative)
+        if not path.is_file():
+            raise DatasetError(
+                f"{label}: {role} {relative!r} is missing; rebuild the index"
+            )
+        actual = sha256_file(path)
+        if actual != expected:
+            raise DatasetError(
+                f"{label}: {role} {relative!r} sha256 mismatch: index records {expected}, "
+                f"file is {actual}; the input changed since the index was built. Rebuild the "
+                "index (scripts/build_dataset_index.py build ...) or pass verify_digests=False "
+                "to consume explicitly unverified inputs"
+            )
 
 
 def _handle_unusable(
