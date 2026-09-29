@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Anonymous Audio Tracks — 本地中心活动检查页</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header>
+      <h1>匿名来源轨迹检查页</h1>
+      <p class="subtitle">
+        显示的是每条轨迹的<strong>中心活动概率</strong>，不是 note-on 起音检测，也不是乐器识别；
+        <code>track_id</code> 是匿名轨迹身份，不映射乐器名称。
+      </p>
+      <p class="subtitle">
+        全程本地运行：文件通过浏览器 <code>File</code> 读取，音频只挂在 <code>blob:</code> URL 上，无上传、无远程资源、无遥测。
+      </p>
+    </header>
+
+    <main>
+      <section class="panel">
+        <h2>1. 加载文件</h2>
+        <div class="file-row">
+          <label for="audio-file">音频文件（本地，不上传）</label>
+          <input id="audio-file" type="file" accept="audio/*,.wav,.mp3,.flac,.ogg,.m4a" />
+          <span id="audio-name" class="file-name">未选择</span>
+        </div>
+        <div class="file-row">
+          <label for="trajectory-file">trajectory JSON（协议 0.1.0，kind=trajectory）</label>
+          <input id="trajectory-file" type="file" accept="application/json,.json" />
+          <span id="trajectory-name" class="file-name">未选择</span>
+        </div>
+        <p id="audio-status" class="status"></p>
+        <p id="compat-message" class="status"></p>
+        <div id="validation-error" class="error-panel" hidden>
+          <h3>轨迹加载失败（旧轨迹已清除）</h3>
+          <p id="validation-error-message"></p>
+          <ul id="validation-error-list"></ul>
+        </div>
+      </section>
+
+      <section id="provenance-panel" class="panel" hidden>
+        <h2>2. 数据来源 / provenance</h2>
+        <dl id="provenance"></dl>
+      </section>
+
+      <section class="panel">
+        <h2>3. 播放与共享时钟</h2>
+        <audio id="audio" preload="metadata"></audio>
+        <div class="controls">
+          <button id="play" disabled>播放</button>
+          <span class="time-readout">本地 <span id="time-local" class="mono">--:--.---</span></span>
+          <span class="time-readout">原曲绝对 <span id="time-abs" class="mono">--:--.---</span></span>
+          <label>
+            速度
+            <select id="rate">
+              <option value="0.25">0.25×</option>
+              <option value="0.5">0.5×</option>
+              <option value="0.75">0.75×</option>
+              <option value="1" selected>1×</option>
+              <option value="1.5">1.5×</option>
+              <option value="2">2×</option>
+            </select>
+          </label>
+        </div>
+        <label class="seek-row">
+          定位
+          <input id="seek" type="range" min="0" max="1" step="0.001" value="0" disabled />
+        </label>
+        <p class="hint">
+          播放/暂停/拖动/变速/循环全部共用同一个 <code>audio.currentTime</code>；
+          原曲绝对时间 = 本地时间 + <code>track_start_seconds</code>，协议中心时间从不直接当作播放器秒数。
+        </p>
+      </section>
+
+      <section class="panel">
+        <h2>4. 阈值、循环与长歌窗口</h2>
+        <label class="threshold-row">
+          活动阈值
+          <input id="threshold" type="range" min="0" max="1" step="0.01" value="0.5" />
+          <span id="threshold-value" class="mono">0.50</span>
+        </label>
+        <div class="controls">
+          <button id="loop-a" disabled>设 A 点（当前时间）</button>
+          <button id="loop-b" disabled>设 B 点（当前时间）</button>
+          <button id="loop-clear" disabled>清除循环</button>
+          <span id="loop-info" class="mono"></span>
+        </div>
+        <p id="loop-error" class="status warn" hidden></p>
+        <div class="controls">
+          <label>
+            局部窗口
+            <select id="window-length">
+              <option value="5">5s</option>
+              <option value="10">10s</option>
+              <option value="20" selected>20s</option>
+              <option value="30">30s</option>
+              <option value="60">60s</option>
+              <option value="120">120s</option>
+            </select>
+          </label>
+          <button id="window-first">◀◀ 开头</button>
+          <button id="window-prev">◀ 上一窗</button>
+          <button id="window-next">下一窗 ▶</button>
+          <button id="window-last">结尾 ▶▶</button>
+          <label class="follow-label"><input id="follow" type="checkbox" checked /> 跟随播放</label>
+          <span id="time-window" class="mono"></span>
+        </div>
+        <p class="hint">
+          循环端点按已加载音频时长校验；A/B 无效或音频 metadata 未就绪时会明确提示且不启用循环。
+        </p>
+      </section>
+
+      <section class="panel">
+        <h2>5. 整曲概览（长歌导航）</h2>
+        <canvas id="overview-canvas" class="overview" height="64"></canvas>
+        <p class="hint">点击任意位置定位；白色竖线是共享播放时钟，白色矩形是当前局部窗口。</p>
+      </section>
+
+      <section class="panel">
+        <h2>6. 局部时间窗口</h2>
+        <canvas id="window-canvas" class="timeline" height="220"></canvas>
+        <p class="hint">
+          浅色阴影＝达到当前阈值的中心活动区间（采样点间线性插值）；圆点是当前概率；虚线是阈值。阴影不是 note-on。
+        </p>
+      </section>
+
+      <section class="panel">
+        <h2>7. 来源开关与当前值</h2>
+        <div id="tracks"></div>
+      </section>
+
+      <p id="status" class="status" role="status"></p>
+    </main>
+
+    <footer>
+      <p>
+        协议版本 <span id="schema-version" class="mono">0.1.0</span> ·
+        用户 JSON 文本全部以 textContent 渲染 · 不写 <code>rgb-score-player</code> 目录。
+      </p>
+    </footer>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>

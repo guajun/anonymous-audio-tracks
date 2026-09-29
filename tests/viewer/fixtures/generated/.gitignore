@@ -1,0 +1,4 @@
+# Generated audio/report/screenshot artifacts live here.
+# Keep the directory in Git, ignore its contents (see docs/VIEWER.md).
+*
+!.gitignore
