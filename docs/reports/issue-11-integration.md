@@ -89,7 +89,7 @@ manual_inspection.md、viewer 校验 `ok`）。这是 **fake 工程证据**，�
 - 数据集：issue #8 训练数据索引，索引 SHA-256 `dda89f11…`，内容 digest `c073f9cd…`（与 #8 记录一致），`leak_free=true`，
   `cross_split_assets` 全 0；
 - pin：W=2.0 s 独立窗口、fp32、`block_diagonal`/`sdpa`、`independent_windows`、`batch_windows=8`、seed 20260929；
-- 一次 GPU 任务，`timeout 600`：整体 `elapsed_seconds=195.9`，进程内 torch peak allocated 2.94 GB / reserved 3.21 GB
+- 一次 GPU 任务，`timeout 600`：整体 `elapsed_seconds=201.3`（最终代码 4748be9 重跑；首次 195.9 为同一结果），进程内 torch peak allocated 2.94 GB / reserved 3.21 GB
   （scope：本进程，从编码器加载前到结束；其他进程不可见）。
 
 ### 3.2 固定顺序、无模型选择
@@ -123,7 +123,7 @@ manual_inspection.md、viewer 校验 `ok`）。这是 **fake 工程证据**，�
 | 歧义归属帧 | 504 | 0 | 533 | 504 |
 | 来源数绝对误差 | 3（预测 8 vs 参考 5） | 5 | 11（预测 16） | 11（预测 16） |
 
-与 issue #8 已验收结果的连续性：`test-01` 的逐项指标与 #8 `eval_test.json` 记录一致（F1 0.581、P 0.423、R 0.924、ID switch 3、来源数绝对误差 2，均为四舍五入）；本流水线另用保存下来的 artifact 轨迹独立复算，两首的 `canonical_metrics_match=true`，即 `evaluate_split` 与「保存的 trajectory.json 重新评估」数值完全相同。
+与 issue #8 已验收结果的连续性：`test-01` 的逐项指标与 #8 `eval_test.json` 记录一致（F1 0.581、P 0.423、R 0.924、ID switch 3、来源数绝对误差 2，均为四舍五入）；本流水线另用保存下来的 artifact 轨迹独立复算，两首的 `canonical_metrics_match=true`，`canonical_metrics_max_abs_delta=0.0`（判据 1e-6），即 `evaluate_split` 与「保存的 trajectory.json 重新评估」指标一致（两条路径的窗口分块不同，但仍数值相同）。
 
 ### 3.4 失败例与观察
 
@@ -211,7 +211,7 @@ mask）与误检/来源数膨胀（FP 主导、未映射轨迹、`no_identity` �
 ## 8. 证据位置（本地忽略目录，不随公开仓库提交）
 
 - `runs/demo/smoke-final/`：CPU fake smoke 全链路产物；
-- `runs/demo/aut-test-remote/`：远端真实冻结 AuT 合成评估回拷产物（2 首，含 prediction/trajectory/session/report）；
+- `runs/demo/aut-test-remote-final/`：远端真实冻结 AuT 合成评估回拷产物（2 首，含 prediction/trajectory/session/report，最终代码 4748be9）；
 - `runs/demo/clip-1000APM/`、`runs/demo/clip-16-Mirror/`：本地用户片段产物（含解码音频，仅本机）；
 - `runs/model-cache/qwen3-omni-aut/`：按 pinned revision 下载的本地只读权重缓存（隔离）；
 - 远端授权目录 `issue-11-integration/`：独立 venv、git bundle 克隆、合成评估原始输出与日志。
