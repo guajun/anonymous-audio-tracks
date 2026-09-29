@@ -239,7 +239,9 @@ def test_config_overlay_runs_synthetic_path_and_overwrite_is_guarded(
     assert canonical["protocol"]["fake_vs_real"].startswith("fake-encoder")
     song = report["songs"][0]
     assert song["canonical_metrics_match"] is True
-    assert song["canonical_metrics"] == song["evaluation"]
+    assert song["canonical_metrics_max_abs_delta"] is not None
+    assert song["canonical_metrics_max_abs_delta"] <= 1e-6
+    assert set(song["canonical_metrics"]) == set(song["evaluation"])
     assert report["viewer_validation"]["status"] in {"ok", "skipped"}
 
     repeated = _run_demo("--config", str(config_path), "synthetic")

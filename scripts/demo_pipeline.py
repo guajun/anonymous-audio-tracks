@@ -701,6 +701,42 @@ def cmd_smoke(args: argparse.Namespace) -> int:
 # --------------------------------------------------------------------------- #
 
 
+def _metrics_delta(left: Any, right: Any) -> float | None:
+    """Max absolute numeric delta of two metric trees; ``None`` on shape/type mismatch.
+
+    Used to compare the canonical ``evaluate_split`` metrics with the metrics
+    recomputed from the saved trajectory.  BLAS backends may differ by a few
+    ULPs when the same window lands in a different encoder chunk, so the check
+    records the delta instead of relying on exact float equality.
+    """
+
+    if isinstance(left, Mapping) and isinstance(right, Mapping):
+        if set(left) != set(right):
+            return None
+        worst = 0.0
+        for key in left:
+            delta = _metrics_delta(left[key], right[key])
+            if delta is None:
+                return None
+            worst = max(worst, delta)
+        return worst
+    if isinstance(left, (list, tuple)) and isinstance(right, (list, tuple)):
+        if len(left) != len(right):
+            return None
+        worst = 0.0
+        for left_item, right_item in zip(left, right):
+            delta = _metrics_delta(left_item, right_item)
+            if delta is None:
+                return None
+            worst = max(worst, delta)
+        return worst
+    if isinstance(left, bool) or isinstance(right, bool):
+        return 0.0 if left == right else None
+    if isinstance(left, (int, float)) and isinstance(right, (int, float)):
+        return abs(float(left) - float(right))
+    return 0.0 if left == right else None
+
+
 def _song_failure_notes(canonical: Mapping[str, Any]) -> list[str]:
     notes: list[str] = []
     for song in canonical["songs"]:
@@ -806,9 +842,13 @@ def cmd_synthetic(args: argparse.Namespace) -> int:
         )
         song["canonical_metrics"] = per_song["metrics"] if per_song else None
         song["canonical_baselines"] = per_song["baselines"] if per_song else None
-        song["canonical_metrics_match"] = (
-            per_song is not None and per_song["metrics"] == song["evaluation"]
+        delta = (
+            _metrics_delta(per_song["metrics"], song["evaluation"])
+            if per_song is not None
+            else None
         )
+        song["canonical_metrics_max_abs_delta"] = delta
+        song["canonical_metrics_match"] = delta is not None and delta <= 1e-6
         artifact_songs.append(song)
 
     viewer = validate_with_viewer(
