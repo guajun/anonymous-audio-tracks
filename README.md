@@ -2,7 +2,46 @@
 
 从音乐中跟踪匿名声音来源，将每个来源的活动轨迹映射为独立 RGB 灯带。
 
-项目于 2026-09-29 立项。当前阶段为 **M0：方案与工程基础**；尚未实现数据生成器、训练模型或完成骨干显存测试。本文的窗口、步长和模型选择均为待验证的实验起点，不代表已经取得的性能。
+项目于 2026-09-29 立项。当前状态：数据渲染/中心活动标签、独立冻结 AuT 特征、E/P 输出头与最小训练、
+滑窗轨迹关联与本地试听页都已实现并合并（M1/M2/M4 的最小闭环），并有一次真实冻结 AuT 短训练与
+保留合成集评估、以及一对固定真实音乐片段的客观抽查证据；**尚未宣称 M3 研究成功、M5 完成，也没有 LED 谱面接入**。
+本文中的窗口、步长与模型选择仍以实测文档为准，代表性结论与失败例见
+[docs/reports/issue-11-integration.md](docs/reports/issue-11-integration.md) 与 [docs/TRAINING.md](docs/TRAINING.md)。
+
+## 当前状态与快速开始
+
+| 环节 | 现状 | 入口 / 证据 |
+|---|---|---|
+| 数据渲染与标签 | DawDreamer 合成语料 + 中心活动标签；Surge 仅探针未训练 | `scripts/render_sample.py`、`scripts/label_sample.py`、[docs/RENDERING.md](docs/RENDERING.md)、[docs/ACTIVITY_LABELS.md](docs/ACTIVITY_LABELS.md) |
+| 数据集索引 | 分组切分、泄漏安全、多窗口采样 | `scripts/build_dataset_index.py`、[docs/DATASET.md](docs/DATASET.md) |
+| 冻结 AuT | 独立 Qwen3-Omni AuT 编码器，固定 revision 与 block-diagonal 注意力 | `scripts/probe_aut.py`、[docs/AUT_PROBE.md](docs/AUT_PROBE.md) |
+| E/P 头与训练 | K 查询输出头、排列无关损失、checkpoint/恢复、fake 与 real 两条链 | `scripts/train.py`、[docs/TRAINING.md](docs/TRAINING.md) |
+| 轨迹与评估 | 一对一关联、静音记忆、整曲全局映射指标与基线 | [docs/TRACKING.md](docs/TRACKING.md) |
+| 端到端与试听 | 参数化 demo 入口 + 本地静态 viewer | `scripts/demo_pipeline.py`、[docs/REPRODUCE.md](docs/REPRODUCE.md)、[docs/VIEWER.md](docs/VIEWER.md) |
+
+```sh
+uv sync --locked --extra ml            # 训练/推理（CPU torch；GPU 另装同版本 CUDA 轮子）
+uv sync --locked --extra render        # DawDreamer 渲染
+
+# 真实渲染语料（可写目录）
+uv run --no-sync python scripts/train.py prepare-data \
+    --plan configs/train/dataset_local.toml --out runs/train-data --index-out runs/train-index/index.json
+
+# CPU fake 冒烟（工程链路，非模型结果）
+uv run --no-sync python scripts/demo_pipeline.py smoke --out runs/demo/smoke --steps 3
+
+# 真实冻结 AuT 短训练与保留集评估（权重/输出都在忽略目录）
+uv run --no-sync python scripts/train.py train --config configs/train/aut_short.toml \
+    --model-dir /path/to/encoder-checkpoint --device cuda:0
+uv run --no-sync python scripts/demo_pipeline.py synthetic \
+    --checkpoint runs/train/aut-short/checkpoint.pt --index runs/train-index/index.json \
+    --data-root runs/train-data --split test --model-dir /path/to/encoder-checkpoint --out runs/demo/aut-test
+
+# 本地试听页（不上传音频；只监听 127.0.0.1）
+uv run python -m http.server 8123 --bind 127.0.0.1 --directory viewer
+```
+
+完整复现步骤、运行预算与隐私边界见 [docs/REPRODUCE.md](docs/REPRODUCE.md)。
 
 ## 总目标
 
@@ -110,10 +149,14 @@ sample/
 
 GitHub 仓库：[guajun/anonymous-audio-tracks](https://github.com/guajun/anonymous-audio-tracks)（公开）。首轮开发由 [父 issue #1](https://github.com/guajun/anonymous-audio-tracks/issues/1) 管理；[开发任务图](docs/DEVELOPMENT.md) 说明并行范围与阻塞关系，[新主会话提示词](docs/PI_ORCHESTRATION_PROMPT.md) 规定本地 pi 的派发、等待、review 与合并流程。
 
-Python 环境由 uv 管理。当前工程无运行依赖，后续按实际渲染/训练环境分别添加并锁定，避免在无需求时安装完整模型栈。
+Python 环境由 uv 管理，按用途分成 `render`（DawDreamer）与 `ml`（CPU torch、transformers、safetensors）两个 extra，
+`uv.lock` 锁定版本；base 安装不拉取模型栈。每次运行都应保存配置快照、Git commit、依赖锁摘要、随机种子与数据划分摘要
+（`scripts/demo_pipeline.py` 与训练 checkpoint 已自动记录）；GPU 运行需要同版本 CUDA torch 时在独立环境安装，不改锁文件。
 
 ```sh
 uv sync --locked
+uv sync --locked --extra ml
+uv sync --locked --extra render
 ```
 
 `configs/experiment.toml` 保存初始实验定义；`docs/OPERATIONS.md` 说明本地与共享服务器的边界。服务器连接信息放在忽略的 `.local/` 中，不进入远程仓库。
