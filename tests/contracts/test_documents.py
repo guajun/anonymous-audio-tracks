@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
-import copy
+import json
+import re
+from pathlib import Path
 
 import pytest
 
 from aat.contracts import (
+    DATA_KINDS,
+    MANIFEST_STAGES,
+    TRAJECTORY_TIME_TOLERANCE_SECONDS,
+    AudioSpan,
     ContractError,
     Controls,
     RunProvenance,
@@ -15,21 +21,80 @@ from aat.contracts import (
     SourceRegistry,
     Track,
     Trajectory,
+    check_schema_header,
 )
 
 from . import fixtures
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
-def test_manifest_roundtrip_through_file(tmp_path):
+
+# --------------------------------------------------------------------------- #
+# manifest.json
+# --------------------------------------------------------------------------- #
+
+
+def test_manifest_rendered_roundtrip_through_file(tmp_path):
     manifest = SampleManifest.from_json_dict(fixtures.manifest_dict())
+    assert manifest.stage == "rendered"
+    assert manifest.activity_metadata_path is None
+    assert manifest.activity_arrays_path is None
     path = manifest.save(tmp_path / "manifest.json")
-    assert path.name == "manifest.json"
     assert SampleManifest.load(path) == manifest
 
 
-def test_manifest_requires_content_hash_for_every_artifact():
+def test_manifest_labeled_roundtrip_through_file(tmp_path):
+    manifest = SampleManifest.from_json_dict(fixtures.labeled_manifest_dict())
+    assert manifest.stage == "labeled"
+    assert manifest.activity_metadata_path == "activity.json"
+    assert manifest.activity_arrays_path == "activity.npz"
+    path = manifest.save(tmp_path / "manifest.json")
+    assert SampleManifest.load(path) == manifest
+
+
+def test_manifest_stage_enum_is_frozen():
+    assert MANIFEST_STAGES == ("rendered", "labeled")
+
+
+def test_manifest_rendered_rejects_label_paths():
+    data = fixtures.manifest_dict()
+    data["activity_metadata_path"] = "activity.json"
+    with pytest.raises(ContractError, match="rendered"):
+        SampleManifest.from_json_dict(data)
+
+
+def test_manifest_labeled_requires_both_label_paths():
+    data = fixtures.labeled_manifest_dict()
+    del data["activity_arrays_path"]
+    with pytest.raises(ContractError, match="labeled"):
+        SampleManifest.from_json_dict(data)
+
+    data = fixtures.labeled_manifest_dict()
+    del data["activity_metadata_path"]
+    with pytest.raises(ContractError, match="labeled"):
+        SampleManifest.from_json_dict(data)
+
+
+def test_manifest_rendered_hashes_cover_common_artifacts():
     data = fixtures.manifest_dict()
     del data["content_sha256"]["stems/s02.wav"]
+    with pytest.raises(ContractError, match="content_sha256"):
+        SampleManifest.from_json_dict(data)
+
+    data = fixtures.manifest_dict()
+    del data["content_sha256"]["controls.json"]
+    with pytest.raises(ContractError, match="content_sha256"):
+        SampleManifest.from_json_dict(data)
+
+
+def test_manifest_labeled_requires_label_hashes():
+    data = fixtures.labeled_manifest_dict()
+    del data["content_sha256"]["activity.npz"]
+    with pytest.raises(ContractError, match="content_sha256"):
+        SampleManifest.from_json_dict(data)
+
+    data = fixtures.labeled_manifest_dict()
+    del data["content_sha256"]["activity.json"]
     with pytest.raises(ContractError, match="content_sha256"):
         SampleManifest.from_json_dict(data)
 
@@ -77,11 +142,64 @@ def test_manifest_rejects_nan_duration():
         SampleManifest.from_json_dict(data)
 
 
-def test_manifest_requires_split_groups():
+def test_manifest_composition_is_a_single_non_empty_id():
+    data = fixtures.manifest_dict()
+    data["groups"]["composition"] = ""
+    with pytest.raises(ContractError, match="composition"):
+        SampleManifest.from_json_dict(data)
+
+    data = fixtures.manifest_dict()
+    data["groups"]["composition"] = ["comp-a", "comp-b"]
+    with pytest.raises(ContractError, match="composition"):
+        SampleManifest.from_json_dict(data)
+
+
+def test_manifest_asset_lists_are_required_and_validated():
     data = fixtures.manifest_dict()
     del data["groups"]["preset"]
     with pytest.raises(ContractError, match="groups"):
         SampleManifest.from_json_dict(data)
+
+    data = fixtures.manifest_dict()
+    data["groups"]["preset"] = "preset-a"
+    with pytest.raises(ContractError, match="preset"):
+        SampleManifest.from_json_dict(data)
+
+    data = fixtures.manifest_dict()
+    data["groups"]["preset"] = ["preset-a", ""]
+    with pytest.raises(ContractError, match="preset"):
+        SampleManifest.from_json_dict(data)
+
+    data = fixtures.manifest_dict()
+    data["groups"]["preset"] = ["preset-a", "preset-a"]
+    with pytest.raises(ContractError, match="duplicate"):
+        SampleManifest.from_json_dict(data)
+
+
+def test_manifest_empty_asset_lists_mean_no_such_asset():
+    data = fixtures.manifest_dict()
+    data["groups"]["preset"] = []
+    data["groups"]["sample_origin"] = []
+    manifest = SampleManifest.from_json_dict(data)
+    assert manifest.groups["preset"] == []
+    assert manifest.groups["sample_origin"] == []
+
+
+def test_manifest_groups_represent_shared_presets_and_origins():
+    a = SampleManifest.from_json_dict(
+        fixtures.manifest_for_assets("comp-a", ["p1", "p2"], ["o1"])
+    )
+    b = SampleManifest.from_json_dict(
+        fixtures.manifest_for_assets("comp-b", ["p2", "p3"], ["o1"])
+    )
+    c = SampleManifest.from_json_dict(
+        fixtures.manifest_for_assets("comp-c", ["p3", "p4"], ["o2"])
+    )
+    assert a.groups["composition"] != b.groups["composition"]
+    assert set(a.groups["preset"]) & set(b.groups["preset"]) == {"p2"}
+    assert set(b.groups["preset"]) & set(c.groups["preset"]) == {"p3"}
+    assert set(a.groups["preset"]) & set(c.groups["preset"]) == set()
+    assert set(a.groups["sample_origin"]) & set(c.groups["sample_origin"]) == set()
 
 
 def test_manifest_rejects_unsupported_schema_version():
@@ -89,6 +207,23 @@ def test_manifest_rejects_unsupported_schema_version():
     data["schema_version"] = "999.0"
     with pytest.raises(SchemaVersionError):
         SampleManifest.from_json_dict(data)
+
+
+def test_manifest_save_revalidates_after_mutation(tmp_path):
+    manifest = SampleManifest.from_json_dict(fixtures.manifest_dict())
+    manifest.groups["composition"] = ""
+    with pytest.raises(ContractError):
+        manifest.save(tmp_path / "manifest.json")
+
+    manifest = SampleManifest.from_json_dict(fixtures.manifest_dict())
+    manifest.content_sha256["mix.wav"] = "bad"
+    with pytest.raises(ContractError):
+        manifest.save(tmp_path / "manifest.json")
+
+
+# --------------------------------------------------------------------------- #
+# sources.json / controls.json
+# --------------------------------------------------------------------------- #
 
 
 def test_sources_roundtrip_and_column_order(tmp_path):
@@ -155,11 +290,30 @@ def test_controls_empty_events_allowed():
     assert Controls.from_json_dict(data).events == ()
 
 
+def test_controls_save_rejects_nan_payload_after_mutation(tmp_path):
+    controls = Controls.from_json_dict(fixtures.controls_dict())
+    controls.events[0].data["velocity"] = float("nan")
+    with pytest.raises(ContractError, match="JSON-serialisable"):
+        controls.save(tmp_path / "controls.json")
+
+
+# --------------------------------------------------------------------------- #
+# trajectory.json
+# --------------------------------------------------------------------------- #
+
+
 def test_trajectory_roundtrip_through_file(tmp_path):
     trajectory = Trajectory.from_json_dict(fixtures.trajectory_dict())
     assert [track.track_id for track in trajectory.tracks] == ["trk-0001", "trk-0002"]
+    assert trajectory.audio == AudioSpan(duration_seconds=4.0, track_start_seconds=0.0)
     path = trajectory.save(tmp_path / "trajectory.json")
     assert Trajectory.load(path) == trajectory
+
+
+def test_trajectory_null_slot_index_marks_silence_memory():
+    trajectory = Trajectory.from_json_dict(fixtures.trajectory_dict())
+    assert trajectory.tracks[0].slot_indices == (1, None, 1)
+    assert trajectory.tracks[1].slot_indices is None
 
 
 def test_trajectory_rejects_duplicate_track_ids():
@@ -209,6 +363,22 @@ def test_trajectory_requires_run_provenance():
     with pytest.raises(ContractError, match="run_id"):
         Trajectory.from_json_dict(data)
 
+    data = fixtures.trajectory_dict()
+    del data["provenance"]["data_kind"]
+    with pytest.raises(ContractError, match="data_kind"):
+        Trajectory.from_json_dict(data)
+
+    data = fixtures.trajectory_dict()
+    data["provenance"]["data_kind"] = "guessed"
+    with pytest.raises(ContractError, match="data_kind"):
+        Trajectory.from_json_dict(data)
+
+
+def test_provenance_data_kind_enum_is_frozen():
+    assert DATA_KINDS == ("model", "annotation", "mock")
+    for kind in DATA_KINDS:
+        assert RunProvenance(run_id="run-1", data_kind=kind).data_kind == kind
+
 
 def test_trajectory_rejects_bad_timestamp_and_commit():
     data = fixtures.trajectory_dict()
@@ -229,6 +399,51 @@ def test_trajectory_slot_indices_must_be_inside_capacity():
         Trajectory.from_json_dict(data)
 
 
+def test_trajectory_rejects_points_outside_audio_span():
+    data = fixtures.trajectory_dict()
+    data["tracks"][0]["center_times"] = [0.0, 0.02, 4.5]  # end is 4.0
+    with pytest.raises(ContractError, match="outside the audio span"):
+        Trajectory.from_json_dict(data)
+
+    data = fixtures.clip_trajectory_dict()
+    data["tracks"][0]["center_times"] = [0.0, 0.24, 0.48]  # clip-relative times
+    with pytest.raises(ContractError, match="outside the audio span"):
+        Trajectory.from_json_dict(data)
+
+
+def test_trajectory_accepts_span_tolerance_boundary():
+    data = fixtures.trajectory_dict()
+    tolerance = TRAJECTORY_TIME_TOLERANCE_SECONDS
+    data["tracks"] = [
+        {
+            "track_id": "trk-boundary",
+            "center_times": [0.0, 4.0 + tolerance / 2.0],
+            "activity": [0.0, 0.9],
+        }
+    ]
+    trajectory = Trajectory.from_json_dict(data)
+    assert trajectory.tracks[0].center_times[1] > 4.0
+
+
+def test_trajectory_empty_audio_must_not_have_tracks():
+    data = fixtures.empty_trajectory_dict()
+    trajectory = Trajectory.from_json_dict(data)
+    assert trajectory.audio.duration_seconds == 0.0
+    assert trajectory.tracks == ()
+
+    data = fixtures.trajectory_dict()
+    data["audio"]["duration_seconds"] = 0.0
+    with pytest.raises(ContractError, match="empty audio"):
+        Trajectory.from_json_dict(data)
+
+
+def test_trajectory_clip_keeps_absolute_original_track_times():
+    trajectory = Trajectory.from_json_dict(fixtures.clip_trajectory_dict())
+    assert trajectory.audio.track_start_seconds == 12.0
+    assert trajectory.tracks[0].center_times[0] == 12.0
+    assert trajectory.tracks[0].slot_indices == (2, 2, None)
+
+
 def test_trajectory_all_zero_activity_track_is_allowed():
     trajectory = Trajectory.from_json_dict(fixtures.trajectory_dict())
     silent = trajectory.tracks[1]
@@ -240,6 +455,13 @@ def test_trajectory_empty_tracks_are_no_tracks():
     data["tracks"] = []
     trajectory = Trajectory.from_json_dict(data)
     assert trajectory.tracks == ()
+
+
+def test_trajectory_save_revalidates_after_mutation(tmp_path):
+    trajectory = Trajectory.from_json_dict(fixtures.trajectory_dict())
+    trajectory.params["activity_threshold"] = float("nan")
+    with pytest.raises(ContractError, match="JSON-serialisable"):
+        trajectory.save(tmp_path / "trajectory.json")
 
 
 def test_track_without_slot_indices_keeps_identity_separate_from_slots():
@@ -254,14 +476,45 @@ def test_track_without_slot_indices_keeps_identity_separate_from_slots():
 
 def test_run_provenance_requires_utc_timestamp():
     with pytest.raises(ContractError, match="UTC"):
-        RunProvenance(run_id="run-1", created_at_utc="2026-09-29T12:00:00+02:00")
+        RunProvenance(
+            run_id="run-1",
+            data_kind="model",
+            created_at_utc="2026-09-29T12:00:00+02:00",
+        )
     with pytest.raises(ContractError, match="UTC"):
-        RunProvenance(run_id="run-1", created_at_utc="2026-09-29T12:00:00")
+        RunProvenance(
+            run_id="run-1",
+            data_kind="model",
+            created_at_utc="2026-09-29T12:00:00",
+        )
 
 
-def test_documents_mutate_their_own_copies_of_input_dicts():
-    data = fixtures.manifest_dict()
-    snapshot = copy.deepcopy(data)
-    manifest = SampleManifest.from_json_dict(data)
-    manifest.groups["composition"] = "mutated"
-    assert data == snapshot
+# --------------------------------------------------------------------------- #
+# documented examples
+# --------------------------------------------------------------------------- #
+
+
+def test_documented_json_examples_are_valid_pure_data():
+    text = (REPO_ROOT / "docs" / "SCHEMAS.md").read_text(encoding="utf-8")
+    blocks = re.findall(r"```json\n(.*?)```", text, flags=re.DOTALL)
+    assert blocks, "docs/SCHEMAS.md must contain JSON examples"
+    kinds_seen: set[str] = set()
+    for block in blocks:
+        data = json.loads(block)
+        kind = data.get("kind")
+        kinds_seen.add(kind)
+        if kind == "sample_manifest":
+            SampleManifest.from_json_dict(data)
+        elif kind == "sources":
+            SourceRegistry.from_json_dict(data)
+        elif kind == "controls":
+            Controls.from_json_dict(data)
+        elif kind == "trajectory":
+            Trajectory.from_json_dict(data)
+        elif kind in ("activity", "feature", "prediction"):
+            check_schema_header(data, kind)
+            assert data["arrays_path"], kind
+            assert data["arrays"], kind
+        else:
+            pytest.fail(f"documented example has unknown kind: {kind!r}")
+    assert "sample_manifest" in kinds_seen

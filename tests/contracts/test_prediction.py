@@ -10,6 +10,7 @@ from aat.contracts import (
     PredictionData,
     RunProvenance,
     SchemaVersionError,
+    dump_json,
     load_json,
 )
 
@@ -49,16 +50,25 @@ def test_prediction_npz_is_a_plain_numpy_archive(tmp_path):
         }
 
 
-def test_prediction_slots_and_embedding_dim_are_configurable(tmp_path):
-    data = PredictionData(**fixtures.prediction_arrays(n_windows=4, slots=3, embedding_dim=16))
+def test_prediction_slots_are_configurable_but_embedding_dim_is_fixed(tmp_path):
+    data = PredictionData(**fixtures.prediction_arrays(n_windows=4, slots=3))
     assert data.slots == 3
-    assert data.embedding_dim == 16
-    assert data.embeddings.shape == (4, 3, 16)
+    assert data.embedding_dim == 128
+    assert data.embeddings.shape == (4, 3, 128)
     data.save(tmp_path)
     loaded = PredictionData.load(tmp_path)
     assert loaded.slots == 3
-    assert loaded.embedding_dim == 16
+    assert loaded.embedding_dim == 128
     assert loaded.activity.shape == (4, 3)
+
+
+def test_prediction_rejects_wrong_embedding_dim():
+    with pytest.raises(ContractError, match="fixes the embedding dimension at 128"):
+        PredictionData(**fixtures.prediction_arrays(embedding_dim=16))
+
+    arrays = fixtures.prediction_arrays()
+    with pytest.raises(ContractError, match="fixes the embedding dimension at 128"):
+        PredictionData(**arrays, embedding_dim=64)
 
 
 def test_prediction_center_times_describe_window_centers(tmp_path):
@@ -184,6 +194,7 @@ def test_prediction_accepts_and_serialises_run_provenance(tmp_path):
     data.save(tmp_path)
     metadata = load_json(tmp_path / "prediction.json")
     assert metadata["provenance"]["run_id"] == "run-20260929-01"
+    assert metadata["provenance"]["data_kind"] == "model"
     loaded = PredictionData.load(tmp_path)
     assert isinstance(loaded.provenance, RunProvenance)
 
@@ -193,8 +204,85 @@ def test_prediction_rejects_unsupported_schema_version(tmp_path):
     data.save(tmp_path)
     metadata = load_json(tmp_path / "prediction.json")
     metadata["schema_version"] = "999.0"
-    from aat.contracts import dump_json
-
     dump_json(tmp_path / "prediction.json", metadata)
     with pytest.raises(SchemaVersionError):
         PredictionData.load(tmp_path)
+
+
+# --------------------------------------------------------------------------- #
+# sidecar must match the protocol itself
+# --------------------------------------------------------------------------- #
+
+
+def _tamper(metadata_path, mutate):
+    metadata = load_json(metadata_path)
+    mutate(metadata)
+    dump_json(metadata_path, metadata)
+
+
+def test_prediction_load_rejects_wrong_declared_unit(tmp_path):
+    PredictionData(**fixtures.prediction_arrays()).save(tmp_path)
+    _tamper(tmp_path / "prediction.json", lambda meta: meta["arrays"]["embeddings"].update(unit="probability"))
+    with pytest.raises(ContractError, match="unit"):
+        PredictionData.load(tmp_path)
+
+
+def test_prediction_load_rejects_wrong_time_origin(tmp_path):
+    PredictionData(**fixtures.prediction_arrays()).save(tmp_path)
+    _tamper(tmp_path / "prediction.json", lambda meta: meta["arrays"]["center_times"].update(origin="clip_start"))
+    with pytest.raises(ContractError, match="origin"):
+        PredictionData.load(tmp_path)
+
+
+def test_prediction_load_rejects_wrong_declared_dtype(tmp_path):
+    PredictionData(**fixtures.prediction_arrays()).save(tmp_path)
+    _tamper(tmp_path / "prediction.json", lambda meta: meta["arrays"]["embeddings"].update(dtype="float64"))
+    with pytest.raises(ContractError, match="dtype"):
+        PredictionData.load(tmp_path)
+
+
+def test_prediction_load_requires_arrays_path(tmp_path):
+    PredictionData(**fixtures.prediction_arrays()).save(tmp_path)
+    _tamper(tmp_path / "prediction.json", lambda meta: meta.pop("arrays_path"))
+    with pytest.raises(ContractError, match="arrays_path"):
+        PredictionData.load(tmp_path)
+
+
+def test_prediction_load_rejects_wrong_embedding_dim_metadata(tmp_path):
+    PredictionData(**fixtures.prediction_arrays()).save(tmp_path)
+    _tamper(tmp_path / "prediction.json", lambda meta: meta.update(embedding_dim=64))
+    with pytest.raises(ContractError, match="fixes the embedding dimension at 128"):
+        PredictionData.load(tmp_path)
+
+
+# --------------------------------------------------------------------------- #
+# mutable state must be revalidated on save
+# --------------------------------------------------------------------------- #
+
+
+def test_prediction_save_revalidates_mutated_probability(tmp_path):
+    data = PredictionData(**fixtures.prediction_arrays())
+    data.activity[0, 0] = 1.5
+    with pytest.raises(ContractError, match="\\[0, 1\\]"):
+        data.save(tmp_path)
+
+
+def test_prediction_save_revalidates_mutated_embedding(tmp_path):
+    data = PredictionData(**fixtures.prediction_arrays())
+    data.embeddings[0, 0] = data.embeddings[0, 0] * 2.0
+    with pytest.raises(ContractError, match="L2 norm"):
+        data.save(tmp_path)
+
+
+def test_prediction_save_revalidates_mutated_times(tmp_path):
+    data = PredictionData(**fixtures.prediction_arrays())
+    data.center_times[0], data.center_times[1] = data.center_times[1], data.center_times[0]
+    with pytest.raises(ContractError, match="strictly increasing"):
+        data.save(tmp_path)
+
+
+def test_prediction_save_rejects_nan_metadata(tmp_path):
+    data = PredictionData(**fixtures.prediction_arrays())
+    data.hop_seconds = float("nan")
+    with pytest.raises(ContractError):
+        data.save(tmp_path)

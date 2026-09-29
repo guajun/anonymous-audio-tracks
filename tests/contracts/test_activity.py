@@ -140,12 +140,48 @@ def test_activity_requires_boolean_valid_mask():
         ActivityData(**arrays)
 
 
+# --------------------------------------------------------------------------- #
+# sidecar must match the protocol itself, not only the NPZ payload
+# --------------------------------------------------------------------------- #
+
+
+def _tamper(metadata_path, mutate):
+    metadata = load_json(metadata_path)
+    mutate(metadata)
+    dump_json(metadata_path, metadata)
+
+
+def test_activity_load_rejects_wrong_declared_unit(tmp_path):
+    ActivityData(**fixtures.activity_arrays()).save(tmp_path)
+    _tamper(tmp_path / "activity.json", lambda meta: meta["arrays"]["center_times"].update(unit="milliseconds"))
+    with pytest.raises(ContractError, match="unit"):
+        ActivityData.load(tmp_path)
+
+
+def test_activity_load_rejects_wrong_time_origin(tmp_path):
+    ActivityData(**fixtures.activity_arrays()).save(tmp_path)
+    _tamper(tmp_path / "activity.json", lambda meta: meta["arrays"]["center_times"].update(origin="clip_start"))
+    with pytest.raises(ContractError, match="origin"):
+        ActivityData.load(tmp_path)
+
+
+def test_activity_load_rejects_wrong_declared_dtype(tmp_path):
+    ActivityData(**fixtures.activity_arrays()).save(tmp_path)
+    _tamper(tmp_path / "activity.json", lambda meta: meta["arrays"]["activity"].update(dtype="float64"))
+    with pytest.raises(ContractError, match="dtype"):
+        ActivityData.load(tmp_path)
+
+
+def test_activity_load_requires_arrays_path(tmp_path):
+    ActivityData(**fixtures.activity_arrays()).save(tmp_path)
+    _tamper(tmp_path / "activity.json", lambda meta: meta.pop("arrays_path"))
+    with pytest.raises(ContractError, match="arrays_path"):
+        ActivityData.load(tmp_path)
+
+
 def test_activity_load_rejects_declared_shape_mismatch(tmp_path):
     ActivityData(**fixtures.activity_arrays()).save(tmp_path)
-    metadata_path = tmp_path / "activity.json"
-    metadata = load_json(metadata_path)
-    metadata["arrays"]["activity"]["shape"] = [99, 2]
-    dump_json(metadata_path, metadata)
+    _tamper(tmp_path / "activity.json", lambda meta: meta["arrays"]["activity"].update(shape=[99, 2]))
     with pytest.raises(ContractError, match="shape"):
         ActivityData.load(tmp_path)
 
@@ -159,3 +195,36 @@ def test_activity_load_rejects_unexpected_npz_keys(tmp_path):
     np.savez(arrays_path, **arrays)
     with pytest.raises(ContractError, match="keys mismatch"):
         ActivityData.load(tmp_path)
+
+
+# --------------------------------------------------------------------------- #
+# mutable state must be revalidated on save
+# --------------------------------------------------------------------------- #
+
+
+def test_activity_save_revalidates_mutated_probability(tmp_path):
+    data = ActivityData(**fixtures.activity_arrays())
+    data.activity[0, 0] = np.nan
+    with pytest.raises(ContractError, match="NaN"):
+        data.save(tmp_path)
+
+
+def test_activity_save_revalidates_mutated_times(tmp_path):
+    data = ActivityData(**fixtures.activity_arrays())
+    data.center_times[1] = data.center_times[0]
+    with pytest.raises(ContractError, match="strictly increasing"):
+        data.save(tmp_path)
+
+
+def test_activity_save_revalidates_mutated_source_ids(tmp_path):
+    data = ActivityData(**fixtures.activity_arrays())
+    data.source_ids = ("s01", "s01")
+    with pytest.raises(ContractError, match="duplicate"):
+        data.save(tmp_path)
+
+
+def test_activity_save_rejects_nan_label_params(tmp_path):
+    data = ActivityData(**fixtures.activity_arrays())
+    data.label_params = {"threshold": float("nan")}
+    with pytest.raises(ContractError, match="JSON-serialisable"):
+        data.save(tmp_path)
