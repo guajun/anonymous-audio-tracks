@@ -91,13 +91,13 @@ DETR（Carion et al., ECCV 2020, [arXiv:2005.12872](https://arxiv.org/abs/2005.1
 | 预测 shape | `E[N,K,128]`、`P[N,K]` | `M[N,K,T]`（或 `[K,T]`） | 变长集合 `(onset, offset, id)` |
 | 监督信号 | 中心时刻活动 BCE | 帧级/段级 Dice/IoU + BCE | 集合匹配（区间 + 类别/身份） |
 | 与公共协议 | 已冻结（`docs/SCHEMAS.md` v0.1.0） | 新输出，需协议讨论 | 新输出，需协议讨论 |
-| 能否区分完全相同活动序列 | 不能（本报告 §3.5 实测） | 不能（mask 相同则匹配歧义依旧存在） | 不能（区间相同则歧义依旧） |
+| 能否区分完全相同活动序列 | 不能（本报告 §3.4 实测） | 不能（mask 相同则匹配歧义依旧存在） | 不能（区间相同则歧义依旧） |
 | 边界分辨率 | 受中心网格与窗口限制 | 受帧网格限制，可能更高 | 直接建模边界，依赖事件定义 |
 | 标签成本 | 已有（中心活动 npz） | 需要帧级/段级导出与对齐 | 需要区间化规则（尾音、休止、颗粒度） |
 | 现有代码支持 | 完整（#4/#7/#8） | 无 | 无 |
 | 阶段 A 选择 | **保留为局部对象主接口** | 仅作为 Stage B 可选**辅助训练输出**（b6），且必须单独论证 | 不采用；作为长期研究候选 |
 
-选择理由（证据限定）：阶段 A 测到的首要问题是**匹配歧义与身份监督覆盖**（§3.5、§4），而不是
+选择理由（证据限定）：阶段 A 测到的首要问题是**匹配歧义与身份监督覆盖**（§3.4、§4），而不是
 “中心 P 表达力不足”；在表示未验证前引入 mask/区间会同时改变标签、匹配、公共接口三个变量，无法
 归因。mask 只有在 b6 的受控辅助实验（以及窗口变化 b9 若获批）显示边界或监督增益、且单独协议论证
 通过后才进入实现。
@@ -189,7 +189,7 @@ C_DETR = λ_cls · ( -softmax(pred_logits)[target_class] )
 ```
 
 DETR 的匹配代价使用分类概率 + 框几何；本任务唯一的逐来源目标是活动序列，没有类别/框可用。因此
-相同活动序列的来源在匹配层面不可区分（§3.5）。
+相同活动序列的来源在匹配层面不可区分（§3.4）。
 
 ### 3.2 Matched training loss（匹配后，反传）
 
@@ -246,8 +246,9 @@ DETR 的 `num_boxes` 归一化与这里的分项 mean 语义不同：这里活�
    活动”时计 `ambiguous_owner_frames` 而不猜 owner；
 4. **不能用 E 偷偷配对**：把 embedding 放进 matching 会让当前表示自证，且与“E 不属于 GT”矛盾；
    若确实要利用可辨识音色，应作为显式实验（例如 stem 辅助或内容匹配代价），并在报告里标注风险；
-5. **不能把 loss 权重设零当方案**：把 `w_pos`/`w_neg` 归零只掩盖歧义，不产生“来源区分”能力。阶段 B
-   的候选是逐来源支持的身份项（b2）、负例范围（b3）、采样距离（b4），而不是关掉损失。
+5. **不能把 loss 权重设零当方案**：把 `w_pos`/`w_neg` 长期归零只掩盖歧义，不产生“来源区分”能力。
+   阶段 B 的候选是逐来源支持的身份项（b2）、负例范围（b3a）、负例权重控制消融（b3b）、采样距离
+   （b4）；其中 b3b 只是检验负例项是否起作用的一次性对照，不是“关掉 loss 当解决”的推荐方案。
 
 ---
 
@@ -264,8 +265,8 @@ DETR 的 `num_boxes` 归一化与这里的分项 mean 语义不同：这里活�
 | F5 | anchor 需 `center_valid ∧ slot_valid ∧ a ≥ 0.5`；count<2 的 identity 无正例 | `head_loss.py` |
 | F6 | 匹配每组一次、跨该组 N 个窗口固定 assignment；无逐帧重匹配 | `src/aat/losses/matching.py::match_sources` |
 | F7 | 歧义组 mask identity、对称平均 activity/empty；截断组全部跳过 | `head_loss.py`；`docs/MODEL_HEAD.md` §2/§3 |
-| F8 | 训练采样默认 `centers_per_item=4`, `min_center_gap=5`；标签 hop=20 ms → 中心间距 100 ms | `configs/train/aut_short.toml`；`src/aat/labels/config.py` |
-| F9 | 2 s 窗口、间距 0.1 s → 组内正向窗口共享 **95%** 采样；`docs/MODEL_HEAD.md` §3.3 已知“跨窗、跨背景”风险 | 本报告 `context_overlap_report`（§7） |
+| F8 | 训练采样默认 `centers_per_item=4`, `min_center_gap=5`；`min_center_gap` 是最小间距而非固定间距（`_select_centers` 随机选择更远中心） | `configs/train/aut_short.toml`；`src/aat/data/batch.py::_select_centers` |
+| F9 | 标签 hop=20 ms 时，`min_center_gap=5` 只限制最接近允许配对（0.1 s）；该配对的**最坏情况**是 2 s 窗口共享 1.9 s = **95%**。smoke 语料 10 step 实测相邻 gap 最小 0.1 s、中位 0.17–0.36 s（§7.2），实际通常更远 | 本报告 `context_overlap_report` / `sampling_coverage_report`（§7） |
 | F10 | 解码器后处理按窗口一对一匹配 + 原型 EMA；低 P 匹配候选刷新存活时间但不更新原型 | `src/aat/tracking/tracker.py` |
 | F11 | 评估用整曲固定映射，不逐帧重配；歧义帧不猜 owner | `src/aat/evaluation/metrics.py` |
 | F12 | #8 真实 100 step：`activity_terms=2400`、`empty_terms=4000`、`positive_terms=149`、`negative_terms=572`、`ambiguous_groups=126/200`、`truncated=0` | `docs/TRAINING.md` §5.3.1 |
@@ -274,8 +275,8 @@ DETR 的 `num_boxes` 归一化与这里的分项 mean 语义不同：这里活�
 
 | 机制 | 目标 | 判定 | 依据 |
 |---|---|---|---|
-| 组内跨窗同源正例 | 局部上下文内区分来源 | **符合**，但强度可疑 | F9：窗口 95% 重叠，正例同时奖励“共有波形/上下文稳定性” |
-| 批内其他身份负例 | 局部异源分离 | **部分超出**：同批其他曲的负样本引入瞬时跨曲分离压力（每一步 batch 随机，坐标不锚定全局） | F4；需 b3 消融判断是否有害 |
+| 组内跨窗同源正例 | 局部上下文内区分来源 | **符合**，但强度可疑 | F9：最接近允许配对的最坏情况重叠上界 95%，实际抽样中位 gap 0.17–0.36 s；正例仍可能奖励共有上下文稳定性 |
+| 批内其他身份负例 | 局部异源分离 | **部分超出**：同批其他曲的负样本引入瞬时跨曲分离压力（每一步 batch 随机，坐标不锚定全局） | F4；需 b3a/b3b 消融判断是否有害 |
 | 各组独立固定 assignment | 防止逐帧重匹配掩盖换轨 | **符合** | F6；训练没有逐帧重配，评估也不重配 |
 | 歧义组 mask identity | 不伪造身份标签 | **符合**保守原则 | F7；但牺牲大量 identity 监督（#8 63% 组被 mask） |
 | 跨 step 不聚合身份 | 不强制长间隔同源聚类 | **符合** | F3；跨窗泛化可测量但未强制 |
@@ -333,19 +334,31 @@ DETR 的 `num_boxes` 归一化与这里的分项 mean 语义不同：这里活�
    接缝时同时看到左右两端，这是复核证据的来源。
 4. **tracker 关联一轮**：用 `associate_sequence` 得到拼接轴的 `trajectory_splice`。轨道是新 `trk-*`，
    **不得**沿用原 slot 编号或假设重跑前后 embedding 坐标不变。
-5. **左右对应**：用时间映射把 `trajectory_splice` 的每个中心点映射回原曲时间，分别与 `T_left` /
-   `T_right` 的原曲时间范围求重叠。对应关系用“时间重叠 + 活动一致性”，不用 slot。
-6. **确认规则（严格，允许拒绝）**：只有同时满足以下条件才确认同源：
-   - 存在一条拼接轨迹在接缝两侧都有足够锚点（例如接缝邻域前后各 ≥ `N_anchor` 个 `P` 高于活动阈值
-     的中心，且连续匹配不中断）；
-   - 该轨迹的左段点映射回 `T_left` 的时间范围、右段点映射回 `T_right`（不是两个不同轨迹各自占一边）；
+5. **参考区保存（逐样本同输入锚点）**：在接缝两侧各保留一段远离接缝的参考中心（例如左端 clip 的
+   最后 `R` 秒、右端 clip 的最前 `R` 秒，`R ≥ 1.5 s`，且窗口不跨缝）。这些中心在原推理与拼接重跑中
+   读取**完全相同的原曲采样**（同一绝对时间、同一采样率、参考区不做增益/重采样变换），因此窗口输入
+   逐样本相同。保存原推理的逐中心 E/P/track 证据（原曲绝对时间 + track_id + 原始 slot），作为重跑
+   对齐的锚点。
+6. **逐侧重跑轨迹对齐（一对一、可验证、可拒绝）**：在左右参考区分别把 `trajectory_splice` 的轨迹与
+   原始 `T_left` / `T_right`（以及同侧其他原轨迹）做**轨迹级一对一**对齐，证据包括：
+   - 时间共现：同一参考中心上原轨迹与重跑轨迹同时活动；
+   - P 序列一致性：共现中心的 P 差值在容差内；
+   - E 可复核性：在样本完全相同的参考中心上，原 E 与重跑 E 的余弦/距离必须落在 fp32 确定性复现
+     容差内——这是**测量**同输入下的可复现性，不是假设 embedding 坐标跨运行恒定；
+   只有“唯一最佳、显著优于第二候选、且可复核误差在容差内”的对齐才标记为**可靠**；出现并列或
+   超差时该侧记为不确定，不允许用最近邻近似硬配。
+7. **确认规则（严格，允许拒绝）**：只有同时满足以下条件才确认同源：
+   - 左右参考区各自得到**可靠**的一对一对齐，并且都锚定到**同一条**拼接轨迹 `X`（同一条 splice track
+     在两侧分别对应候选 `T_left` 与 `T_right`；不是两条不同重跑轨迹各自占一边）；
+   - `X` 在接缝两侧邻域都有足够锚点（例如接缝前后各 ≥ `N_anchor` 个 `P` 高于活动阈值的中心，且
+     连续匹配不中断）；
    - 接缝邻域没有“旧轨迹终止 + 新轨迹出生”的证据；
-   - 决策阈值比 tracker 的单次门控更严格：确认分数由接缝邻域的证据统计决定（例如两侧锚点数量、
-     最小距离、是否跨接缝连续），不是“任何一对相似度 ≥ 门限就算”。
-   否则输出拒绝或不确定；允许拒绝是系统能力，不是失败。
-7. **证据留存**：保存拼接 manifest（输入哈希、采样率、区间、接缝类型、增益处理）、原曲/拼接时间映射、
-   接缝邻域逐中心的 E/P 摘要（可脱敏为标量/哈希）、tracker 对应表、决策分数与原因码。原始音频与数组
-   只留在忽略目录。
+   - 决策阈值比 tracker 的单次门控更严格：确认分数由参考区对齐可靠性 + 接缝邻域证据统计共同决定，
+     不是“任何一对相似度 ≥ 门限就算”。
+   任一条件不满足，或任一侧对齐不可靠/歧义/不可复核，输出拒绝或不确定；允许拒绝是系统能力，不是失败。
+8. **证据留存**：保存拼接 manifest（输入哈希、采样率、区间、接缝类型、增益处理）、原曲/拼接时间映射、
+   左右参考区的原推理与重跑逐中心 E/P/track、逐侧一对一 alignment 结果与可复核误差、接缝邻域逐中心
+   E/P 摘要、决策分数与原因码。原始音频与数组只留在忽略目录。
 
 ### 5.3 原始 E 对照与消融
 
@@ -358,15 +371,20 @@ DETR 的 `num_boxes` 归一化与这里的分项 mean 语义不同：这里活�
   预算，并记录实际耗时。参考量级：#11 本地 CPU 上 8 s 音频、H=0.1 s（81 窗）约 29 s（含加载），
   拼接复核的额外成本必须按此显式报告。
 - **失败方式**：接缝爆音/相位不连续被当成事件；音量跳变改变 E；两端共享同一伴奏导致伪相似；
-  窗口首尾无效区没有证据；tracker 门控过松把异源连接；E 在一次运行内漂移；顺序依赖；重跑轨迹与
-  原端点轨迹对应错误。
+  窗口首尾无效区没有证据；参考区太短或全静音导致 P/E 证据不足；同一端多条轨迹同时活动使一对一
+  对齐不唯一；E 在样本相同的参考中心上重跑不可复现（批次/数值差异）导致无法复核；tracker 门控过松
+  把异源连接；顺序依赖；重跑轨迹与端点轨迹对应错误。以上任一情况都必须落到“拒绝/不确定”，而不是
+  强行合并。
+- **对齐指标（Phase B b8）**：参考区一对一 alignment 的 accuracy/uniqueness、参考区同输入 E 的
+  重跑复现误差、不可靠/歧义计数、确认/拒绝混淆。对齐不可靠时不允许把候选计入误合并分母之外。
 
 ### 5.4 与“首秒两下鼓”的关系
 
-#11 的 8 s 真实片段在 W=2 s 下有 20 个边缘补零窗口（61/81 有效中心），第一秒与最后一秒无法承载
-中心标签（本报告 §7.1 实测）。因此试听用的分析区间必须与“中心可标注区间”对齐（例如展示/评估
-30–38 s 素材时，标注与试听都对齐到 31–37 s 的有效中心范围），不能把无效区当漏检或静音；端点拼接
-同样必须只使用各自的“中心可标注区间”，并在接缝两侧保留 ≥ W 的上下文。
+#11 的 8 s 真实片段在 W=2 s 下**裸裁剪**时只有 61/81 个有效中心，第一秒与最后一秒无法承载中心
+标签（本报告 §7 实测）。正确处理不是把评价区间缩到 31–37 s，而是**从原曲读取目标区间前后各 W/2 的
+上下文**：目标区间仍是原来那 8 s，原曲绝对时间轴不变，首秒两下鼓仍映射到 target-relative 0.1/0.6 s，
+其绝对中心（例如 31.1/31.6 s）此时拥有完整窗口，可以监督与评价。端点拼接同理：为各自端点保留远离
+接缝、窗口输入与原推理完全相同的参考区（§5.2 步骤 5–6），而不是排除接缝附近的中心。
 
 ---
 
@@ -378,32 +396,44 @@ Phase B 只有在主会话逐条审阅监督/接口/实验方案后才可开始�
 
 ### 6.1 数据与隔离
 
-- 合成渲染语料：`train-01..04` / `val-01/02` / `test-01/02`；按 composition/preset/sample_origin
-  连通分量隔离（`configs/train/dataset_local.toml`，`leak_free=true`）。
-- `test` 每个候选只报告一次，不用于选参；`val` 在 #8 开发中被观察过，只能作为开发集。
+- 合成渲染语料：`train-01..04`（训练）/ `val-01/02`（development validation）/ `test-01/02`
+  （历史已观察）；按 composition/preset/sample_origin 连通分量隔离
+  （`configs/train/dataset_local.toml`，`leak_free=true`）。
+- **候选、阈值、停止与组合决策只使用 train + development validation**。`test-01/02` 在 #8/#11 已被
+  观察，只能作为历史对照；它不冒充未调参的 virgin holdout，也不进入任何选择决策。
+- **新增 frozen holdout check（b10，仅方案）**：配置冻结后、在生成任何 holdout 音频之前先登记；
+  holdout 由与 train/val 不共享 composition/preset/sample_origin 的曲目构成；只对事先写定的 baseline
+  与最终 selected candidate 各评估一次；Phase A 不生成、不查看、不运行它。
 - 真实用户音乐**不进入训练**、不用于准确率；固定片段只能用于工程层后处理诊断（无 GT、明确标注）。
-- 拼接对只在同一首合成曲内构造（同源长间隔 + 异源难负例），绝不放两首完整歌曲。
+- 拼接对只在同一首合成曲内构造（同源长间隔 + 异源难负例），绝不放两首完整歌曲；端点保留样本级
+  同输入参考区（§5.2）。
 
 ### 6.2 B0 过拟合门槛（先于一切比较）
 
 在固定两首歌 × 每首 4 个非相邻窗口上过拟合当前 head/loss（300 step 上限）。通过条件：该固定 batch
 活动 F1 ≥ 0.99，且至少一个 identity key 产生正例项。若连这都不过，说明监督/数据选择有问题，禁止
-进入 B1–B9 架构比较。#7 的 fake-feature 过拟合与 #8 的真实 100 step 只是历史证据，不能替代本门槛。
+进入 B1–B9 比较（b10 是冻结后的最终检查，更不参与此前的选择）。#7 的 fake-feature 过拟合与 #8 的
+真实 100 step 只是历史证据，不能替代本门槛。
 
 ### 6.3 实验表（与 TOML 一一对应）
 
 | id | 单变量 | 基线 | 预算（上限） | 主要指标 | 停止条件要点 |
 |---|---|---|---|---|---|
 | b0-overfit-gate | 无（门槛） | zero-logit BCE / #7 overfit | 300 step, 15 min | activity F1、identity anchor 覆盖 | 不过则先修监督/数据 |
-| b1-baseline-current | 无（重跑基线） | #8 aut_short | 100 step, 10 min, 2 seeds | F1、ID switch、边界、歧义/identity 覆盖 | 基线不可复现则先诊断 |
+| b1-baseline-current | 无（重跑基线） | #8 aut_short | 100 step, 10 min, 2 seeds | F1、ID switch、边界、歧义/identity 覆盖、采样 gap 分布 | 基线不可复现则先诊断 |
 | b2-supervision-ambiguity | identity mask 粒度 | b1 | 100 step, 10 min, 2 seeds | identity 覆盖、F1、ID switch | 只涨覆盖不涨指标→记录无效果，不叠加 |
-| b3-supervision-negative-scope | 负例范围 | b1 | 100 step, 10 min, 2 seeds | negative/positive terms、F1、ID switch | 无效果→保留最简项 |
-| b4-sampling-context | 组内窗口间距（5→25 格） | b1 | 100 step, 10 min, 2 seeds | anchor 覆盖、F1、边界 | 无效果→记录正例“上下文稳定性”解释 |
+| b3a-supervision-negative-scope | 负例范围（batch-global→同曲） | b1 | 100 step, 10 min, 2 seeds | negative/positive terms、F1、ID switch | 无效果→保留最简项 |
+| b3b-supervision-negative-off | 负例权重（1.0→0，控制消融） | b1 | 100 step, 10 min, 2 seeds | positive terms、F1、ID switch | 无效果→记录负例项不可测 |
+| b4-sampling-context | 最小间距 5→25 格（0.1→0.5 s，最坏重叠 95%→75%） | b1 | 100 step, 10 min, 2 seeds | anchor 覆盖、实测 gap、F1、边界 | 无效果→记录正例“上下文稳定性”解释 |
 | b5-decoder-self-attention | head 结构（query self-attn + 迭代） | b1 | 100 step, 15 min, 2 seeds | F1、来源数误差、重复占槽、边界 | 两个 seed 无提升→停止 decoder 方向 |
 | b6-time-mask-aux | 辅助时间 mask 头（公共接口不变） | b1–b5 最佳 | 100 step, 15 min, 2 seeds | 边界 MAE、F1、重复占槽 | 仅边界问题成立时启动；无改善→不引入协议 |
 | b7-combination | 最佳监督 + 最佳 decoder | 两个父实验 | 100 step, 15 min, 2 seeds | 组合指标 | 不优于最佳父→报告冲突并停止组合 |
-| b8-endpoint-splice-postproc | 直接 E vs 拼接复核（同一候选表） | 直接 E 匹配 | 60 对, 30 min | 候选召回、确认精度、误合并/漏关联、耗时 | 不优于直接 E 或对伪影敏感→停止拼接方向 |
+| b8-endpoint-splice-postproc | 直接 E vs 参考区对齐后的拼接复核（同一候选表） | 直接 E 匹配 | 60 对, 30 min | 候选召回、确认精度、误合并/漏关联、参考区对齐可靠/复现、耗时 | 不优于直接 E 或对齐不可靠/对伪影敏感→停止拼接方向 |
 | b9-window-context | W 2.0→4.0 s（需协议论证） | b1 @W=2.0 | 100 step, 15 min, 2 seeds | 边界 MAE、F1、来源数 | 未批准不启动；无改善→保持 W=2.0 |
+| b10-frozen-holdout-check | 无（最终一次性检查） | 事先写定的 b1 与 selected candidate | 每个配置评估一次, 15 min | 活动 P/R/F1、ID switch、来源数、identity 覆盖 | 冻结后登记、只看一次、不回馈调参 |
+
+决策只用 train + development validation（`val-01/02`）；历史 `test-01/02` 不参与选择，frozen holdout
+只在配置冻结后登记并一次性评估 baseline 与 selected candidate（§6.1）。
 
 ### 6.4 预算、seed、记录字段
 
@@ -411,16 +441,21 @@ Phase B 只有在主会话逐条审阅监督/接口/实验方案后才可开始�
 - 每次运行记录：代码 SHA + dirty、配置 SHA-256、`uv.lock` SHA-256、数据集索引 SHA-256 与内容摘要、
   `leak_free`、encoder revision/provenance、seed、设备、耗时、进程内 CUDA peak（CPU 记 null+原因）、
   逐 step loss 分项与统计（含 ambiguity/truncated/identity_masked/term 计数）。
-- 单变量约束：b7 只在父实验报告后启动；b6/b9 需单独协议论证。
+- 单变量约束：每个候选预先固定一个水平，不能出现“or … chosen before the run”；验证器拒绝未决
+  单变量；b7 只在父实验报告后启动；b6/b9 需单独协议论证。
+- 数据约束：选择/停止/组合只用 train + development validation；历史 test 仅作历史对照；frozen holdout
+  在配置冻结后登记并只评估事先写定的 baseline 与 selected candidate 一次。
 
 ### 6.5 指标与歧义统计
 
 - 模型层（已有）：活动 micro/macro P/R/F1、ID switch、歧义归属帧、来源数绝对误差、onset/offset MAE。
 - 监督层（已有，head_loss 统计）：ambiguous group 比例、identity_masked 比例、四类有效 term 计数、
-  identity anchor 覆盖。
+  identity anchor 覆盖，以及实际采样相邻中心 gap 的 min/median/max。
 - 新增（计划，未实现）：`duplicate_overlap_frames`（未映射轨迹与某映射来源活动重叠的帧数）、
   `candidate_recall_at_n`、`splice_confirmed_precision`、`splice_false_merge`、`splice_missed_link`、
-  `splice_inference_seconds`。后四项只在合成长间隔对上定义；真实片段无 GT，不作为准确率。
+  `splice_inference_seconds`，以及参考区对齐指标 `reference_zone_alignment_accuracy`、
+  `reference_zone_alignment_uniqueness`、`reference_zone_e_reproducibility_error`、
+  `splice_uncertain_count`。拼接指标只在合成长间隔对上定义；真实片段无 GT，不作为准确率。
 - 歧义统计：除 group 级统计外，报告“同活动序列来源对数量”和“评估中的 ambiguous_owner_frames”。
 
 ### 6.6 停止/继续条件
@@ -428,7 +463,8 @@ Phase B 只有在主会话逐条审阅监督/接口/实验方案后才可开始�
 - B0 不过 → 停止，修监督/数据，不得进入比较；
 - 单变量在两个 seed 无方向性变化 → 记录 null result，不叠加到组合；
 - B5/B6 在相同预算与 seed 下不优于 B1 → 停止 decoder/mask 方向，不靠加长训练“救”结论；
-- B8 不优于直接 E、或对接缝/顺序/音量控制敏感 → 停止拼接方向；
+- B8 不优于直接 E、参考区对齐不可靠/不可复现、或对接缝/顺序/音量控制敏感 → 停止拼接方向；
+- frozen holdout 只在冻结后登记并一次性评估事先写定的 baseline/selected candidate，不回馈调参；
 - 任何实验无提升也如实交付；mock 只用于工程冒烟，不冒充真实结果。
 
 ---
@@ -444,7 +480,8 @@ uv run --no-sync python scripts/diagnose_issue24.py validate-plan
 uv run --no-sync pytest -q tests/diagnostics            # 基础 + ml 诊断测试
 ```
 
-- 诊断入口不加载音频、权重、checkpoint 或训练模型；smoke 语料只写临时目录并自动清理；
+- 诊断不读取私人/外部/真实音频、权重、checkpoint 或训练模型；sampling section 只在调用方临时目录中
+  生成并读取合成 smoke WAV 语料，进程结束后自动清理；其余 fixture 都在内存构造；
 - 输出 JSON 的每个 section 带 `evidence_kind`，并汇总 `limitations`；
 - `report --skip-torch/--skip-matching/--skip-corpus` 可在基础环境运行（缺 torch 时对应 section 记
   `unavailable`/`skipped`，不失败）；
@@ -462,8 +499,10 @@ uv run --no-sync pytest -q tests/diagnostics            # 基础 + ml 诊断测�
 | 无声 | 两个有效静音来源 | 歧义（`num_optimal=12`）；activity 仍被监督；identity mask |
 | 不可辨认重复层 | 3 列相同活动 1,0,1,1 | 歧义（`num_optimal=6`）；identity mask |
 | 静音重复 + 枚举截断 | 3 列全零、K=8 | **truncated**（P(8,3)=336>64）；整组监督为 0 |
-| 窗口边界 | 8 s、W=2 s、H=0.1 s | 81 个中心中只有 61 个有效；第一秒两下鼓只作为 context 可见，0 个有效中心可标注 |
-| 组内上下文重叠 | gap=5 格 × 20 ms | 中心间距 0.1 s，窗口共享 1.9 s = **95%** |
+| 窗口边界（裸裁剪） | 8 s、W=2 s、H=0.1 s | 81 个中心中只有 61 个有效；首秒两下鼓只作为 context 可见，0 个有效中心可标注 |
+| 窗口边界（补上下文） | 目标 8 s 不变，从原曲前后各读 W/2=1 s | 101 个中心中 81 个有效；首秒两事件仍在 target-relative 0.1/0.6 s（目标起点 30 s 时为绝对 31.1/31.6 s），各对应 1 个有效中心 |
+| 最接近允许配对的重叠上界 | `min_center_gap=5` 格 × 20 ms | 最小允许间距 0.1 s；最坏重叠 1.9 s = **95%**（只是上界，不是每组实际间距） |
+| 实际采样 gap/重叠 | smoke 语料、10 step × 2 曲 × 4 窗 | 相邻中心 gap：min 0.1 s、median 0.17–0.36 s、max 1.24–2.6 s；组内最坏重叠：min 0.81、median 0.89–0.95、max 0.95 |
 | 采样覆盖 | smoke 语料、10 step × 2 曲 × 4 窗 | train 两首歌 valid 行覆盖约 17–22%；每来源都有 ≥2 anchor 的组（合成语料限定） |
 
 ### 7.3 原始模型输出 vs tracker/postprocess（分开报告）

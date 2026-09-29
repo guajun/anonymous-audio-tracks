@@ -7,10 +7,14 @@ Usage::
     uv run --no-sync python scripts/diagnose_issue24.py report --out /tmp/issue24.json
     uv run --no-sync python scripts/diagnose_issue24.py validate-plan
 
-The ``report`` command never loads audio, AuT weights, checkpoints or a trained
-model.  It measures the current label / matching / loss / tracker code on
-synthetic fixtures and clearly labels every section.  ``validate-plan`` only
-checks the Phase B design checklist; it is not a run authorization.
+The ``report`` command never reads private, external or real audio, AuT
+weights, checkpoints or a trained model.  The sampler section generates and
+reads a tiny temporary synthetic smoke WAV corpus (``make_smoke_dataset``)
+that the process deletes before exiting.  All other fixtures are synthetic and
+created in memory, and every section is clearly labelled.
+
+``validate-plan`` only checks the Phase B design checklist; it is not a run
+authorization.
 
 Both commands work in a base environment without torch: sections that need
 ``aat.losses`` report ``status = "unavailable"`` instead of failing.

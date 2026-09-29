@@ -22,9 +22,11 @@ A measurement harness over the **existing** code only:
 What this module is not
 -----------------------
 It is **not** a model, a DETR decoder, a temporal-mask protocol or an endpoint
-splicing implementation.  It does not load audio, AuT weights or checkpoints.
-All fixtures are constructed in memory (plus a tiny synthetic corpus written to
-a caller-provided temporary directory for the sampler section).
+splicing implementation.  It never reads private, external or real audio, AuT
+weights or checkpoints.  The sampler section writes and reads a tiny
+temporary **synthetic smoke WAV corpus** (``make_smoke_dataset``) inside a
+caller-provided temporary directory; everything else is constructed in memory
+and the temporary corpus is deleted by the caller.
 
 Every section is labelled with ``evidence_kind``.  Values measured from the
 synthetic label/matching fixtures are *minimal counterexamples*, not model
@@ -67,7 +69,9 @@ DIAGNOSTIC_VERSION = "issue24-stage-a-v1"
 #: Machine-readable marker so no consumer treats the output as model evidence.
 DIAGNOSTIC_DATA_KIND = (
     "synthetic-label-matching-postprocess-diagnostic "
-    "(no audio, weights, checkpoints or real model forward; not model evidence)"
+    "(no private/external/real audio, weights, checkpoints or real model forward; "
+    "the sampler section only writes and reads a temporary synthetic smoke WAV "
+    "corpus; not model evidence)"
 )
 
 _MATCHING_EVIDENCE_KIND = (
@@ -501,10 +505,18 @@ def context_overlap_report(
     min_center_gap: int = 5,
     centers_per_item: int = 4,
 ) -> dict[str, Any]:
-    """Quantify how much context training windows share inside one group."""
+    """Upper bound of context sharing between the closest allowed pair.
 
-    spacing = float(label_hop_seconds) * int(min_center_gap)
-    overlap = float(window_seconds) - spacing
+    ``min_center_gap`` is a **minimum** distance in grid steps, not a fixed
+    spacing: ``aat.data.batch._select_centers`` randomly picks centers whose
+    pairwise distance is at least this large, so actual pairs are usually
+    farther apart.  This report therefore names the numbers as the
+    worst-case/upper bound of a single ``centers_per_item``-wide group; the
+    actual sampled distribution is measured in :func:`sampling_coverage_report`.
+    """
+
+    closest_spacing = float(label_hop_seconds) * int(min_center_gap)
+    max_overlap = float(window_seconds) - closest_spacing
     return {
         "status": "ok",
         "evidence_kind": _CONTEXT_EVIDENCE_KIND,
@@ -512,13 +524,53 @@ def context_overlap_report(
         "label_hop_seconds": float(label_hop_seconds),
         "min_center_gap_grid_steps": int(min_center_gap),
         "centers_per_item": int(centers_per_item),
-        "center_spacing_seconds": spacing,
-        "context_overlap_seconds": overlap,
-        "context_overlap_fraction": overlap / float(window_seconds),
+        "closest_allowed_center_spacing_seconds": closest_spacing,
+        "max_possible_context_overlap_seconds": max_overlap,
+        "max_possible_context_overlap_fraction": max_overlap / float(window_seconds),
+        "is_upper_bound_only": True,
         "note": (
-            "same-source positive windows inside one training group share this "
-            "fraction of samples; the current positive loss therefore also "
-            "measures shared-context stability, not long-gap identity alone"
+            "min_center_gap=5 only forbids pairs closer than 0.1 s; sampled pairs "
+            "are >= that distance, so 1.9 s / 95% is the worst-case overlap of the "
+            "closest allowed pair, not the group's actual spacing. Actual sampled "
+            "gap/overlap min/median/max are reported by sampling_coverage_report."
+        ),
+    }
+
+
+def _event_center_stats(
+    centers: np.ndarray,
+    window_valid: np.ndarray,
+    *,
+    width: int,
+    rate: int,
+    hop_seconds: float,
+    onset_seconds: float,
+) -> dict[str, Any]:
+    """Per-event center statistics on one center grid (absolute seconds)."""
+
+    onset_sample = int(np.floor(onset_seconds * rate + 0.5))
+    centers_with_onset = 0
+    valid_centers_with_onset = 0
+    valid_centers_at_onset = 0
+    for index, center in enumerate(centers):
+        center_sample = int(np.floor(float(center) * rate + 0.5))
+        start, stop = centered_window_bounds(center_sample, width)
+        if start <= onset_sample < stop:
+            centers_with_onset += 1
+            if bool(window_valid[index]):
+                valid_centers_with_onset += 1
+        if (
+            abs(float(center) - onset_seconds) <= float(hop_seconds) / 2.0 + 1e-12
+            and bool(window_valid[index])
+        ):
+            valid_centers_at_onset += 1
+    return {
+        "centers_with_onset_in_window": centers_with_onset,
+        "valid_centers_with_onset_in_window": valid_centers_with_onset,
+        "valid_centers_at_onset": valid_centers_at_onset,
+        "onset_labelable_as_center": bool(valid_centers_at_onset),
+        "visible_as_context_only": bool(
+            valid_centers_with_onset and not valid_centers_at_onset
         ),
     }
 
@@ -531,88 +583,159 @@ def context_boundary_report(
     sample_rate: int = 16000,
     events: Sequence[float] = (0.1, 0.6),
 ) -> dict[str, Any]:
-    """Window/valid-mask arithmetic for a fixed-length clip.
+    """Window/valid-mask arithmetic for a fixed-length target interval.
 
-    This is the issue #11 listening-clip situation: two short events early in
-    an 8 s clip.  The report states which centers can even carry a center-time
-    label and which events only ever appear as context.
+    This is the issue #11 listening-clip situation: two short events at
+    target-relative 0.1 s and 0.6 s of an 8 s interval.  Two views are compared:
+
+    ``bare_clip``
+        the 8 s interval is the whole audio; its first/last W/2 are zero-padded,
+        so those events have no valid center;
+    ``context_padded``
+        an extra W/2 is read from the original source on both sides (the audio
+        is longer), while the target interval and its absolute original-track
+        time axis are unchanged.  The same events stay at their target-relative
+        times and now have fully covered centers.
+
+    The report's point is that the correct handling is context padding, not
+    shrinking or excluding the target edges.
     """
 
     rate = int(sample_rate)
     duration = float(duration_seconds)
     window = float(window_seconds)
     width = window_sample_count(window, rate)
-    samples = np.zeros(int(round(duration * rate)), dtype=np.float32)
-    centers = center_times(duration, hop_seconds)
-    _, valid_matrix = extract_windows_at_times(samples, centers, rate, window)
-    window_valid = valid_matrix.all(axis=1) if valid_matrix.size else np.zeros(0, dtype=bool)
-    valid_centers = centers[window_valid]
+    context = window / 2.0
 
-    per_event: list[dict[str, Any]] = []
+    # --- bare clip: the target interval is the entire audio -----------------
+    bare_samples = np.zeros(int(round(duration * rate)), dtype=np.float32)
+    bare_centers = center_times(duration, hop_seconds)
+    _, bare_valid_matrix = extract_windows_at_times(
+        bare_samples, bare_centers, rate, window
+    )
+    bare_window_valid = (
+        bare_valid_matrix.all(axis=1)
+        if bare_valid_matrix.size
+        else np.zeros(0, dtype=bool)
+    )
+    bare_events: list[dict[str, Any]] = []
     for onset in events:
-        onset_value = float(onset)
-        in_window_indices: list[int] = []
-        valid_in_window_indices: list[int] = []
-        at_onset_indices: list[int] = []
-        onset_sample = int(np.floor(onset_value * rate + 0.5))
-        for index, center in enumerate(centers):
-            center_sample = int(np.floor(float(center) * rate + 0.5))
-            start, stop = centered_window_bounds(center_sample, width)
-            if start <= onset_sample < stop:
-                in_window_indices.append(index)
-                if bool(window_valid[index]):
-                    valid_in_window_indices.append(index)
-            if abs(float(center) - onset_value) <= float(hop_seconds) / 2.0 + 1e-12:
-                if bool(window_valid[index]):
-                    at_onset_indices.append(index)
-        visible_as_context = bool(valid_in_window_indices)
-        labelled_at_onset = bool(at_onset_indices)
-        if labelled_at_onset:
-            finding = "a valid center exists at the onset; the event can be a center label"
-        elif visible_as_context:
-            finding = (
-                "no valid center has this onset at its center: the event is only "
-                "inside the context of later valid windows and is not a center label"
-            )
-        else:
-            finding = "the event is outside every valid window of this clip"
-        per_event.append(
+        stats = _event_center_stats(
+            bare_centers,
+            bare_window_valid,
+            width=width,
+            rate=rate,
+            hop_seconds=float(hop_seconds),
+            onset_seconds=float(onset),
+        )
+        bare_events.append(
             {
-                "onset_seconds": onset_value,
-                "centers_with_onset_in_window": _round_trip_int(len(in_window_indices)),
-                "valid_centers_with_onset_in_window": _round_trip_int(
-                    len(valid_in_window_indices)
+                "target_relative_onset_seconds": float(onset),
+                **stats,
+                "finding": (
+                    "no valid center has this onset at its center: the event is "
+                    "only inside the context of later valid windows and is not a "
+                    "center label"
+                    if stats["visible_as_context_only"]
+                    else "a valid center exists at this onset"
                 ),
-                "valid_centers_at_onset": _round_trip_int(len(at_onset_indices)),
-                "visible_as_context_only": bool(visible_as_context and not labelled_at_onset),
-                "finding": finding,
             }
         )
+    bare_valid_centers = bare_centers[bare_window_valid]
+    bare_first = float(bare_valid_centers[0]) if bare_valid_centers.size else None
+    bare_last = float(bare_valid_centers[-1]) if bare_valid_centers.size else None
 
-    first_valid = float(valid_centers[0]) if valid_centers.size else None
-    last_valid = float(valid_centers[-1]) if valid_centers.size else None
+    # --- context padded: target interval unchanged, extra W/2 each side -----
+    padded_samples = np.zeros(int(round((duration + window) * rate)), dtype=np.float32)
+    padded_centers = center_times(duration + window, hop_seconds)
+    _, padded_valid_matrix = extract_windows_at_times(
+        padded_samples, padded_centers, rate, window
+    )
+    padded_window_valid = (
+        padded_valid_matrix.all(axis=1)
+        if padded_valid_matrix.size
+        else np.zeros(0, dtype=bool)
+    )
+    padded_events: list[dict[str, Any]] = []
+    for onset in events:
+        absolute_onset = context + float(onset)
+        stats = _event_center_stats(
+            padded_centers,
+            padded_window_valid,
+            width=width,
+            rate=rate,
+            hop_seconds=float(hop_seconds),
+            onset_seconds=absolute_onset,
+        )
+        padded_events.append(
+            {
+                "target_relative_onset_seconds": float(onset),
+                "absolute_onset_seconds": absolute_onset,
+                **stats,
+                "finding": (
+                    "a valid center exists at the onset; the event is labelable "
+                    "at its unchanged target-relative time"
+                    if stats["onset_labelable_as_center"]
+                    else "the event is still not labelable on this hop grid"
+                ),
+            }
+        )
+    padded_valid_centers = padded_centers[padded_window_valid]
+    padded_first = float(padded_valid_centers[0]) if padded_valid_centers.size else None
+    padded_last = float(padded_valid_centers[-1]) if padded_valid_centers.size else None
+
     return {
         "status": "ok",
         "evidence_kind": _CONTEXT_EVIDENCE_KIND,
-        "duration_seconds": duration,
+        "target_duration_seconds": duration,
+        "target_interval_seconds": [0.0, duration],
         "window_seconds": window,
         "hop_seconds": float(hop_seconds),
         "sample_rate": rate,
-        "centers_total": _round_trip_int(centers.size),
-        "centers_valid": _round_trip_int(valid_centers.size),
-        "centers_invalid": _round_trip_int(centers.size - valid_centers.size),
-        "first_valid_center_seconds": first_valid,
-        "last_valid_center_seconds": last_valid,
-        "addressable_interval_seconds": (
-            [first_valid, last_valid] if first_valid is not None else None
-        ),
-        "left_context_seconds": window / 2.0,
-        "right_context_seconds": window / 2.0,
-        "events": per_event,
+        "left_context_seconds": context,
+        "right_context_seconds": context,
+        "bare_clip": {
+            "audio_seconds_read": duration,
+            "centers_total": _round_trip_int(bare_centers.size),
+            "centers_valid": _round_trip_int(bare_valid_centers.size),
+            "centers_invalid": _round_trip_int(
+                bare_centers.size - bare_valid_centers.size
+            ),
+            "first_valid_center_seconds": bare_first,
+            "last_valid_center_seconds": bare_last,
+            "addressable_interval_seconds": [bare_first, bare_last],
+            "events": bare_events,
+        },
+        "context_padded": {
+            "context_seconds_each_side": context,
+            "audio_seconds_read": duration + window,
+            "absolute_target_interval_seconds": [context, context + duration],
+            "target_relative_axis_preserved": True,
+            "centers_total": _round_trip_int(padded_centers.size),
+            "centers_valid": _round_trip_int(padded_valid_centers.size),
+            "centers_invalid": _round_trip_int(
+                padded_centers.size - padded_valid_centers.size
+            ),
+            "first_valid_center_absolute_seconds": padded_first,
+            "last_valid_center_absolute_seconds": padded_last,
+            "first_valid_center_target_relative_seconds": (
+                None if padded_first is None else padded_first - context
+            ),
+            "last_valid_center_target_relative_seconds": (
+                None if padded_last is None else padded_last - context
+            ),
+            "events": padded_events,
+        },
         "note": (
             "center_valid follows the labeler rule 'the model center window fits "
-            "fully inside the audio'; edge windows are zero-padded and never "
-            "supervised, so the first/last W/2 seconds cannot carry labels"
+            "fully inside the audio'. A bare target clip cannot label its first/last "
+            "W/2 seconds; reading W/2 extra context from the original source keeps "
+            "the target interval and its original-track time axis unchanged while "
+            "giving the same target-relative events fully covered centers."
+        ),
+        "recommendation": (
+            "pad context from the original song; do not shrink, exclude or re-base "
+            "the target interval"
         ),
     }
 
@@ -649,6 +772,20 @@ def _load_activity_arrays(entry: Any, data_root: str | Path) -> tuple[np.ndarray
         np.asarray(activity.activity, dtype=np.float64),
         np.asarray(activity.valid, dtype=bool),
     )
+
+
+def _numeric_stats(values: Sequence[float]) -> dict[str, Any] | None:
+    """min/median/max/count summary for a possibly empty sample list."""
+
+    array = np.asarray(list(values), dtype=np.float64)
+    if array.size == 0:
+        return None
+    return {
+        "count": int(array.size),
+        "min": float(array.min()),
+        "median": float(np.median(array)),
+        "max": float(array.max()),
+    }
 
 
 def sampling_coverage_report(
@@ -693,6 +830,11 @@ def sampling_coverage_report(
             "sampled_active_rows_per_source": [set() for _ in range(sources)],
             "groups_with_two_anchors_per_source": [0] * sources,
             "groups_sampled": 0,
+            "pair_gaps": [],
+            "group_min_gaps": [],
+            "group_max_overlap_fractions": [],
+            "window_seconds": None,
+            "hop_seconds": None,
         }
 
     skipped: list[dict[str, str]] = []
@@ -715,6 +857,21 @@ def sampling_coverage_report(
         for block in batch.blocks:
             record = totals[block.sample_id]
             record["groups_sampled"] += 1
+            record["window_seconds"] = float(block.window_seconds)
+            record["hop_seconds"] = block.hop_seconds
+            sampled_times = np.sort(np.asarray(block.center_times, dtype=np.float64))
+            if sampled_times.size >= 2:
+                gaps = np.diff(sampled_times)
+                record["pair_gaps"].extend(float(value) for value in gaps)
+                record["group_min_gaps"].append(float(gaps.min()))
+                record["group_max_overlap_fractions"].append(
+                    float(
+                        max(
+                            0.0,
+                            1.0 - float(gaps.min()) / float(block.window_seconds),
+                        )
+                    )
+                )
             for row, center_index in enumerate(np.asarray(block.center_indices).tolist()):
                 record["sampled_rows"].add(int(center_index))
             for source in range(len(block.source_ids)):
@@ -753,6 +910,12 @@ def sampling_coverage_report(
                 "groups_with_two_anchors_per_source": record[
                     "groups_with_two_anchors_per_source"
                 ],
+                "sampled_pair_gap_seconds": _numeric_stats(record["pair_gaps"]),
+                "sampled_group_min_gap_seconds": _numeric_stats(record["group_min_gaps"]),
+                "sampled_group_max_context_overlap_fraction": _numeric_stats(
+                    record["group_max_overlap_fractions"]
+                ),
+                "sampling_window_seconds": record["window_seconds"],
                 "sources_never_activated_in_sampled_windows": [
                     index
                     for index, available in enumerate(active_per_source)
@@ -760,6 +923,36 @@ def sampling_coverage_report(
                 ],
             }
         )
+
+    all_pair_gaps = [
+        gap for record in totals.values() for gap in record["pair_gaps"]
+    ]
+    all_group_overlaps = [
+        value
+        for record in totals.values()
+        for value in record["group_max_overlap_fractions"]
+    ]
+    sample_window = next(
+        (record["window_seconds"] for record in totals.values() if record["window_seconds"]),
+        None,
+    )
+    sample_hop = next(
+        (record["hop_seconds"] for record in totals.values() if record["hop_seconds"]),
+        None,
+    )
+    closest_allowed_spacing = (
+        None if sample_hop is None else float(min_center_gap) * float(sample_hop)
+    )
+    closest_allowed_overlap = (
+        None
+        if sample_window is None or closest_allowed_spacing is None
+        else max(0.0, float(sample_window) - closest_allowed_spacing)
+    )
+    closest_allowed_overlap_fraction = (
+        None
+        if closest_allowed_overlap is None or not sample_window
+        else closest_allowed_overlap / float(sample_window)
+    )
 
     return {
         "status": "ok",
@@ -771,12 +964,24 @@ def sampling_coverage_report(
         "min_center_gap": int(min_center_gap),
         "activity_threshold": float(activity_threshold),
         "seed": int(seed),
+        "sampling_window_seconds": sample_window,
+        "sampling_hop_seconds": sample_hop,
+        "closest_allowed_center_spacing_seconds": closest_allowed_spacing,
+        "max_possible_context_overlap_fraction_for_closest_pair": (
+            closest_allowed_overlap_fraction
+        ),
+        "sampled_pair_gap_seconds": _numeric_stats(all_pair_gaps),
+        "sampled_group_max_context_overlap_fraction": _numeric_stats(
+            all_group_overlaps
+        ),
         "songs": songs,
         "skipped": skipped,
         "note": (
-            "sampled windows are the actual per-step training draws; the "
-            "synthetic smoke corpus has short sustained bursts, so absolute "
-            "coverage numbers do not transfer to the rendered corpus"
+            "sampled windows are the actual per-step training draws; min_center_gap "
+            "only forbids pairs closer than the closest allowed spacing, so the "
+            "measured pair gaps here are the real sampling behaviour. The synthetic "
+            "smoke corpus has short sustained bursts, so absolute coverage numbers "
+            "do not transfer to the rendered corpus."
         ),
     }
 
@@ -1004,7 +1209,16 @@ def tracker_postprocess_report() -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 _PLAN_ALLOWED_STATUS = {"proposed", "gated"}
-_PLAN_ALLOWED_KINDS = {"gate", "training", "engineering-postprocess"}
+_PLAN_ALLOWED_KINDS = {"gate", "training", "engineering-postprocess", "evaluation"}
+_UNDECIDED_MARKERS = ("chosen before", "to be decided", "tbd", "to decide")
+_UNDECIDED_DECISION_WORDS = (
+    "choose",
+    "chosen",
+    "decide",
+    "decided",
+    "select",
+    "selected",
+)
 _PLAN_REQUIRED_PLAN_KEYS = {
     "id",
     "issue",
@@ -1027,6 +1241,17 @@ _PLAN_REQUIRED_EXPERIMENT_KEYS = {
     "metrics",
     "stop_condition",
 }
+
+
+def _is_undecided_design(text: str) -> bool:
+    """Reject a single-variable field that still offers an ``or`` choice."""
+
+    lowered = text.lower()
+    if any(marker in lowered for marker in _UNDECIDED_MARKERS):
+        return True
+    return " or " in lowered and any(
+        word in lowered for word in _UNDECIDED_DECISION_WORDS
+    )
 
 
 def load_phase_b_plan(path: str | Path) -> dict[str, Any]:
@@ -1068,6 +1293,17 @@ def load_phase_b_plan(path: str | Path) -> dict[str, Any]:
         errors.append("[constraints].fake_use must state the fake/mock policy")
     if constraints.get("not_model_evidence") is not True:
         errors.append("[constraints].not_model_evidence must be true")
+
+    data_table = payload.get("data", {})
+    if not isinstance(data_table, dict):
+        errors.append("[data] must be a table")
+    else:
+        for key in ("development_validation", "historically_observed_test", "frozen_holdout"):
+            value = data_table.get(key)
+            if not isinstance(value, str) or not value.strip():
+                errors.append(
+                    f"[data].{key} must be a non-empty string describing the split policy"
+                )
 
     experiments = payload.get("experiments", [])
     if not isinstance(experiments, list) or not experiments:
@@ -1116,6 +1352,15 @@ def load_phase_b_plan(path: str | Path) -> dict[str, Any]:
             value = experiment.get(field)
             if not isinstance(value, str) or not value.strip():
                 errors.append(f"{label}: {field} must be a non-empty string")
+        single_variable = experiment.get("single_variable")
+        if isinstance(single_variable, str) and _is_undecided_design(single_variable):
+            errors.append(
+                f"{label}: single_variable must fix one level, not an undecided "
+                "choice/alternative"
+            )
+        baseline = experiment.get("baseline")
+        if isinstance(baseline, str) and _is_undecided_design(baseline):
+            errors.append(f"{label}: baseline must be fixed, not an undecided choice")
         metrics = experiment.get("metrics")
         if not isinstance(metrics, list) or not metrics:
             errors.append(f"{label}: metrics must be a non-empty list")
@@ -1166,7 +1411,10 @@ def build_issue24_report(
     """Build the deterministic issue #24 Phase A diagnostic report.
 
     ``corpus_root`` is required for the sampling section (the tiny synthetic
-    smoke corpus is written there); pass ``None`` to omit that section.
+    smoke corpus is written there, then read back by ``sample_batch``); pass
+    ``None`` to omit that section.  No private, external or real audio is
+    read; the only audio files are the temporary synthetic smoke WAVs created
+    under ``corpus_root``, which the caller owns and is expected to delete.
     Sections that need torch report ``status = 'unavailable'`` in a base
     environment instead of raising.
     """
@@ -1228,9 +1476,10 @@ def build_issue24_report(
         "limitations": [
             "every fixture is synthetic; this is label/matching/post-processing "
             "structure evidence, not real model quality",
-            "the smoke corpus is NumPy PCM, not a DawDreamer render; coverage "
-            "numbers are engineering evidence",
+            "the sampler section writes and reads a temporary synthetic smoke WAV "
+            "corpus (NumPy PCM, not a DawDreamer render); no private, external or "
+            "real audio is read, and the temporary corpus is deleted by the caller",
             "head_loss values on synthetic tensors are not training results",
-            "no AuT weights, checkpoints, audio or real model forward are used",
+            "no AuT weights, checkpoints or real model forward are used",
         ],
     }
