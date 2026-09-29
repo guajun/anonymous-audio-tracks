@@ -21,12 +21,27 @@ render = [
     "dawdreamer>=0.9,<0.10",
 ]
 # Optional feature/training stack owned by the AuT and head issues (#5, #7).
-# Entries are added and locked by those issues; never install a GPU stack by default.
-ml = []
+# Torch is resolved from the explicit CPU-only wheel index below, so
+# `uv sync --locked --extra ml` never pulls the CUDA/nvidia stack.  Darwin
+# falls back to the default PyPI index because the PyTorch CPU index has no
+# macOS arm64 wheels; PyPI torch on macOS is CPU-only anyway.
+ml = [
+    "torch>=2.5,<3",
+]
 
 [dependency-groups]
 dev = [
     "pytest>=8.3,<9",
+]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = [
+    { index = "pytorch-cpu", marker = "sys_platform != 'darwin'" },
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -37,4 +52,5 @@ testpaths = ["tests"]
 addopts = "-ra"
 markers = [
     "integration: requires the optional render extra (DawDreamer)",
+    "ml: requires the optional ml extra (CPU PyTorch)",
 ]

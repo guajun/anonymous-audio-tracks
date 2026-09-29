@@ -44,6 +44,10 @@ wandb/
 *.fxp
 *.vstpreset
 
+# Source directories whose names collide with the asset rule above.
+!src/aat/models/
+!tests/models/
+
 # Editors and OS
 .idea/
 .vscode/
