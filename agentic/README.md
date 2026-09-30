@@ -2,7 +2,7 @@
 
 父 issue [#28](https://github.com/guajun/anonymous-audio-tracks/issues/28)，总研究日志 [#27](https://github.com/guajun/anonymous-audio-tracks/issues/27)，路线见 [`docs/AGENTIC_RESEARCH.md`](../docs/AGENTIC_RESEARCH.md)。
 
-实施顺序：`(#29, #30) → (#31, #32) → (#33, #34)`。本目录的代码尚未实现；具体入口随各 PR 更新。
+实施顺序：`(#29, #30) → (#31, #32) → (#33, #34)`。已交付：[`toolbox/`](toolbox/)（#29 SAM 工具箱 pin/安装文档）、[`audio-probe/`](audio-probe/)（#30 原生/桥接验证与冻结接口）、[`workspace-template/`](workspace-template/)（#31 workspace 模板 + bootstrap/doctor/smoke + 文档）；其余目录随各 PR 更新。
 
 目录归属：`toolbox/`（#29 工具箱 pin/集成报告）、`audio-probe/`（#30 原生/桥接验证）、`workspace-template/` 与 bootstrap（#31）、`schema/`（#32）、`e2e/`（#33）、`viewer/`（#34）。必要的测试和报告跟随各目录，避免并行重写根锁文件。
 
