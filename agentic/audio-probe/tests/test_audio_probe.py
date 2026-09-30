@@ -246,12 +246,25 @@ class TestRedaction:
         assert "CCCC" not in out_b64
 
     def test_json_escaped_windows_paths(self) -> None:
+        """JSON-escaped Windows paths must be redacted wherever the checkout
+        lives: the repo-relative case becomes <REPO> (constructed from
+        repo_root(), never hardcoded), an unrelated drive path becomes
+        <PATH> (synthetic literal only)."""
         import extract_evidence
 
-        raw = '{"path":"F:\\\\LED\\\\agentic-worktrees\\\\issue-30\\\\agentic\\\\x.wav"}'
+        root = extract_evidence.repo_root()
+        escaped_root = str(root).replace("\\", "\\\\")  # JSON-escaped Windows form
+        raw = '{"path":"' + escaped_root + "\\\\agentic\\\\x.wav" + '"}'
         out = extract_evidence.redact(raw)
-        assert "F:" not in out
         assert "<REPO>" in out
+        assert escaped_root not in out
+        assert extract_evidence.find_unsanitized(out) == []
+
+        synthetic = '{"path":"Q:\\\\synthetic-unrelated\\\\folder\\\\f.wav"}'
+        out2 = extract_evidence.redact(synthetic)
+        assert "<PATH>" in out2
+        assert "Q:" not in out2
+        assert extract_evidence.find_unsanitized(out2) == []
 
     def test_out_of_home_paths_are_scrubbed(self) -> None:
         import extract_evidence
