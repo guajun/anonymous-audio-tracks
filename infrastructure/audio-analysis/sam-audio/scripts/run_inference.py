@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
+import subprocess
 import os
 import shutil
 import sys
@@ -19,14 +21,45 @@ sys.path.insert(0, str(PROJECT_ROOT))
 os.environ.setdefault("HF_HUB_OFFLINE", "1")
 os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
 os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
-_ffmpeg = shutil.which("ffmpeg")
-if _ffmpeg and os.name == "nt":
-    os.add_dll_directory(str(Path(_ffmpeg).parent))
+# Keep DLL search-directory handles alive for the entire inference process.
+_DLL_HANDLES: list = []
 
 import numpy as np
 import soundfile as sf
 
 from local_model_options import loading_options, model_directories
+
+
+def check_environment() -> None:
+    """Check FFmpeg without importing torch, TorchCodec or SAM."""
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        raise ValueError("FFmpeg not found on PATH. Install FFmpeg 4–7 (Windows: full-shared, not static), add its bin directory to PATH, and restart the terminal.")
+    if os.name == "nt":
+        directory = Path(ffmpeg).parent
+        missing = [name for name in ("avcodec", "avformat", "avutil", "swresample") if not list(directory.glob(f"{name}-*.dll"))]
+        if missing:
+            raise ValueError("Missing FFmpeg shared DLLs: " + ", ".join(missing) + ". Install the full-shared build and put its bin directory on PATH (static builds are insufficient).")
+        if not _DLL_HANDLES:
+            _DLL_HANDLES.append(os.add_dll_directory(str(directory)))
+
+
+def audio_duration(path: Path) -> float:
+    """Use libsndfile where supported; FFprobe handles other FFmpeg formats."""
+    try:
+        duration = float(sf.info(str(path)).duration)
+    except (RuntimeError, sf.LibsndfileError):
+        probe = shutil.which("ffprobe")
+        if not probe:
+            raise ValueError("Cannot read audio duration; install FFmpeg/ffprobe and add bin to PATH.") from None
+        result = subprocess.run([probe, "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", str(path)], capture_output=True, text=True, check=False)
+        try:
+            duration = float(result.stdout.strip()) if result.returncode == 0 else float("nan")
+        except ValueError:
+            duration = float("nan")
+    if not math.isfinite(duration) or duration <= 0:
+        raise ValueError("Cannot determine a finite positive audio duration.")
+    return duration
 
 
 def _resolve(value: str | os.PathLike[str]) -> Path:
@@ -44,8 +77,9 @@ def _load_config() -> dict:
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--audio", type=Path, required=True)
-    parser.add_argument("--description", required=True, help="Lowercase noun/verb phrase, for example 'bowed strings'")
+    parser.add_argument("--audio", type=Path)
+    parser.add_argument("--check-environment", action="store_true", help="Check FFmpeg only; no model imports")
+    parser.add_argument("--description", help="Lowercase noun/verb phrase, for example 'bowed strings'")
     parser.add_argument("--anchor", action="append", metavar="START,END", help="Positive time span; may be repeated")
     parser.add_argument("--output-dir", type=Path, default=None)
     parser.add_argument("--model-dir", type=Path, default=None)
@@ -56,7 +90,7 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _parse_anchors(raw: list[str] | None) -> list[list[tuple[str, float, float]]] | None:
+def _parse_anchors(raw: list[str] | None, duration: float) -> list[list[tuple[str, float, float]]] | None:
     if not raw:
         return None
     spans: list[tuple[str, float, float]] = []
@@ -65,14 +99,23 @@ def _parse_anchors(raw: list[str] | None) -> list[list[tuple[str, float, float]]
             start, end = (float(value.strip()) for value in item.split(",", 1))
         except ValueError as error:
             raise ValueError(f"Invalid --anchor {item!r}; expected START,END") from error
-        if start < 0 or end <= start:
-            raise ValueError(f"Invalid --anchor {item!r}; require 0 <= START < END")
+        if not math.isfinite(start) or not math.isfinite(end) or not 0 <= start < end <= duration:
+            raise ValueError(f"Invalid --anchor {item!r}; require finite 0 <= START < END <= audio duration ({duration:g}s)")
         spans.append(("+", start, end))
     return [spans]
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
+    if args.check_environment:
+        try:
+            check_environment()
+        except ValueError as error:
+            _parser().error(str(error))
+        print("FFmpeg environment preflight passed (no model loaded).")
+        return 0
+    if args.audio is None or not args.description:
+        _parser().error("--audio and --description are required for inference/dry-run")
     config = _load_config()
     paths_config = config.get("paths", {})
     inference_config = config.get("inference", {})
@@ -85,12 +128,14 @@ def main(argv: list[str] | None = None) -> int:
     dtype_name = args.dtype or os.getenv("SAM_AUDIO_DTYPE") or inference_config.get("dtype", "auto")
     if dtype_name not in {"auto", "bfloat16", "float32"}:
         _parser().error(f"Unsupported dtype: {dtype_name}")
-    try:
-        anchors = _parse_anchors(args.anchor)
-    except ValueError as error:
-        _parser().error(str(error))
     if not audio.is_file():
         _parser().error(f"Audio file not found: {audio}")
+    try:
+        duration = audio_duration(audio)
+        anchors = _parse_anchors(args.anchor, duration)
+        check_environment()
+    except ValueError as error:
+        _parser().error(str(error))
     required = [model_dir / "checkpoint.pt", model_dir / "config.json", text_encoder_dir / "config.json"]
     missing = [str(path) for path in required if not path.is_file()]
     if missing:
@@ -99,6 +144,7 @@ def main(argv: list[str] | None = None) -> int:
     output_dir = _resolve(args.output_dir) if args.output_dir else PROJECT_ROOT / "runs" / datetime.now().strftime("%Y%m%d-%H%M%S-%f")
     plan = {
         "audio": str(audio),
+        "duration_s": duration,
         "description": args.description,
         "anchors": anchors[0] if anchors else [],
         "model_dir": str(model_dir),

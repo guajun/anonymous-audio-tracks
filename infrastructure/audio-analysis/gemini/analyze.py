@@ -171,8 +171,8 @@ def main(argv: list[str] | None = None) -> int:
         try:
             content: list[dict[str, Any]] = [{"type": "text", "text": prompt_text}]
             inputs = [
-                ("reference (original 10.5-12.0s)", reference),
-                ("full_clip (original 0-30s)", audio),
+                ("reference", reference),
+                ("full_clip", audio),
             ]
             if args.auxiliary:
                 auxiliary = _resolve_path(args.auxiliary)

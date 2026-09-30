@@ -43,8 +43,10 @@ wandb/
 
 # Keep the audio-data contract documented while ignoring the actual media.
 !data/
+/data/*
 !data/README.md
 !data/audio-analysis/
+/data/audio-analysis/*
 !data/audio-analysis/README.md
 *.wav
 *.mp3

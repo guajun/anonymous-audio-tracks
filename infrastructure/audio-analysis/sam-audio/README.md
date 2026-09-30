@@ -11,6 +11,18 @@ Copy-Item config.example.toml config.toml
 uv sync --locked
 ```
 
+### Windows FFmpeg 前置依赖
+
+TorchCodec 支持 FFmpeg 主版本 **4–7**；Windows 必须安装 **full-shared** 构建。static/full 静态构建即使能运行 `ffmpeg.exe`，也不提供 TorchCodec 需要的共享 DLL。解压受信任发行包，把包含 `ffmpeg.exe`、`ffprobe.exe` 和 `avcodec-*.dll`、`avformat-*.dll`、`avutil-*.dll`、`swresample-*.dll` 的 `bin` 目录加入 PATH，重新打开终端。不要仅复制 exe 或把 DLL 放入 Python 包目录。入口会注册该 DLL 搜索目录并持有 `os.add_dll_directory` 句柄，直到进程退出。
+
+不加载 torch/SAM、不用 GPU、不联网的环境预检：
+
+```powershell
+uv run --offline --locked --no-sync --project . python scripts/run_inference.py --check-environment
+```
+
+缺失 exe 或共享 DLL 会给出安装/PATH 操作提示。此预检仅验证前置文件可发现，不保证 TorchCodec ABI 或 CUDA 驱动兼容；真实导入/推理另行验证。
+
 大型权重不受 Git 管理。默认目录是：
 
 ```text
@@ -29,7 +41,7 @@ uv run --project . python scripts/verify_models.py
 
 ## 单独运行推理
 
-只做路径和权重检查，不加载 GPU、不联网：
+dry-run 读取实际音频时长（WAV 等使用 libsndfile，其他支持格式使用 FFprobe），检查有限锚点 `0 <= start < end <= duration`、FFmpeg 环境和三个模型配置/检查点路径，不加载 torch/SAM、不用 GPU、不联网。它**不验证完整 T5 权重/tokenizer 或模型完整性**；完整文件大小/SHA-256 检查必须另运行 `scripts/verify_models.py`：
 
 ```powershell
 uv run --project . python scripts/run_inference.py `
