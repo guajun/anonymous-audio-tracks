@@ -1,0 +1,64 @@
+{
+  "schema": "agentic.toolbox-manifest/v1",
+  "issue": "guajun/anonymous-audio-tracks#29",
+  "parent_issue": "guajun/anonymous-audio-tracks#28",
+  "research_log": "guajun/anonymous-audio-tracks#27",
+  "integration": {
+    "branch": "agentic/issue-29",
+    "pr_base": "agentic/minimal-agent",
+    "docs": ["agentic/toolbox/INSTALL.md", "agentic/toolbox/REPORT.md"],
+    "tests": "agentic/toolbox/tests/test_manifest.py"
+  },
+  "toolbox": {
+    "repository": "guajun/agentic-audio-toolbox",
+    "branch": "agentic/issue-29-sam-toolbox",
+    "pr_base": "main",
+    "pr": "https://github.com/guajun/agentic-audio-toolbox/pull/1",
+    "pin": {
+      "type": "commit",
+      "sha": "dfbc40a9541f686207b65b93b1332bb505654261",
+      "role": "squash-merge-commit",
+      "note": "toolbox PR #1 squash 合并到 main 的 commit；安装即 pin 该 commit（无需正式 release）"
+    },
+    "license": "MIT (wrapper code only)",
+    "cli": {
+      "command": "audio-toolbox",
+      "entry": "skills/sam-audio/scripts/audio_toolbox.py",
+      "schema": "audio-toolbox.sam/v1",
+      "exit_codes": {"0": "success", "2": "usage", "3": "input", "4": "environment", "5": "upstream-failed", "6": "timeout", "7": "output"}
+    }
+  },
+  "skill": {
+    "name": "sam-audio",
+    "path": "skills/sam-audio",
+    "install": {
+      "command": "gh skill install guajun/agentic-audio-toolbox sam-audio --agent pi --scope project --pin dfbc40a9541f686207b65b93b1332bb505654261",
+      "agent": "pi",
+      "scope": "project",
+      "pin": "dfbc40a9541f686207b65b93b1332bb505654261",
+      "verified": true
+    },
+    "self_contained": true,
+    "discovery_verified": true
+  },
+  "sam_source": {
+    "repository": "guajun/anonymous-audio-tracks",
+    "branch": "infra/audio-analysis-migration",
+    "path": "infrastructure/audio-analysis/sam-audio",
+    "commit": "c603de8794cc16880dc01be0f1e868f6c2845417",
+    "entry": "scripts/run_inference.py",
+    "pr": "https://github.com/guajun/anonymous-audio-tracks/pull/26",
+    "license": "Meta SAM License (upstream SAM-LICENSE.txt; not redistributed by the toolbox)",
+    "weights": {
+      "distributed": false,
+      "local_layout": ["model-cache/sam-audio-small/checkpoint.pt", "model-cache/sam-audio-small/config.json", "model-cache/t5-base/model.safetensors", "model-cache/t5-base/config.json"],
+      "integrity": "upstream model-manifest.json (bytes + SHA-256) checked by upstream scripts/verify_models.py; never downloaded automatically"
+    }
+  },
+  "constraints": {
+    "network": "disabled (HF_HUB_OFFLINE=1, TRANSFORMERS_OFFLINE=1 for upstream calls)",
+    "gpu_inference": "deferred to guajun/anonymous-audio-tracks#33",
+    "no_weights_audio_keys_paths_in_git": true,
+    "root_lockfiles_touched": false
+  }
+}
