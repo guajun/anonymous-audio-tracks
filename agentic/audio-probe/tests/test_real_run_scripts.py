@@ -79,6 +79,47 @@ class TestRealRunScriptsWithFakePi:
         assert proc.returncode == 0, proc.stderr
         assert (out_dir / "bridge-events.jsonl").exists()
 
+    @pytest.mark.parametrize("mode", ["empty", "garbled", "incomplete"])
+    def test_event_stream_never_counts_as_success(self, tmp_path: Path, mode: str) -> None:
+        """Empty/garbled/incomplete streams must fail (exit 6), preserving
+        artifacts, instead of passing as a successful model completion."""
+        proc, out_dir = run_script("run_real_native.sh", tmp_path, mode)
+        assert proc.returncode == 6, proc.stdout + proc.stderr
+        assert (out_dir / "native-events.jsonl").exists(), "failed artifacts preserved"
+
+
+class TestTimeoutValidation:
+    @pytest.mark.parametrize("bad", ["0", "-1", "nan", "inf", "-inf"])
+    def test_nonpositive_or_nonfinite_timeout_rejected(self, tmp_path: Path, bad: str) -> None:
+        env = os.environ.copy()
+        proc = subprocess.run(
+            [sys.executable, "probe/run_bounded.py", "--timeout", bad,
+             "--stdout", str(tmp_path / "o"), "--stderr", str(tmp_path / "e"),
+             "--", sys.executable, "-c", "print('should not run')"],
+            cwd=BASE,
+            env=env,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=60,
+        )
+        assert proc.returncode == 2, proc.stdout + proc.stderr
+        assert not (tmp_path / "o").exists() or (tmp_path / "o").stat().st_size == 0
+
+    def test_missing_timeout_rejected(self, tmp_path: Path) -> None:
+        proc = subprocess.run(
+            [sys.executable, "probe/run_bounded.py", "--stdout", str(tmp_path / "o"),
+             "--stderr", str(tmp_path / "e"), "--", sys.executable, "-c", "print(1)"],
+            cwd=BASE,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=60,
+        )
+        assert proc.returncode == 2
+
 
 class TestProviderFailureScan:
     def test_scan_detects_stop_reason_and_error_message(self, tmp_path: Path) -> None:
@@ -115,3 +156,22 @@ class TestProviderFailureScan:
         assert run_bounded.EXIT_COMMAND_FAILED == 3
         assert run_bounded.EXIT_TIMEOUT == 4
         assert run_bounded.EXIT_PROVIDER_ERROR == 5
+        assert run_bounded.EXIT_INCOMPLETE_EVENTS == 6
+
+    def test_terminal_success_requires_final_stop(self, tmp_path: Path) -> None:
+        import run_bounded
+
+        def write(name: str, records) -> Path:
+            path = tmp_path / name
+            path.write_text("\n".join(json.dumps(r) for r in records), encoding="utf-8")
+            return path
+
+        assistant = lambda stop: {"type": "message_end", "message": {"role": "assistant", "stopReason": stop}}
+
+        assert run_bounded.has_terminal_success(write("ok.jsonl", [assistant("toolUse"), assistant("stop")]))
+        assert not run_bounded.has_terminal_success(write("empty.jsonl", []))
+        assert not run_bounded.has_terminal_success(write("incomplete.jsonl", [assistant("toolUse")]))
+        garbled = tmp_path / "garbled.jsonl"
+        garbled.write_text("not json {{{", encoding="utf-8")
+        assert not run_bounded.has_terminal_success(garbled)
+        assert not run_bounded.has_terminal_success(tmp_path / "missing.jsonl")

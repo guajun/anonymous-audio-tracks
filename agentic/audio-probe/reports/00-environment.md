@@ -37,7 +37,15 @@ google      gemini-3.8-flash                           1.0M     65.5K    yes    
 真实调用预算：**2 次 Pi run**；每次 Pi run **不是**一次模型调用——两次 run 各含 **2 个 assistant
 requests**（tool-use 轮 + 最终轮），合计 4 个 assistant requests。脚本经 `probe/run_bounded.py`
 加硬超时（默认 300s，可 `AUDIO_PROBE_TIMEOUT` 调整）、失败/超时保留产物并以非零退出、
-且能识别 Pi 退出 0 但事件流含 provider error/aborted 的失败（退出码 5）；不重试循环。
+且能识别 Pi 退出 0 但事件流含 provider error/aborted 的失败（退出码 5）与空/乱码/不完整事件流
+（退出码 6，无成功终态 assistant 消息不计入成功）；`--timeout` 非有限正数拒绝（退出 2）；不重试循环。
+
+启动方式（review round 2 修复）：`pi …` 由 `probe/pi_launcher.py` 解析为**原生进程**
+（Node + 安装元数据 `install/current-version` → `releases/<v>/…/pi-coding-agent` →
+`package.json bin.pi` = `dist/bundle/cli.js`，与 Pi 自带 `pi-launcher.js` 同源校验），
+不走 shell shim（Windows 下 Python 无法直接执行 shim）、无 shell 字符串（argv 含空格/中文
+原样传递）、超时直接杀真实 Pi 进程；`pi --version` 实机冒烟（零 API）见 `tests/test_pi_launcher.py`。
+Node 版本下限按 Pi 自身 `engines`：**≥ 22.19.0**。
 
 ## 实测用量（取自两次真实 run 的事件流 `usage`，非估算）
 

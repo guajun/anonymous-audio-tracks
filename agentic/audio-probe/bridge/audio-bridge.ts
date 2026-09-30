@@ -35,9 +35,11 @@
  *
  * MODEL GUARANTEE:
  *   Attachment and injection only proceed when the active model is exactly
- *   `google/gemini-3.8-flash` (research model fixed by issue #30). Any other
- *   provider/model is refused with E_AUDIO_MODEL; queued audio is dropped
- *   (never injected) if the model changes before injection.
+ *   `google/gemini-3.8-flash` (research model fixed by issue #30). The lock is
+ *   a hard constant: NO environment override exists (an inherited env var must
+ *   never silently retarget audio uploads to another provider/model). Any
+ *   other provider/model is refused with E_AUDIO_MODEL; queued audio is
+ *   dropped (never injected) if the model changes before injection.
  *
  * CREDENTIALS:
  *   The extension never touches credentials. The model call is made by Pi
@@ -106,8 +108,8 @@ const AUDIO_ROOT_DEFAULT = fileURLToPath(new URL("../fixtures", import.meta.url)
 /** Cumulative queued raw bytes; base64 adds ~33% on the wire. */
 const DEFAULT_MAX_QUEUE_BYTES = 8 * 1024 * 1024;
 
-/** Research model fixed by issue #30. Override only with documented intent. */
-const EXPECTED_MODEL = (process.env.PI_AUDIO_BRIDGE_MODEL?.trim() || "google/gemini-3.8-flash").split("/");
+/** Research model fixed by issue #30. Hard constant on purpose: no env override. */
+const EXPECTED_MODEL = Object.freeze({ provider: "google", id: "gemini-3.8-flash" });
 
 function audioRoot(): string {
   const override = process.env.PI_AUDIO_BRIDGE_ROOT?.trim();
@@ -120,7 +122,7 @@ function envBytes(name: string, fallback: number): number {
 }
 
 function isExpectedModel(model: { provider?: string; id?: string } | undefined): boolean {
-  return model?.provider === EXPECTED_MODEL[0] && model?.id === EXPECTED_MODEL[1];
+  return model?.provider === EXPECTED_MODEL.provider && model?.id === EXPECTED_MODEL.id;
 }
 
 export default function audioBridgeExtension(pi: ExtensionAPI) {
@@ -166,7 +168,7 @@ export default function audioBridgeExtension(pi: ExtensionAPI) {
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       // 1. Model guarantee: only the fixed research model may receive audio.
       if (!isExpectedModel(ctx?.model)) {
-        throw fail(ERROR_CODES.MODEL, `audio bridge is restricted to ${EXPECTED_MODEL.join("/")}`);
+        throw fail(ERROR_CODES.MODEL, `audio bridge is restricted to ${EXPECTED_MODEL.provider}/${EXPECTED_MODEL.id}`);
       }
       if (typeof params?.path !== "string") {
         throw fail(ERROR_CODES.ARGS, "path must be a string");

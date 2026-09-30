@@ -18,6 +18,12 @@ import { join, sep } from "node:path";
 const GOOD_MODEL = { provider: "google", id: "gemini-3.8-flash" };
 const BAD_MODEL = { provider: "openrouter", id: "google/gemini-3.8-flash" };
 
+// Conflicting inherited env must NEVER unlock another provider/model
+// (review round 2, blocker 2): the model lock is a hard constant.
+process.env.PI_AUDIO_BRIDGE_MODEL = "openrouter/evil-model";
+process.env.PI_PROVIDER = "openrouter";
+process.env.PI_MODEL = "evil-model";
+
 // Real WAV-sniffable bytes (RIFF....WAVE), padded so base64 is long.
 const wavBytes = (fill) =>
   Buffer.concat([Buffer.from("RIFF"), Buffer.alloc(4), Buffer.from("WAVEfmt "), Buffer.alloc(256, fill)]);
@@ -120,6 +126,15 @@ assert.equal(dropped.length, 0, "must not inject into another model");
 const afterDrop = { messages: [] };
 assert.equal((await runContext(afterDrop, GOOD_MODEL)).length, 0, "queue cleared on drop");
 console.log("OK model restriction (attach + injection)");
+
+// --- 3b. conflicting env cannot unlock another provider/model -------------
+await expectFail("E_AUDIO_MODEL", () =>
+  attach("t3b", { path: "a.wav" }, undefined, undefined, ctxFor({ provider: "openrouter", id: "evil-model" })),
+);
+const stillWorks = await attach("t3c", { path: "b.wav" }, undefined, undefined, ctxFor(GOOD_MODEL));
+assert.equal(JSON.parse(stillWorks.content[0].text).attached, "b.wav", "fixed model still works despite env noise");
+await runContext({ messages: [] }, GOOD_MODEL); // drain before queue-budget scenarios
+console.log("OK conflicting env cannot unlock model lock");
 
 // --- 4. failed inputs ------------------------------------------------------
 await expectFail("E_AUDIO_NOT_FOUND", () =>

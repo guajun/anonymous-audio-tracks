@@ -16,8 +16,9 @@
 ## 50.2 桥接（bridge）限制 — 下游 workspace 必读
 
 - **一次性注入**：每个附件只注入紧随工具调用的下一次模型请求；同一 run 后续请求不重发。
-- **模型锁定**：attach 与注入都只对 `google/gemini-3.8-flash` 生效（`PI_AUDIO_BRIDGE_MODEL`，
-  默认即该模型）；其他 provider/model 以 `E_AUDIO_MODEL` 拒绝，模型切换前的残留音频会被丢弃而非注入。
+- **模型锁定**：attach 与注入都只对 `google/gemini-3.8-flash` 生效（**硬编码常量**，无任何
+  环境变量覆盖；继承的 `PI_AUDIO_BRIDGE_MODEL`/`PI_MODEL`/`PI_PROVIDER` 不能解锁或改投
+  其他模型，已测）；其他 provider/model 以 `E_AUDIO_MODEL` 拒绝，模型切换前的残留音频会被丢弃而非注入。
 - **大小/路径/队列受控**：单文件 ≤4 MiB（`PI_AUDIO_BRIDGE_MAX_BYTES`），**排队总量 ≤8 MiB raw**
   （`PI_AUDIO_BRIDGE_MAX_QUEUE_BYTES`；base64 体积 +33%，仍低于目录声明的 20 MiB inline 上限），
   读取后按 `raw.length` 复核；仅限受控根目录（`PI_AUDIO_BRIDGE_ROOT`），realpath 防符号链接逃逸。
@@ -36,7 +37,9 @@
   cost 0.0518；bridge 3,237 totalTokens / cost 0.0053。费用为 Pi 从 provider usage 元数据记账的
   USD 近似值，非账单真值；不作“费用可忽略”式断言。离线测试/探针 0 次调用。
 - 调用边界：脚本经 `probe/run_bounded.py` 硬超时（默认 300s），失败/超时保留产物、非零退出，
-  并识别 Pi 退出 0 但事件流含 provider error/aborted 的失败；不重试循环。
+  并识别 Pi 退出 0 但事件流含 provider error/aborted 的失败（退 5）及空/乱码/不完整事件流
+  （退 6）；`pi …` 经 `probe/pi_launcher.py` 解析为原生 Node+CLI 入口进程（超时杀到真实 Pi）；
+  不重试循环。
 - 上传边界：仅本任务自产 fixture（允许上传给 Google API 做分析）；**不上传**私有音频/模型/key/完整会话。
 - 传输形态：请求内联 `inlineData`；**不用 Gemini Files API**，因此**无服务端临时文件、无需删除**；
   本地清理：`python probe/clean_fixtures.py --yes`（fixtures/、tmp/ 均 gitignored）。
@@ -45,11 +48,13 @@
 
 ## 50.4 自动化测试（mock/offline，与真实证据分开）
 
-- 命令：`uv run pytest agentic/audio-probe/tests -v`；结果：**22 passed**（2026-09-30）。
+- 命令：`uv run pytest agentic/audio-probe/tests -v`；结果：**38 passed**（2026-09-30）。
 - 覆盖：fixture 真值（过零率估计音高方向）、bridge 校验逻辑（MIME/大小/队列/路径逃逸/错误码与路径泄漏）、
-  **extension 级 mock 测试**（mock Pi registry/context：多附件、一次性注入、模型锁定、
+  **extension 级 mock 测试**（mock Pi registry/context：多附件、一次性注入、模型锁定+冲突环境变量不可解锁、
   失败输入、生命周期清理、不落转录）、payload 形状（含 `inlineData.mimeType="audio/wav"` 且 base64 脱敏）、
-  原生路径拒绝音频、**fake pi 回归**（run_real_*.sh 的成功/失败/挂起/provider-error 四态与退出码）、
+  原生路径拒绝音频、**launcher 回归**（安装元数据解析、argv 含空格/中文边界、恶意 current-version 拒绝、
+  超时杀真实进程、**实际 `pi --version` 冒烟（零 API）**）、**fake pi 回归**（run_real_*.sh 的
+  成功/失败/挂起/provider-error/空/乱码/不完整七态与退出码）、超时参数校验、
   脱敏器（先脱敏后截断、JSON 转义路径、repo 根路径、越界路径）。
 - 真实模型证据**不在**自动测试内（避免 CI 发真实调用）；两者在 README/报告中分栏标注。
 

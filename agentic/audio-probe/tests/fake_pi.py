@@ -11,6 +11,16 @@ runners (`probe/run_real_*.sh` + `probe/run_bounded.py`) WITHOUT any API call:
 
 `auth ...` subcommands always answer `{"status":"ready",...}` quickly so the
 scripts' auth pre-check does not interfere with the mode under test.
+
+Modes (see tests/test_real_run_scripts.py):
+
+    FAKE_PI_MODE=ok          valid event stream ending in a terminal "stop", exit 0
+    FAKE_PI_MODE=fail        stderr message, exit 3
+    FAKE_PI_MODE=hang        sleep far beyond any timeout (runner must kill)
+    FAKE_PI_MODE=error_event Pi exits 0 but the stream reports a provider error
+    FAKE_PI_MODE=empty       no output at all (incomplete stream)
+    FAKE_PI_MODE=garbled     non-JSON output (garbled stream)
+    FAKE_PI_MODE=incomplete  only a tool-use assistant message (no terminal stop)
 """
 from __future__ import annotations
 
@@ -53,6 +63,29 @@ def main() -> int:
                     "stopReason": "error",
                     "errorMessage": "fake provider unavailable",
                     "content": [{"type": "text", "text": "(failed)"}],
+                    "timestamp": 1,
+                },
+            }
+        )
+        return 0
+
+    if mode == "empty":
+        return 0
+
+    if mode == "garbled":
+        print("this is not json {{{ and not an event")
+        return 0
+
+    if mode == "incomplete":
+        event(
+            {
+                "type": "message_end",
+                "message": {
+                    "role": "assistant",
+                    "provider": "google",
+                    "model": "gemini-3.8-flash",
+                    "stopReason": "toolUse",
+                    "content": [{"type": "text", "text": "fake tool turn, stream ends here"}],
                     "timestamp": 1,
                 },
             }

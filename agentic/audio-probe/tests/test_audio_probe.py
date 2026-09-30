@@ -23,6 +23,18 @@ sys.path.insert(0, str(BASE / "probe"))
 NODE = shutil.which("node")
 
 
+def node_version_tuple() -> tuple[int, int]:
+    if NODE is None:
+        return (0, 0)
+    try:
+        out = subprocess.run(
+            [NODE, "--version"], capture_output=True, text=True, encoding="utf-8", timeout=30
+        )
+        return tuple(int(x) for x in out.stdout.strip().lstrip("v").split(".")[:2])
+    except Exception:
+        return (0, 0)
+
+
 def run_node(*args: str) -> subprocess.CompletedProcess:
     assert NODE, "node not available"
     return subprocess.run(
@@ -112,12 +124,18 @@ class TestExtensionMock:
     def test_extension_harness(self) -> None:
         if NODE is None:
             pytest.skip("node not available")
+        if node_version_tuple() < (22, 18):
+            pytest.skip(
+                "extension harness loads .ts directly and needs Node >= 22.18 "
+                "(Pi itself requires Node >= 22.19)"
+            )
         proc = run_node("tests/node_extension_harness.mjs")
         assert proc.returncode == 0, proc.stderr
         for marker in (
             "OK happy attach",
             "OK multiple attachments + one-shot injection",
             "OK model restriction",
+            "OK conflicting env cannot unlock model lock",
             "OK failed inputs",
             "OK lifecycle clear boundaries",
             "OK no transcript persistence",

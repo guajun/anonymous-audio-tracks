@@ -56,5 +56,8 @@ or whether the pitch goes up, down, or stays level.
 - 备注：`@file` 与消息必须是**两个 argv**（`-- "@x.wav" "消息"`）；首次运行因合成一个参数报
   `File not found: …fixture-a.wav Use the read tool…`，已修正脚本并保留该 stderr 于 tmp/（属本地脚本错误，非 blocked）。
   该修正之后，`probe/run_real_*.sh` 均经 `probe/run_bounded.py` 加硬超时（默认 300s）并以退出码
-  区分：0 成功 / 3 命令失败 / 4 超时 / 5 事件流含 provider error 或 aborted（即使 Pi 退出 0）；
-  失败/超时均保留事件流与 stderr 产物；失败语义已用 fake pi 离线回归（`tests/test_real_run_scripts.py`，无 API 调用）。
+  区分：0 成功 / 3 命令失败或无法启动 / 4 超时 / 5 事件流含 provider error 或 aborted（即使 Pi 退出 0）/
+  6 事件流空/乱码/不完整（无成功终态 assistant 消息不计成功）；`pi …` 经 `probe/pi_launcher.py`
+  解析为原生 Node+CLI 入口进程（argv 保真、超时杀到真实 Pi）；失败/超时均保留事件流与 stderr 产物；
+  失败语义已用 fake pi 离线回归（`tests/test_real_run_scripts.py`，无 API 调用），
+  并有实际 `pi --version` 冒烟（零 API，`tests/test_pi_launcher.py`）。

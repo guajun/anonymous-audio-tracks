@@ -35,8 +35,13 @@
 - Windows / git-bash 已验证；需要：
   - `pi` **0.87.1**（`pi --version`），Google provider 认证已就绪
     （`pi auth check --provider google --json` 只输出 `{"status":"ready",...}`，**不打印 key**）；
-  - Node ≥ 20（离线探针执行 Pi 自带 JS 模块）；
+  - Node **≥ 22.19.0**（Pi 自身 `package.json` `engines` 声明的最低版本；离线 extension 测试
+    直载 `.ts` 依赖同一版本线的内建 type stripping，Node ≥ 22.18 默认开启，低于则自动 skip）；
   - Python 3.12+（本仓库 `uv run pytest` 即可，未改根 `pyproject.toml`/`uv.lock`）。
+- 真实运行的启动方式：`probe/run_bounded.py` 把 `pi …` 解析为**原生进程**（Node + 安装元数据
+  指向的 CLI 入口 `dist/bundle/cli.js`，与 Pi 自带 `pi-launcher.js` 同源逻辑），不走 shell shim、
+  不拼 shell 字符串（含空格的路径/提示词按 argv 原样传递），超时直接杀到真实 Pi 进程。
+  `pi --version` 实机冒烟（零 API）在 `tests/test_pi_launcher.py` 中执行。
 - 不修改任何全局配置/全局扩展；桥接只经 `pi --extension ./bridge/audio-bridge.ts` 显式加载。
 
 ## 3. 离线测试（mock，不发任何网络请求、不花钱）
@@ -46,11 +51,13 @@ cd agentic/audio-probe
 uv run pytest tests -v          # 或在仓库根: uv run pytest agentic/audio-probe/tests -v
 ```
 
-成功判据：`22 passed`。测试内容：fixture 真值（过零率估计音高方向）、bridge 校验逻辑（MIME/大小/
+成功判据：`38 passed`。测试内容：fixture 真值（过零率估计音高方向）、bridge 校验逻辑（MIME/大小/
 队列/路径逃逸/错误码与路径泄漏）、**extension 级 mock 测试**（mock Pi registry/context：多附件、
-一次性注入、模型锁定、失败输入、生命周期清理、不落转录）、payload 形状（必须含
-`inlineData.mimeType="audio/wav"` 且 base64 被脱敏）、原生路径必须拒绝音频、**fake-pi 回归**
-（`run_real_*.sh` 的成功/失败/挂起/provider-error 四态，不发任何 API 调用）、脱敏器
+一次性注入、模型锁定+冲突环境变量不可解锁、失败输入、生命周期清理、不落转录）、payload 形状
+（必须含 `inlineData.mimeType="audio/wav"` 且 base64 被脱敏）、原生路径必须拒绝音频、
+**launcher 回归**（安装元数据解析、argv 含空格/中文边界、恶意 current-version 拒绝、超时杀真实进程、
+**实际 `pi --version` 冒烟（零 API）**）、**fake-pi 回归**（`run_real_*.sh` 的
+成功/失败/挂起/provider-error/空/乱码/不完整七态，不发任何 API 调用）、超时参数校验、脱敏器
 （先脱敏后截断、JSON 转义路径、repo 根路径）。
 
 ## 4. 离线探针（复现“原生为什么不支持”“payload 长什么样”）
@@ -81,9 +88,10 @@ python probe/extract_evidence.py tmp/bridge-events.jsonl   # 脱敏查看
   调用；实测用量见 `reports/00-environment.md`（native 66,154 totalTokens/记账 0.0518，
   bridge 3,237/0.0053；为 Pi 记账近似值，非账单真值）。
 - **失败语义**（经 `probe/run_bounded.py`）：硬超时默认 300s（`AUDIO_PROBE_TIMEOUT` 可调，
-  超时杀进程并退出 4）；命令失败退出 3；**Pi 退出 0 但事件流含 provider error/aborted 也判失败**
-  （退出 5）；失败/超时均保留事件流与 stderr 产物；不重试循环。该语义由 fake-pi 测试离线回归
-  （`tests/test_real_run_scripts.py`）。
+  超时杀进程并退出 4）；命令失败/无法启动退出 3；**Pi 退出 0 但事件流含 provider error/aborted
+  也判失败**（退出 5）；**事件流为空/乱码/不完整（无成功的终态 assistant 消息）不计入成功**（退出 6）；
+  `--timeout` 非有限正数直接拒绝（退出 2）；失败/超时均保留事件流与 stderr 产物；不重试循环。
+  该语义由 fake-pi 测试离线回归（`tests/test_real_run_scripts.py`）。
 - 成功判据（bridge）：模型对 `fixture-a.wav` 判 "pitch goes up"、对 `fixture-b.wav` 判 "pitch goes down"
   （与 `probe/make_fixture.py` 构造真值一致）。音高**方向**是可核对的定性判断；**不**主张
   时间戳/事件计数级别的真值准确度。
@@ -134,6 +142,8 @@ python probe/extract_evidence.py tmp/bridge-events.jsonl   # 脱敏查看
 - **一次性注入**：每个附件只注入紧随其后的一次模型请求；同一 run 后续请求不重发字节。
 - **模型锁定**：attach 与注入只对 `google/gemini-3.8-flash` 生效；其他 provider/model 报
   `E_AUDIO_MODEL` 拒绝，模型切换前的残留音频被丢弃而非注入。
+  锁定是**硬编码常量**（`bridge/audio-bridge.ts` 的 `EXPECTED_MODEL`），**无任何环境变量覆盖**——
+  继承的 `PI_AUDIO_BRIDGE_MODEL`/`PI_MODEL`/`PI_PROVIDER` 均不能解锁或改投其他模型（已测）。
 - **大小/队列预算**：单文件 ≤4 MiB、排队总量 ≤8 MiB raw（base64 +33% 仍低于 20 MiB inline 上限），
   读取后按 `raw.length` 复核。
 - **生命周期**：排队音频在 `session_start`/`session_shutdown`/`agent_settled` 清空，不跨会话、
@@ -159,8 +169,8 @@ pi --extension ./bridge/audio-bridge.ts --tools audio_attach \
   E_AUDIO_SIZE / E_AUDIO_QUEUE / E_AUDIO_MIME / E_AUDIO_READ / E_AUDIO_MODEL`。
 - 环境变量：`PI_AUDIO_BRIDGE_ROOT`（受控根目录，默认 `agentic/audio-probe/fixtures`）、
   `PI_AUDIO_BRIDGE_MAX_BYTES`（单文件，默认 4 MiB）、`PI_AUDIO_BRIDGE_MAX_QUEUE_BYTES`
-  （排队总量，默认 8 MiB）、`PI_AUDIO_BRIDGE_MODEL`（默认 `google/gemini-3.8-flash`，
-  变更即超出本接口保证范围）。
+  （排队总量，默认 8 MiB）。目标模型**无配置项**：固定 `google/gemini-3.8-flash` 硬编码常量，
+  不提供任何环境变量/设置覆盖（研究口径固定模型，防止音频改投其他 provider）。
 - 行为约定：工具只负责校验+排队；真正的音频注入发生在 `context` 事件，一次性、不落 session、
   生命周期边界自动清空。
 - 该接口在本 PR 内冻结；变更需在 reports/ 记录。
@@ -177,6 +187,8 @@ pi --extension ./bridge/audio-bridge.ts --tools audio_attach \
 | `Pi installation not found`（node 探针） | 未找到 pi 安装 | 设 `PI_INSTALL_DIR` 指向 `@earendil-works/pi-coding-agent` |
 | `run_bounded: TIMEOUT…`（退出 4） | 真实运行超过 `AUDIO_PROBE_TIMEOUT` | 看保留的产物，报 blocked，**不要**无限重试 |
 | `run_bounded: provider failure detected…`（退出 5） | Pi 退出 0 但事件流含 error/aborted | 按失败留证并报 blocked，**不要**换模型 |
+| `run_bounded: event stream empty/garbled/incomplete…`（退出 6） | 事件流无成功终态 assistant 消息 | 按失败留证，不得计为成功 |
+| `run_bounded: --timeout must be a finite positive number`（退出 2） | 传了 0/负数/NaN/Inf | 用有限正数秒数 |
 
 ## 11. 证据索引
 
