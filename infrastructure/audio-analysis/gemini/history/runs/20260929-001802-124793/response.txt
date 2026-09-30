@@ -1,0 +1,391 @@
+```json
+{
+  "schema": "anonymous-audio-tracks/v1",
+  "audio_access": true,
+  "target_identified": true,
+  "clip_start_in_original_s": 0.0,
+  "duration_s": 30.0,
+  "reference_assessment": {
+    "description_zh": "低沉且带有音高延音与滑音特性的电子合成低音/808重低音（synth bass / 808 glide）。",
+    "onset_in_full_clip_s": 11.25,
+    "distinction_from_drum_zh": "鼓声（底鼓与军鼓）具有极短促明锐的打击瞬态冲击；而目标声音是延音明显、富有低频振动感且带有滑音变化的合成器贝斯线条，在11.0秒附近的鼓击后于11.25秒重新起音。"
+  },
+  "sources": [
+    {
+      "id": "S1",
+      "description_zh": "贯穿全曲的电子合成器滑音重低音（808 synth bass），在前奏中作为弱拍重音出现，在副歌Drop段落中以切分律动主导低频铺底。",
+      "sam_text_prompt": "synth bass",
+      "identity_confidence": 0.95,
+      "active_intervals": [
+        {
+          "start_s": 1.12,
+          "end_s": 1.85,
+          "confidence": 0.9,
+          "timing_uncertainty_ms": 30
+        },
+        {
+          "start_s": 2.62,
+          "end_s": 3.35,
+          "confidence": 0.9,
+          "timing_uncertainty_ms": 30
+        },
+        {
+          "start_s": 4.12,
+          "end_s": 4.85,
+          "confidence": 0.9,
+          "timing_uncertainty_ms": 30
+        },
+        {
+          "start_s": 5.62,
+          "end_s": 6.35,
+          "confidence": 0.9,
+          "timing_uncertainty_ms": 30
+        },
+        {
+          "start_s": 7.12,
+          "end_s": 7.85,
+          "confidence": 0.9,
+          "timing_uncertainty_ms": 30
+        },
+        {
+          "start_s": 8.62,
+          "end_s": 9.35,
+          "confidence": 0.9,
+          "timing_uncertainty_ms": 30
+        },
+        {
+          "start_s": 10.12,
+          "end_s": 10.85,
+          "confidence": 0.9,
+          "timing_uncertainty_ms": 30
+        },
+        {
+          "start_s": 11.25,
+          "end_s": 12.0,
+          "confidence": 0.95,
+          "timing_uncertainty_ms": 25
+        },
+        {
+          "start_s": 13.5,
+          "end_s": 14.15,
+          "confidence": 0.95,
+          "timing_uncertainty_ms": 25
+        },
+        {
+          "start_s": 14.25,
+          "end_s": 14.75,
+          "confidence": 0.92,
+          "timing_uncertainty_ms": 30
+        },
+        {
+          "start_s": 14.81,
+          "end_s": 15.65,
+          "confidence": 0.92,
+          "timing_uncertainty_ms": 30
+        },
+        {
+          "start_s": 15.75,
+          "end_s": 16.45,
+          "confidence": 0.95,
+          "timing_uncertainty_ms": 25
+        },
+        {
+          "start_s": 16.5,
+          "end_s": 17.15,
+          "confidence": 0.95,
+          "timing_uncertainty_ms": 25
+        },
+        {
+          "start_s": 17.25,
+          "end_s": 17.75,
+          "confidence": 0.92,
+          "timing_uncertainty_ms": 30
+        },
+        {
+          "start_s": 17.81,
+          "end_s": 18.65,
+          "confidence": 0.92,
+          "timing_uncertainty_ms": 30
+        },
+        {
+          "start_s": 18.75,
+          "end_s": 19.45,
+          "confidence": 0.95,
+          "timing_uncertainty_ms": 25
+        },
+        {
+          "start_s": 19.5,
+          "end_s": 20.15,
+          "confidence": 0.95,
+          "timing_uncertainty_ms": 25
+        },
+        {
+          "start_s": 20.25,
+          "end_s": 20.75,
+          "confidence": 0.92,
+          "timing_uncertainty_ms": 30
+        },
+        {
+          "start_s": 20.81,
+          "end_s": 21.65,
+          "confidence": 0.92,
+          "timing_uncertainty_ms": 30
+        },
+        {
+          "start_s": 21.75,
+          "end_s": 22.45,
+          "confidence": 0.95,
+          "timing_uncertainty_ms": 25
+        },
+        {
+          "start_s": 22.5,
+          "end_s": 23.15,
+          "confidence": 0.95,
+          "timing_uncertainty_ms": 25
+        },
+        {
+          "start_s": 23.25,
+          "end_s": 23.75,
+          "confidence": 0.92,
+          "timing_uncertainty_ms": 30
+        },
+        {
+          "start_s": 23.81,
+          "end_s": 24.65,
+          "confidence": 0.92,
+          "timing_uncertainty_ms": 30
+        },
+        {
+          "start_s": 24.75,
+          "end_s": 25.45,
+          "confidence": 0.95,
+          "timing_uncertainty_ms": 25
+        },
+        {
+          "start_s": 25.5,
+          "end_s": 26.15,
+          "confidence": 0.95,
+          "timing_uncertainty_ms": 25
+        },
+        {
+          "start_s": 26.25,
+          "end_s": 26.75,
+          "confidence": 0.92,
+          "timing_uncertainty_ms": 30
+        },
+        {
+          "start_s": 26.81,
+          "end_s": 27.65,
+          "confidence": 0.92,
+          "timing_uncertainty_ms": 30
+        },
+        {
+          "start_s": 27.75,
+          "end_s": 28.45,
+          "confidence": 0.95,
+          "timing_uncertainty_ms": 25
+        },
+        {
+          "start_s": 28.5,
+          "end_s": 29.15,
+          "confidence": 0.95,
+          "timing_uncertainty_ms": 25
+        },
+        {
+          "start_s": 29.25,
+          "end_s": 29.75,
+          "confidence": 0.92,
+          "timing_uncertainty_ms": 30
+        },
+        {
+          "start_s": 29.81,
+          "end_s": 30.0,
+          "confidence": 0.9,
+          "timing_uncertainty_ms": 35
+        }
+      ],
+      "onsets": [
+        {
+          "time_s": 1.12,
+          "confidence": 0.9,
+          "timing_uncertainty_ms": 30
+        },
+        {
+          "time_s": 2.62,
+          "confidence": 0.9,
+          "timing_uncertainty_ms": 30
+        },
+        {
+          "time_s": 4.12,
+          "confidence": 0.9,
+          "timing_uncertainty_ms": 30
+        },
+        {
+          "time_s": 5.62,
+          "confidence": 0.9,
+          "timing_uncertainty_ms": 30
+        },
+        {
+          "time_s": 7.12,
+          "confidence": 0.9,
+          "timing_uncertainty_ms": 30
+        },
+        {
+          "time_s": 8.62,
+          "confidence": 0.9,
+          "timing_uncertainty_ms": 30
+        },
+        {
+          "time_s": 10.12,
+          "confidence": 0.9,
+          "timing_uncertainty_ms": 30
+        },
+        {
+          "time_s": 11.25,
+          "confidence": 0.95,
+          "timing_uncertainty_ms": 25
+        },
+        {
+          "time_s": 13.5,
+          "confidence": 0.95,
+          "timing_uncertainty_ms": 25
+        },
+        {
+          "time_s": 14.25,
+          "confidence": 0.92,
+          "timing_uncertainty_ms": 30
+        },
+        {
+          "time_s": 14.81,
+          "confidence": 0.92,
+          "timing_uncertainty_ms": 30
+        },
+        {
+          "time_s": 15.75,
+          "confidence": 0.95,
+          "timing_uncertainty_ms": 25
+        },
+        {
+          "time_s": 16.5,
+          "confidence": 0.95,
+          "timing_uncertainty_ms": 25
+        },
+        {
+          "time_s": 17.25,
+          "confidence": 0.92,
+          "timing_uncertainty_ms": 30
+        },
+        {
+          "time_s": 17.81,
+          "confidence": 0.92,
+          "timing_uncertainty_ms": 30
+        },
+        {
+          "time_s": 18.75,
+          "confidence": 0.95,
+          "timing_uncertainty_ms": 25
+        },
+        {
+          "time_s": 19.5,
+          "confidence": 0.95,
+          "timing_uncertainty_ms": 25
+        },
+        {
+          "time_s": 20.25,
+          "confidence": 0.92,
+          "timing_uncertainty_ms": 30
+        },
+        {
+          "time_s": 20.81,
+          "confidence": 0.92,
+          "timing_uncertainty_ms": 30
+        },
+        {
+          "time_s": 21.75,
+          "confidence": 0.95,
+          "timing_uncertainty_ms": 25
+        },
+        {
+          "time_s": 22.5,
+          "confidence": 25,
+          "timing_uncertainty_ms": 25
+        },
+        {
+          "time_s": 23.25,
+          "confidence": 0.92,
+          "timing_uncertainty_ms": 30
+        },
+        {
+          "time_s": 23.81,
+          "confidence": 0.92,
+          "timing_uncertainty_ms": 30
+        },
+        {
+          "time_s": 24.75,
+          "confidence": 0.95,
+          "timing_uncertainty_ms": 25
+        },
+        {
+          "time_s": 25.5,
+          "confidence": 0.95,
+          "timing_uncertainty_ms": 25
+        },
+        {
+          "time_s": 26.25,
+          "confidence": 0.92,
+          "timing_uncertainty_ms": 30
+        },
+        {
+          "time_s": 26.81,
+          "confidence": 0.92,
+          "timing_uncertainty_ms": 30
+        },
+        {
+          "time_s": 27.75,
+          "confidence": 0.95,
+          "timing_uncertainty_ms": 25
+        },
+        {
+          "time_s": 28.5,
+          "confidence": 0.95,
+          "timing_uncertainty_ms": 25
+        },
+        {
+          "time_s": 29.25,
+          "confidence": 0.92,
+          "timing_uncertainty_ms": 30
+        },
+        {
+          "time_s": 29.81,
+          "confidence": 0.9,
+          "timing_uncertainty_ms": 35
+        }
+      ],
+      "anchors": [
+        {
+          "start_s": 11.25,
+          "end_s": 12.0,
+          "other_sources_audible": true,
+          "reason_zh": "参考音频对应的核心重现段，伴随鼓击衰减后低音滑音清晰显露。"
+        },
+        {
+          "start_s": 13.5,
+          "end_s": 14.15,
+          "other_sources_audible": true,
+          "reason_zh": "副歌Drop首拍重音，重低音饱满强劲，特征最为突出。"
+        }
+      ],
+      "identity_notes": "该合成贝斯音色在 12.0-13.5 秒过渡段完全静音，在 13.5 秒Drop处再次以更高的声能与更密集的切分音型进入。"
+    }
+  ],
+  "uncertain_regions": [
+    {
+      "start_s": 12.0,
+      "end_s": 13.5,
+      "source_ids": [],
+      "reason_zh": "过渡段（build-up/break），底鼓与重低音均完全停歇切断，只有上升音效与高频铺底。"
+    }
+  ],
+  "limitations": "在副歌紧凑的连续重叠段中，低音音符之间的连音滑音与底鼓超低频瞬态存在部分声学能量重叠，切分音起音时间受低通滤波瞬态影响存在约25-35毫秒的不确定度。"
+}
+```

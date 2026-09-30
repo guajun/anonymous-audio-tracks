@@ -1,0 +1,42 @@
+[project]
+name = "anonymous-audio-sam"
+version = "0.1.0"
+description = "Standalone local SAM Audio inference for anonymous-audio-tracks"
+readme = "README.md"
+requires-python = ">=3.11,<3.14"
+dependencies = [
+    "dacvae@git+https://github.com/facebookresearch/dacvae.git",
+    "audiobox_aesthetics",
+    "einops",
+    "imagebind@git+https://github.com/facebookresearch/ImageBind.git",
+    "laion-clap@git+https://github.com/lematt1991/CLAP.git",
+    "numpy",
+    "perception-models@git+https://github.com/facebookresearch/perception_models@unpin-deps",
+    "pydub",
+    "soundfile>=0.12",
+    "torch==2.10.0+cu130",
+    "torchaudio==2.10.0+cu130",
+    "torchcodec==0.10.0",
+    "torchdiffeq",
+    "torchvision==0.25.0+cu130",
+    "transformers==4.57.6",
+    "huggingface-hub==0.36.2",
+    "xformers @ https://download.pytorch.org/whl/cu130/xformers-0.0.35-py39-none-win_amd64.whl#sha256=517d5a92d0b08393185f02580cf03ad17e9db12d739fc21e790ed1393df85cf4",
+]
+
+[tool.setuptools.packages.find]
+include = ["sam_audio*"]
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[[tool.uv.index]]
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu130" }
+torchaudio = { index = "pytorch-cu130" }
+torchvision = { index = "pytorch-cu130" }

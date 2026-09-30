@@ -1,0 +1,29 @@
+任务：根据听觉参考，在混合音频中跟踪一个匿名声音来源，并定位每次重新起音。这里的身份由参考声音定义，不由乐器名称定义。
+
+本次任务参数：
+- full_clip 时长 30 秒，来自原曲 0 秒起。
+- reference 是 full_clip 的 10.5–12.0 秒裁切。
+- 目标在 full_clip 的 11.3 秒附近清晰可听，对应 reference 的 0.8 秒。
+- 用户定位线索：这一小段约11.0秒的一次鼓击之后，有另一个非鼓声音起音，11.3秒附近听感明显；目标此前也与鼓重叠出现。此信息用于定位参考对象，具体起音和是否纯净需听音频确认。
+仅根据本次实际附带的音频分析；不假设额外提供了分离音频。
+
+通用规则：
+1. 先确认参考中的哪一个声音是目标。若存在多个合理候选且不能区分，target_identified=false，说明歧义，不强行输出完整轨迹。
+2. reference 用于辨认声音。只在 full_clip 中测量时间，所有输出使用 full_clip 起点为零的秒数。参考中声音最明显的时刻不等于其 onset。
+3. 音高、响度、混响、与其他声音重叠程度可以变化，仍可属于同一来源。不要仅因鼓更响而把鼓当目标。无需断言乐器名称。
+4. 区分三件事：是否是同一来源、哪里开始重新发声、持续到哪里。身份可确认但时间无法定位时，可以保留身份结论，把对应区间标为不确定。没有足够时间证据时允许少报，而不是填入估计的规则节拍。
+5. 遍历整个 full_clip，逐段核查局部起音。重复节奏可以作为寻找候选的线索，但最终每个事件都必须由该位置的音频支持。不要根据前两次出现推算后续所有事件。真实等间隔是允许的，不要为了显得不规则而添加抖动。
+6. active_intervals 表示可听到目标的区间，onsets 表示新起音；二者无需一一对应。每个持续时间独立判断，不应默认所有声音等长。未听清的尾部要体现为不确定性。
+7. 不给出固定事件数量、固定密度或强制 BPM；不从提示词里的示例数字生成事件。不得整体缩放时间去匹配预设节拍。
+8. confidence 只作为自评，不是准确率。timing_uncertainty_ms 必须反映真实定位能力。不能定位几十毫秒时，不要把误差固定填成几十毫秒。
+9. 如果提供了机器分离的辅助音频，它只帮助辨认目标，可能漏音、串音或产生伪影。事件是否存在以及具体时间，仍以原始 full_clip 为准。
+10. 完成后核查：是否遗漏参考中明确出现的目标？是否出现了无音频依据的等差序列？是否所有区间机械地等长？若有疑问，重听相关片段或记录 uncertain_regions，不凭空修正成另一条规则序列。
+
+只输出合法 JSON，协议 anonymous-audio-tracks/v1。顶层包含：schema、audio_access（布尔）、target_identified（布尔）、clip_start_in_original_s、duration_s、reference_assessment、sources、uncertain_regions、limitations。
+reference_assessment 包含 description_zh、onset_in_full_clip_s（无法定位可为null）、distinction_from_drum_zh（若没有鼓，可描述与其他干扰的区别）。
+sources 最多一个元素，id 固定 S1，并包含 description_zh、sam_text_prompt（简短英文声音短语）、identity_confidence、active_intervals、onsets、anchors、identity_notes。
+onsets 的每个元素包含 time_s、confidence、timing_uncertainty_ms；按 time_s 递增列出，不用省略号或公式代替事件。
+active_intervals 的每个元素包含 start_s、end_s、confidence、timing_uncertainty_ms。
+anchors 的每个元素包含 start_s、end_s、other_sources_audible、reason_zh。参考时间段不是天然的“纯净、无重叠片段”，必须实际核查。
+uncertain_regions 的每个元素包含 start_s、end_s、source_ids、reason_zh。
+所有时间均在 [0,duration_s] 内。无法访问音频时 audio_access=false、sources=[] 并说明原因；无法确认目标时 target_identified=false、sources=[]。

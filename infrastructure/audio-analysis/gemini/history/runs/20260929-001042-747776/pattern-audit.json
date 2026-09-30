@@ -1,0 +1,27 @@
+{
+  "input": "history\\runs\\20260929-001042-747776\\tracks.json",
+  "sources": [
+    {
+      "id": "S1",
+      "onsets": 20,
+      "inter_onset_gaps_s": {
+        "1.5": 17,
+        "1.52": 1,
+        "1.53": 1
+      },
+      "activity_durations_s": {
+        "0.5": 20
+      },
+      "flags": [
+        "Exact repeated spacing/duration needs audio verification; periodic music may legitimately have these patterns."
+      ],
+      "not_measured": [
+        "missed onsets",
+        "false onsets",
+        "identity correctness",
+        "actual timing error"
+      ]
+    }
+  ],
+  "ground_truth_available": false
+}

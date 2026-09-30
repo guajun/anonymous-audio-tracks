@@ -1,0 +1,9 @@
+# Copy to config.toml for local defaults. Do not put credentials here.
+
+[paths]
+model_dir = "model-cache/sam-audio-small"
+text_encoder_dir = "model-cache/t5-base"
+
+[inference]
+device = "cuda"
+dtype = "bfloat16"

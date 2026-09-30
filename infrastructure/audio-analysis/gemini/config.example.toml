@@ -1,0 +1,12 @@
+# Copy this file to config.toml for machine-local defaults.
+# config.toml is ignored and may contain private absolute paths.
+
+[gemini]
+model = "gemini-3.8-flash"
+duration_s = 30
+runs_dir = "runs"
+
+[paths]
+audio = "../../../data/audio-analysis/breeze/Breeze-first30s.wav"
+reference = "../../../data/audio-analysis/breeze/Breeze-anchor-10.5-12.0.wav"
+prompt = "prompts/prompt-breeze-v2.txt"

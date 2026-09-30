@@ -1,0 +1,65 @@
+[
+  {
+    "repo": "facebook/sam-audio-small",
+    "file": "checkpoint.pt",
+    "bytes": 5100547943,
+    "sha256": "8c44fda9821fd9f2ec8977304e3c0f55290d9eacb6bbf25b4b8fb1f69c2a8c06",
+    "revision": "a625c7481d415f4cada6039516a191590fdb5d3c"
+  },
+  {
+    "repo": "facebook/sam-audio-small",
+    "file": "config.json",
+    "bytes": 2251,
+    "sha256": "50a67c841676043afdd3af6484ef6a1b47e300e36ee24eb3e07c31da8216f47b",
+    "revision": "a625c7481d415f4cada6039516a191590fdb5d3c"
+  },
+  {
+    "repo": "facebook/sam-audio-small",
+    "file": "configuration.json",
+    "bytes": 64,
+    "sha256": "625c81a3527ce4f7a739854b431f380a987dc4af5e07e099b568e50e2e3b248c",
+    "revision": "a625c7481d415f4cada6039516a191590fdb5d3c"
+  },
+  {
+    "repo": "facebook/sam-audio-small",
+    "file": "LICENSE",
+    "bytes": 7353,
+    "sha256": "4dea99bfaa016e21bc860d73f344236bd1e5c4977d1a9a8fd32f822b500ae1be",
+    "revision": "a625c7481d415f4cada6039516a191590fdb5d3c"
+  },
+  {
+    "repo": "facebook/sam-audio-small",
+    "file": "README.md",
+    "bytes": 7273,
+    "sha256": "ed4ca3fa4fefb9d7ebc0803ea5a1cbc85b66fd2f5cc3f50c1f5ec3535a366a87",
+    "revision": "3bfe7db8aae18c7a4a240824e1b9c7438514c29d"
+  },
+  {
+    "repo": "AI-ModelScope/t5-base",
+    "file": "model.safetensors",
+    "bytes": 891646390,
+    "sha256": "a90903540cc02cbeb7ff9f823f1a80eb778c7e22426a0e620b01c77a5ec8f5b4",
+    "revision": "c26028131dd3af528409a2d3b67daa1e1f6932f3"
+  },
+  {
+    "repo": "AI-ModelScope/t5-base",
+    "file": "config.json",
+    "bytes": 1208,
+    "sha256": "46dd7cb62d29c81fb551e0ef1ea274c24a46ba441eeb948897706252933df033",
+    "revision": "c26028131dd3af528409a2d3b67daa1e1f6932f3"
+  },
+  {
+    "repo": "AI-ModelScope/t5-base",
+    "file": "spiece.model",
+    "bytes": 791656,
+    "sha256": "d60acb128cf7b7f2536e8f38a5b18a05535c9e14c7a355904270e15b0945ea86",
+    "revision": "c26028131dd3af528409a2d3b67daa1e1f6932f3"
+  },
+  {
+    "repo": "AI-ModelScope/t5-base",
+    "file": "tokenizer.json",
+    "bytes": 1389353,
+    "sha256": "d2acde0d8d71dd30a711834b07781b9c89feaac33fd332f60507699282740066",
+    "revision": "c26028131dd3af528409a2d3b67daa1e1f6932f3"
+  }
+]

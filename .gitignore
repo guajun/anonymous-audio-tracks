@@ -34,6 +34,18 @@ wandb/
 !src/aat/data/*.py
 !tests/data/
 !tests/data/*.py
+
+# Migrated Gemini JSON history is small, text-only provenance; future local
+# model/audio artifacts remain ignored by the rules above.
+!infrastructure/audio-analysis/gemini/history/
+!infrastructure/audio-analysis/gemini/history/runs/
+!infrastructure/audio-analysis/gemini/history/runs/**
+
+# Keep the audio-data contract documented while ignoring the actual media.
+!data/
+!data/README.md
+!data/audio-analysis/
+!data/audio-analysis/README.md
 *.wav
 *.mp3
 *.flac
