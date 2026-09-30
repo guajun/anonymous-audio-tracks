@@ -26,6 +26,9 @@ DOCTOR = TEMPLATE_DIR / "doctor.py"
 SMOKE = TEMPLATE_DIR / "smoke.py"
 MANIFEST = json.loads((TEMPLATE_DIR / "manifest.json").read_text(encoding="utf-8"))
 
+sys.path.insert(0, str(TEMPLATE_DIR))
+import bootstrap as bootstrap_mod  # noqa: E402  共享 canonical LF hash 策略
+
 
 def run_script(script: Path, args: list[str], env: dict | None = None, cwd: Path | None = None):
     merged = dict(os.environ)
@@ -40,6 +43,14 @@ def run_script(script: Path, args: list[str], env: dict | None = None, cwd: Path
 
 def sha256_file(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def git_blob_sha256(repo: Path, rel: str) -> str:
+    """sha256 of the committed blob (canonical LF) — what an LF checkout has."""
+    blob = subprocess.run(["git", "-C", str(repo), "show", f"HEAD:{rel}"],
+                          capture_output=True, timeout=60).stdout
+    assert blob, f"git show HEAD:{rel} returned nothing"
+    return hashlib.sha256(blob).hexdigest()
 
 
 @pytest.fixture()
@@ -60,9 +71,26 @@ def test_manifest_bridge_pins_match_repo_files():
     for spec in MANIFEST["bridge"]["files"]:
         source = REPO_ROOT / spec["source"]
         assert source.is_file(), f"frozen bridge source missing: {spec['source']}"
-        assert sha256_file(source) == spec["sha256"], (
+        # canonical LF hash（与 bootstrap/doctor 同一策略）必须命中 pin
+        assert bootstrap_mod.canonical_sha256(source) == spec["sha256"], (
             f"{spec['source']} drifted from manifest pin (interface is frozen in issue #30 README §9)"
         )
+
+
+def test_manifest_pins_are_git_blob_canonical_lf():
+    """Regression (review 1): pins must match the git blob (canonical LF), not
+    Windows CRLF working-tree bytes, so an LF checkout/bootstrap also works."""
+    for spec in MANIFEST["bridge"]["files"]:
+        assert git_blob_sha256(REPO_ROOT, spec["source"]) == spec["sha256"], (
+            f"pin for {spec['source']} is not the canonical LF git-blob hash"
+        )
+
+
+def test_bridge_deploy_writes_canonical_lf_bytes(workspace: Path):
+    for spec in MANIFEST["bridge"]["files"]:
+        data = (workspace / spec["install_path"]).read_bytes()
+        assert b"\r\n" not in data, "deployed bridge bytes must be canonical LF (deterministic)"
+        assert hashlib.sha256(data).hexdigest() == spec["sha256"]
 
 
 def test_manifest_pins_match_toolbox_manifest():
@@ -269,3 +297,148 @@ def test_smoke_rejects_bad_timeout(workspace: Path):
     result = run_script(SMOKE, ["--workspace", str(workspace), "--timeout", "0"])
     assert result.returncode == 2
     assert "E_TIMEOUT" in result.stderr
+
+
+# --------------------------------------------------------------------------
+# review round 1 regressions: outputs sentinel, redaction, exit codes, skill pin
+# --------------------------------------------------------------------------
+
+def test_doctor_preserves_existing_outputs_files(workspace: Path):
+    """Regression (review 2): the writability probe must never delete or touch
+    pre-existing outputs/ files (e.g. a user's .write-test sentinel)."""
+    sentinel = workspace / "outputs" / ".write-test"
+    sentinel.write_text("USER_DATA", encoding="utf-8")
+    before = {p.name: sha256_file(p) for p in (workspace / "outputs").iterdir() if p.is_file()}
+    result = run_script(DOCTOR, ["--workspace", str(workspace), "--json"])
+    assert result.returncode == 1  # skill/sam 未配置仍 fail，但不影响本断言
+    assert sentinel.exists(), "doctor must not delete pre-existing outputs/.write-test"
+    assert sentinel.read_text(encoding="utf-8") == "USER_DATA"
+    after = {p.name: sha256_file(p) for p in (workspace / "outputs").iterdir() if p.is_file()}
+    assert before == after, "doctor must not create/delete/modify anything else in outputs/"
+    payload = json.loads(result.stdout)
+    by_id = {c["id"]: c for c in payload["checks"]}
+    assert by_id["outputs.writable"]["status"] == "ok"
+
+
+def _load_smoke_module():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("smoke_mod", SMOKE)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+GOOD_EVENTS = "\n".join([
+    json.dumps({"type": "message_start", "message": {"role": "system", "content": "",
+                "sections": {"skills": "- sam-audio: Run local SAM Audio separation"}}}),
+    json.dumps({"type": "tool_execution_end", "toolName": "bash", "isError": False,
+                "result": {"content": [{"type": "text", "text": "usage: audio-toolbox [-h]"}]}}),
+    json.dumps({"type": "tool_execution_end", "toolName": "audio_attach", "isError": True,
+                "result": {"content": [{"type": "text", "text": "E_AUDIO_NOT_FOUND: audio file not found"}]}}),
+    json.dumps({"type": "message_end", "message": {"role": "assistant", "model": "gemini-3.8-flash",
+                "stopReason": "stop", "content": [{"type": "text",
+                "text": "SMOKE-DONE skills=sam-audio help=usage: audio-toolbox err=E_AUDIO_NOT_FOUND"}],
+                "usage": {"totalTokens": 100, "cost": {"total": 0.001}}}}),
+])
+
+
+def _fake_runner(monkeypatch, module, rc: int, events_text: str = GOOD_EVENTS):
+    """Fake run_bounded: writes the given event stream and returns `rc`."""
+    def fake_run(command, **kwargs):
+        out_path = Path(command[command.index("--stdout") + 1])
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(events_text, encoding="utf-8")
+        Path(command[command.index("--stderr") + 1]).write_text("", encoding="utf-8")
+        class Result:
+            returncode = rc
+            stdout = ""
+            stderr = ""
+        return Result()
+    monkeypatch.setattr(module, "build_argv", lambda: ["pi-fake"])
+    monkeypatch.setattr(module.subprocess, "run", fake_run)
+
+
+def test_smoke_propagates_runner_failure_codes(workspace: Path, monkeypatch):
+    """Regression (review 5): documented run_bounded codes 3/4/5/6 propagate
+    unchanged instead of being flattened to 0/1."""
+    module = _load_smoke_module()
+    for rc in (3, 4, 5, 6):
+        _fake_runner(monkeypatch, module, rc)
+        assert module.main(["--workspace", str(workspace)]) == rc, f"runner rc {rc} must propagate"
+
+
+def test_smoke_acceptance_failure_is_distinct_code(workspace: Path, monkeypatch):
+    module = _load_smoke_module()
+    broken = GOOD_EVENTS.replace("SMOKE-DONE", "NOT-DONE")
+    _fake_runner(monkeypatch, module, 0, events_text=broken)
+    assert module.main(["--workspace", str(workspace)]) == 1  # 运行完成但判据未过
+    _fake_runner(monkeypatch, module, 0)
+    assert module.main(["--workspace", str(workspace)]) == 0
+
+
+def test_smoke_redacts_all_argv_and_output(tmp_path: Path, monkeypatch, capsys):
+    """Regression (review 3): --redact must hide home/repo/out-of-home tool
+    paths (with spaces) in argv and every printed field."""
+    module = _load_smoke_module()
+    ws = tmp_path / "ws dir"
+    ws.mkdir()
+    home_tool = Path.home() / "my tools" / "node.exe"
+    repo_tool = REPO_ROOT / "dist" / "cli.js"
+    outside_tool = Path("D:/tools outside/pi bin/pi.exe")
+    monkeypatch.setattr(module, "build_argv", lambda: [str(home_tool), str(repo_tool),
+                                                        str(outside_tool), "--", "<PROMPT>"])
+    code = module.main(["--workspace", str(ws), "--print-argv", "--redact"])
+    assert code == 0
+    out = capsys.readouterr().out
+    for secret in (str(Path.home()), str(REPO_ROOT), "D:/tools outside", "my tools", "pi bin"):
+        assert secret not in out, f"redaction leaked: {secret}"
+    assert "<PATH>/node.exe" in out and "<PATH>/cli.js" in out and "<PATH>/pi.exe" in out
+
+
+def _fake_skill(workspace: Path, pinned: str | None = "dfbc40a9541f686207b65b93b1332bb505654261",
+                drop_metadata: bool = False) -> Path:
+    skill = workspace / ".pi" / "skills" / "sam-audio"
+    (skill / "references").mkdir(parents=True, exist_ok=True)
+    (skill / "scripts").mkdir(parents=True, exist_ok=True)
+    meta = "" if drop_metadata else (
+        f"    github-pinned: {pinned}\n"
+        "    github-repo: https://github.com/guajun/agentic-audio-toolbox\n"
+    )
+    (skill / "SKILL.md").write_text(
+        "---\nmetadata:\n" + meta + "name: sam-audio\n---\n# body\n", encoding="utf-8")
+    (skill / "references" / "cli-reference.md").write_text("# cli\n", encoding="utf-8")
+    (skill / "scripts" / "audio_toolbox.py").write_text("print('x')\n", encoding="utf-8")
+    return skill
+
+
+def test_skill_wrong_pin_fails_without_overwrite(workspace: Path):
+    """Regression (review 6): an existing skill with wrong/missing pin metadata
+    must fail loudly and never be silently accepted, overwritten or reinstalled."""
+    skill = _fake_skill(workspace, pinned="0000000000000000000000000000000000000000")
+    before = {p.name: p.read_bytes() for p in skill.rglob("*") if p.is_file()}
+    result = run_script(BOOTSTRAP, ["--workspace", str(workspace)])
+    assert result.returncode == 3, result.stdout + result.stderr
+    assert "E_SKILL_PIN" in result.stderr
+    after = {p.name: p.read_bytes() for p in skill.rglob("*") if p.is_file()}
+    assert before == after, "bootstrap must not modify user skill files on pin mismatch"
+    # doctor 同样显式失败
+    result, payload = _doctor_json(workspace)
+    by_id = {c["id"]: c for c in payload["checks"]}
+    assert by_id["skill.install"]["status"] == "fail"
+    assert "pin" in by_id["skill.install"]["detail"].lower()
+
+
+def test_skill_missing_pin_metadata_fails(workspace: Path):
+    skill = _fake_skill(workspace, drop_metadata=True)
+    result = run_script(BOOTSTRAP, ["--workspace", str(workspace)])
+    assert result.returncode == 3
+    assert "E_SKILL_PIN" in result.stderr
+    assert (skill / "SKILL.md").read_text(encoding="utf-8").startswith("---")
+
+
+def test_skill_content_drift_fails(workspace: Path):
+    skill = _fake_skill(workspace)  # metadata 正确但内容 hash 不符
+    result = run_script(BOOTSTRAP, ["--workspace", str(workspace)])
+    assert result.returncode == 3
+    assert "E_SKILL_PIN" in result.stderr
+    assert "hash" in result.stderr

@@ -24,6 +24,21 @@
     "source_of_pin": "agentic/toolbox/manifest.json (issue #29, 冻结接口)",
     "install_command": "gh skill install guajun/agentic-audio-toolbox sam-audio --agent pi --scope project --pin dfbc40a9541f686207b65b93b1332bb505654261",
     "installed_files": [".pi/skills/sam-audio/SKILL.md", ".pi/skills/sam-audio/references/cli-reference.md", ".pi/skills/sam-audio/scripts/audio_toolbox.py"],
+    "verification": {
+      "hash_policy": "所有 hash 均为 canonical LF UTF-8 字节的 sha256（CRLF 归一化为 LF，即 git blob 内容）；SKILL.md 只对 frontmatter 之后的正文做 hash（gh skill install 会重排/增补 frontmatter，全文 hash 不稳定）",
+      "metadata_file": ".pi/skills/sam-audio/SKILL.md",
+      "frontmatter_must_match": {
+        "github-pinned": "dfbc40a9541f686207b65b93b1332bb505654261",
+        "github-repo": "https://github.com/guajun/agentic-audio-toolbox",
+        "name": "sam-audio"
+      },
+      "content_hashes": {
+        ".pi/skills/sam-audio/references/cli-reference.md": "c4cfd20bd39b0708a1fd51c388e9472e924c955b9cc32036f33f24513d4df271",
+        ".pi/skills/sam-audio/scripts/audio_toolbox.py": "754929410ee584db60fc24105a11511da0b62d4ff80f4d39e536561386706df1",
+        ".pi/skills/sam-audio/SKILL.md#body": "72b01874b5b27012f8c0e9b7f6fb92a9a772cdcb31f8d4713a75f579a508647b"
+      },
+      "verified_note": "代码内容 hash 已校验：cli-reference.md + audio_toolbox.py 全文，SKILL.md 正文（frontmatter 除外）；frontmatter 另按 github-pinned/github-repo 元数据校验。"
+    },
     "cli_schema": "audio-toolbox.sam/v1",
     "cli_exit_codes": {"0": "success", "2": "usage", "3": "input", "4": "environment", "5": "upstream-failed", "6": "timeout", "7": "output"}
   },
@@ -41,17 +56,18 @@
   "bridge": {
     "kind": "explicit project-local extension (NOT Pi-native audio; Pi 0.87.1 native audio = unsupported)",
     "frozen_in": "agentic/audio-probe/README.md §9 (issue #30)",
+    "hash_policy": "sha256 over canonical LF UTF-8 bytes（CRLF→LF 归一化 = git blob 内容）；部署写入归一化字节，doctor/测试用同一归一化比较（不弱化实质内容漂移检测，只豁免换行符差异）",
     "files": [
       {
         "source": "agentic/audio-probe/bridge/audio-bridge.ts",
         "install_path": ".pi/extensions/audio-bridge.ts",
-        "sha256": "3c011dc1fb22a28d4fb02e26803d85bd56f0b85706c4b869070b9f464f7c0bed",
+        "sha256": "dac9abe552cf47c5963b98273f8588e5ca1f47475c939619b5ef2ad94bd833de",
         "role": "Pi extension (audio_attach tool + context injection)"
       },
       {
         "source": "agentic/audio-probe/bridge/audio_guard.mjs",
         "install_path": ".pi/extensions/audio_guard.mjs",
-        "sha256": "1bb74cff5fe816899982baa8d2d1d81e9fb6f41ed4a5cc3ce5327d66a6728ceb",
+        "sha256": "61f3980e4d06fc0631d497947bd01251b66bc4d6fa1705184fafac4dacbd7214",
         "role": "纯校验模块（audio-bridge.ts 的同目录依赖，必须一起部署）"
       }
     ],

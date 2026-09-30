@@ -48,6 +48,7 @@ import hashlib
 import json
 import math
 import os
+import re
 import shutil
 import struct
 import subprocess
@@ -104,11 +105,83 @@ def utc_now() -> str:
 
 
 def sha256_file(path: Path) -> str:
+    """Raw-bytes hash (binary safe; used for audio manifest integrity)."""
     digest = hashlib.sha256()
     with path.open("rb") as handle:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def canonical_bytes(path: Path) -> bytes:
+    """Canonical LF UTF-8 bytes (CRLF -> LF), i.e. the git blob content.
+
+    Hash policy (documented in manifest.json): all frozen pins are computed over
+    these bytes so a Windows CRLF checkout and an LF checkout agree. Only line
+    endings are normalized; any other content drift still fails the check.
+    """
+    return path.read_bytes().replace(b"\r\n", b"\n")
+
+
+def sha256_bytes(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def canonical_sha256(path: Path) -> str:
+    """Hash of the canonical LF bytes (text pin checks)."""
+    return sha256_bytes(canonical_bytes(path))
+
+
+def skill_body_bytes(skill_md_text: str) -> bytes:
+    """SKILL.md content after the frontmatter (gh skill install rewrites the
+    frontmatter; the body is stable and pinned separately)."""
+    parts = skill_md_text.split("---", 2)
+    body = parts[2] if len(parts) >= 3 else skill_md_text
+    return body.strip().replace("\r\n", "\n").encode("utf-8")
+
+
+def verify_skill_install(ws: Path) -> tuple[list[str], list[str]]:
+    """Verify the installed sam-audio skill against the frozen pin.
+
+    Returns (problems, verified_notes). Never modifies anything: a wrong or
+    unverifiable install is reported, never silently overwritten/reinstalled.
+    Checks: SKILL.md frontmatter metadata (github-pinned / github-repo / name)
+    AND canonical content hashes (SKILL.md body, cli-reference.md,
+    audio_toolbox.py) — i.e. code content hashes ARE verified.
+    """
+    manifest = read_manifest()
+    spec = manifest["toolbox"]["verification"]
+    skill_md = ws / ".pi" / "skills" / "sam-audio" / "SKILL.md"
+    problems: list[str] = []
+    notes: list[str] = []
+    if not skill_md.is_file():
+        return ["SKILL.md 缺失"], notes
+    text = skill_md.read_text(encoding="utf-8", errors="replace")
+    frontmatter = text.split("---", 2)[1] if text.startswith("---") and text.count("---") >= 2 else ""
+    if not frontmatter:
+        problems.append("SKILL.md 无 frontmatter，无法验证 pin 元数据")
+    for key, expected in spec["frontmatter_must_match"].items():
+        match = re.search(rf"^\s*{re.escape(key)}:\s*(.+?)\s*$", frontmatter, re.MULTILINE)
+        if not match:
+            problems.append(f"frontmatter 缺少 {key}（无法验证安装来源/固定 pin）")
+        elif match.group(1) != expected:
+            problems.append(f"frontmatter {key}={match.group(1)!r} ≠ 期望 {expected!r}")
+    for rel, expected in spec["content_hashes"].items():
+        if rel.endswith("#body"):
+            actual = sha256_bytes(skill_body_bytes(text))
+            label = "SKILL.md#body"
+        else:
+            file = ws / rel
+            if not file.is_file():
+                problems.append(f"{rel} 缺失")
+                continue
+            actual = canonical_sha256(file)
+            label = rel
+        if actual != expected:
+            problems.append(f"{label} 内容 hash 与冻结 pin 不符（{actual[:12]}… ≠ {expected[:12]}…）")
+    if not problems:
+        notes.append("github-pinned/github-repo 元数据 + 内容 hash（SKILL.md 正文、cli-reference.md、audio_toolbox.py）均校验通过")
+    return problems, notes
 
 
 def read_manifest() -> dict:
@@ -281,14 +354,17 @@ class Bootstrap:
 
     def install_bridge(self) -> None:
         """Deploy the frozen bridge files (issue #30 interface = BOTH files).
-        A differing copy is a conflict: never silently overwritten."""
+        Pins are canonical LF hashes (git blob content) and the deployed bytes
+        are canonical LF, so Windows/LF checkouts agree. A differing copy is a
+        conflict: never silently overwritten."""
         manifest = read_manifest()
         for spec in manifest["bridge"]["files"]:
             pinned = spec["sha256"]
             source = REPO_ROOT / spec["source"]
             if not source.is_file():
                 raise BootstrapError("E_BRIDGE_SOURCE", f"桥接文件缺失：{source}", EXIT_EXTERNAL)
-            source_hash = sha256_file(source)
+            source_bytes = canonical_bytes(source)
+            source_hash = sha256_bytes(source_bytes)
             if source_hash != pinned:
                 raise BootstrapError(
                     "E_BRIDGE_PIN",
@@ -297,22 +373,22 @@ class Bootstrap:
                 )
             dest = self.ws / spec["install_path"]
             if dest.exists():
-                dest_hash = sha256_file(dest)
-                if dest_hash == pinned:
-                    self.log("skip", f"{spec['install_path']} 已存在且与 pin 一致")
+                dest_hash = canonical_sha256(dest)
+                if dest_hash == pinned and not self.args.force_bridge:
+                    self.log("skip", f"{spec['install_path']} 已存在且与 pin 一致（canonical LF 比较）")
                     continue
-                if not self.args.force_bridge:
+                if dest_hash != pinned and not self.args.force_bridge:
                     raise BootstrapError(
                         "E_BRIDGE_CONFLICT",
                         f"{spec['install_path']} 与冻结 pin 不一致（已有 {dest_hash[:12]}…）。\n"
                         "  不静默覆盖；确认后用 --force-bridge 显式替换。",
                     )
-                shutil.copyfile(source, dest)
-                self.log("ok", f"{spec['install_path']} 已用 --force-bridge 替换为 pin 版本")
+                dest.write_bytes(source_bytes)  # --force-bridge：显式写入 canonical pin 字节
+                self.log("ok", f"{spec['install_path']} 已显式写入 pin 版本（--force-bridge，canonical LF）")
                 continue
             dest.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(source, dest)
-            self.log("ok", f"{spec['install_path']}（sha256 {pinned[:12]}…，issue #30 冻结接口）")
+            dest.write_bytes(source_bytes)  # 部署 canonical 字节：跨 checkout 确定性
+            self.log("ok", f"{spec['install_path']}（canonical LF sha256 {pinned[:12]}…，issue #30 冻结接口）")
 
     def install_skill(self) -> None:
         skill_dir = self.ws / ".pi" / "skills" / "sam-audio"
@@ -324,9 +400,16 @@ class Bootstrap:
                 raise BootstrapError(
                     "E_SKILL_BROKEN",
                     f"sam-audio skill 已安装但缺文件：{', '.join(str(p.relative_to(self.ws)) for p in missing)}\n"
-                    "  请删除 .pi/skills/sam-audio 后重跑 bootstrap（显式重装，不做静默修补）。",
+                    "  请人工确认后删除 .pi/skills/sam-audio 再重跑 bootstrap（显式重装；不静默修补/不覆盖用户文件）。",
                 )
-            self.log("skip", "sam-audio skill 已安装（pin 安装不做覆盖更新）")
+            problems, notes = verify_skill_install(self.ws)
+            if problems:
+                raise BootstrapError(
+                    "E_SKILL_PIN",
+                    "sam-audio skill 已存在但**无法验证/不匹配**冻结 pin：\n  - " + "\n  - ".join(problems) +
+                    "\n  不覆盖、不重装用户文件。请人工确认来源后删除 .pi/skills/sam-audio 再重跑 bootstrap（重新 gh skill install --pin）。",
+                )
+            self.log("skip", f"sam-audio skill 已安装且 pin 校验通过（{notes[0] if notes else 'verified'}）")
             return
         if self.args.skip_skill:
             self.log("kept", "跳过 skill 安装（--skip-skill）；之后请手动运行 manifest.json 中的 install_command")
@@ -342,7 +425,13 @@ class Bootstrap:
                 "  常见原因：gh 未登录（gh auth login）、无网络、或 gh 版本过旧（skill 为 preview）。",
                 EXIT_EXTERNAL,
             )
-        self.log("ok", f"gh skill install sam-audio @{manifest['toolbox']['pin'][:12]}… -> .pi/skills/sam-audio")
+        problems, notes = verify_skill_install(self.ws)
+        if problems:
+            raise BootstrapError(
+                "E_SKILL_PIN",
+                "skill 安装完成但 pin 校验失败：\n  - " + "\n  - ".join(problems),
+            )
+        self.log("ok", f"gh skill install sam-audio @{manifest['toolbox']['pin'][:12]}… -> .pi/skills/sam-audio；{notes[0] if notes else 'verified'}")
 
     def write_local_config(self) -> None:
         dest = self.ws / "local" / "config.json"
@@ -473,7 +562,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--sam-python", default="", help="SAM 环境解释器（写入 local/config.json）")
     parser.add_argument("--ffmpeg", default="", help="ffmpeg/ffprobe 可执行文件路径（可选，写入 local/config.json）")
     parser.add_argument("--update-config", action="store_true", help="显式更新已存在的 local/config.json")
-    parser.add_argument("--force-bridge", action="store_true", help="显式替换不一致的 audio-bridge.ts（默认拒绝覆盖）")
+    parser.add_argument("--force-bridge", action="store_true",
+                        help="显式写入 pin 版本桥接文件（canonical LF 字节）；默认对不一致的副本拒绝覆盖")
     parser.add_argument("--skip-skill", action="store_true", help="跳过 gh skill 安装（离线/测试用）")
     return parser.parse_args(argv)
 

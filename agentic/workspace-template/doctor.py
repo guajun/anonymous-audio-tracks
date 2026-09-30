@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 """doctor.py — diagnose a deployed Pi audio-analysis workspace (issue #31).
 
-Read-only diagnostics. Never prints or reads API keys (`pi auth check` only),
-never loads a model, never uses the GPU (GPU inference is issue #33), never
-downloads anything. Missing key / weights / FFmpeg produce READABLE findings
-with a fix hint — not a stack trace.
+Read-only diagnostics, with ONE documented exception: outputs/ writability is
+probed with a unique exclusively-created temporary file which is deleted right
+away — existing files (e.g. a user's outputs/.write-test) are never touched.
+Never prints or reads API keys (`pi auth check` only), never loads a model,
+never uses the GPU (GPU inference is issue #33), never downloads anything.
+Missing key / weights / FFmpeg produce READABLE findings with a fix hint
+pointing at commands that actually exist — not a stack trace.
 
 Checks (status: ok | warn | fail | blocked):
   workspace.layout / workspace.settings / bridge.pin / skill.install /
@@ -16,6 +19,11 @@ Checks (status: ok | warn | fail | blocked):
   sam.check-environment  (`sam check-environment`, no torch/GPU/network)
   sam.dry-run            (`sam separate --dry-run`, reads real audio duration,
                           validates anchors/FFmpeg/model paths, no model load)
+  sam.verify-models      (upstream `scripts/verify_models.py`: real byte+SHA-256
+                          integrity against model-manifest.json)
+
+Weight checks in the default run are LAYOUT/size checks only (not SHA-256
+integrity); full integrity is the upstream verify command above.
 
 FFmpeg detection is a FILE/PATH level check only. It does NOT prove
 TorchCodec/GPU inference readiness; that distinction is kept explicit in the
@@ -36,6 +44,7 @@ for _stream in (_sys.stdout, _sys.stderr):
 import argparse
 import hashlib
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -48,16 +57,17 @@ MANIFEST_PATH = TEMPLATE_DIR / "manifest.json"
 PROBE_DIR = REPO_ROOT / "agentic" / "audio-probe" / "probe"
 
 sys.path.insert(0, str(PROBE_DIR))
+sys.path.insert(0, str(TEMPLATE_DIR))
+
+# 共享工具（与 bootstrap 同一套 canonical LF hash 策略与 skill pin 校验）
+from bootstrap import (  # noqa: E402
+    canonical_sha256,
+    sha256_file,
+    sha256_bytes,
+    verify_skill_install,
+)
 
 OK, WARN, FAIL, BLOCKED = "ok", "warn", "fail", "blocked"
-
-
-def sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def run_cmd(argv: list[str], timeout: int = 60, cwd: Path | None = None) -> tuple[int, str, str]:
@@ -135,17 +145,16 @@ class Doctor:
             if not dest.is_file():
                 problems.append(f"{spec['install_path']} 缺失")
                 continue
-            actual = sha256_file(dest)
+            actual = canonical_sha256(dest)  # canonical LF（与 bootstrap/测试同一策略）
             if actual != pinned:
                 problems.append(f"{Path(spec['install_path']).name} 与冻结 pin 不一致（pin {pinned[:12]}…, 实际 {actual[:12]}…）")
         if problems:
             self.add("bridge.pin", FAIL, "; ".join(problems),
-                     "接口在 issue #30 README §9 冻结；bootstrap --force-bridge 可显式恢复 pin 版本")
+                     "接口在 issue #30 README §9 冻结；bootstrap --force-bridge 可显式恢复 pin 版本（hash 为 canonical LF，换行符差异不算漂移）")
         else:
-            self.add("bridge.pin", OK, "桥接 2 个文件均为冻结 pin（audio-bridge.ts + audio_guard.mjs；bridge ≠ Pi 原生音频）")
+            self.add("bridge.pin", OK, "桥接 2 个文件均为冻结 pin（canonical LF hash：audio-bridge.ts + audio_guard.mjs；bridge ≠ Pi 原生音频）")
 
     def check_skill(self) -> None:
-        base = self.ws / ".pi" / "skills" / "sam-audio"
         expected = [self.ws / rel for rel in self.manifest["toolbox"]["installed_files"]]
         missing = [p for p in expected if not p.is_file()]
         if missing:
@@ -153,14 +162,14 @@ class Doctor:
                      f"sam-audio skill 不完整，缺少：{', '.join(str(p.relative_to(self.ws)) for p in missing)}",
                      f"运行：{self.manifest['toolbox']['install_command']}")
             return
-        head = (base / "SKILL.md").read_text(encoding="utf-8", errors="replace")
-        frontmatter = head.split("---", 2)[1] if head.startswith("---") and head.count("---") >= 2 else head[:2000]
-        name_ok = any(line.strip() == "name: sam-audio" or line.strip().startswith("name: sam-audio")
-                      for line in frontmatter.splitlines())
-        if not name_ok:
-            self.add("skill.install", WARN, "SKILL.md frontmatter 未声明 name: sam-audio（发现可能不稳定）", "检查安装来源")
-        else:
-            self.add("skill.install", OK, f"sam-audio skill 完整（pin {self.manifest['toolbox']['pin'][:12]}…，3 个文件）")
+        problems, notes = verify_skill_install(self.ws)
+        if problems:
+            self.add("skill.install", FAIL,
+                     "skill 存在但 pin/内容校验失败（不覆盖、不重装）：" + "; ".join(problems),
+                     "人工确认来源后删除 .pi/skills/sam-audio，再运行 manifest.json 中的 install_command 重新安装（--pin 固定）")
+            return
+        self.add("skill.install", OK,
+                 f"sam-audio skill pin 校验通过（@{self.manifest['toolbox']['pin'][:12]}…）：{notes[0]}")
 
     def check_audio_manifest(self) -> None:
         path = self.ws / "audio" / "inputs" / "manifest.json"
@@ -172,7 +181,8 @@ class Doctor:
             data = json.loads(path.read_text(encoding="utf-8"))
             entries = data["entries"]
         except (json.JSONDecodeError, KeyError, TypeError) as exc:
-            self.add("audio.manifest", FAIL, f"manifest.json 损坏：{exc.__class__.__name__}", "用 bootstrap --rehash-audio 重建")
+            self.add("audio.manifest", FAIL, f"manifest.json 损坏：{exc.__class__.__name__}",
+                     "人工确认后删除 audio/inputs/manifest.json，再用 bootstrap --audio <FILE> 重新登记（不覆盖音频本体）")
             return
         problems = []
         for entry in entries:
@@ -183,21 +193,33 @@ class Doctor:
                 problems.append(f"{entry.get('name')}: sha256 与 manifest 不符（文件被改动）")
         if problems:
             self.add("audio.manifest", FAIL, "; ".join(problems),
-                     "不要覆盖用户音频；人工确认后用 bootstrap --rehash-audio 重新登记")
+                     "不要覆盖用户音频；人工确认后删除 manifest.json 中对应条目并用 bootstrap --audio <FILE> 重新登记，或恢复文件原内容")
         else:
             self.add("audio.manifest", OK, f"{len(entries)} 条音频记录，hash 全部一致")
 
     def check_outputs(self) -> None:
+        """outputs/ writability via a UNIQUE exclusively-created probe file.
+        Only that probe is removed; every pre-existing file (including a user's
+        outputs/.write-test) is preserved untouched."""
         out = self.ws / "outputs"
+        probe = out / f".doctor-write-probe-{os.getpid()}-{os.urandom(4).hex()}"
         try:
             out.mkdir(parents=True, exist_ok=True)
-            probe = out / ".write-test"
-            probe.write_text("ok", encoding="utf-8")
-            probe.unlink()
+            fd = os.open(str(probe), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(fd, "wb") as handle:
+                handle.write(b"doctor write probe")
         except OSError as exc:
+            try:
+                probe.unlink()
+            except OSError:
+                pass
             self.add("outputs.writable", FAIL, f"outputs/ 不可写：{exc.__class__.__name__}", "检查权限/磁盘")
             return
-        self.add("outputs.writable", OK, "outputs/ 可写（结果约定 outputs/result.json，schema 归 issue #32）")
+        try:
+            probe.unlink()  # 只删除本探测文件（唯一独占创建）
+        except OSError:
+            pass
+        self.add("outputs.writable", OK, "outputs/ 可写（唯一独占临时探测文件已删除；现存文件一律不动；结果约定 outputs/result.json，schema 归 issue #32）")
 
     # ---------- toolchain ----------
     def check_node_pi(self) -> None:
@@ -307,10 +329,10 @@ class Doctor:
         if missing:
             self.add("sam.weights", FAIL,
                      f"权重缺失：{', '.join(missing)}（权重不自动下载、不分发）",
-                     "按上游 model-manifest.json 手动补齐并用 scripts/verify_models.py 校验")
+                     "按上游 model-manifest.json 手动补齐，再运行 `<SAM_PYTHON> <SAM_ROOT>/scripts/verify_models.py` 校验（字节+SHA-256）")
         else:
             self.add("sam.weights", OK,
-                     f"权重布局齐全（{present} 个文件，非空）；model-manifest.json 完整性校验见 --deep/--verify-models")
+                     f"权重布局+非空检查通过（{present} 个文件；**非** SHA-256 完整性校验）；字节/SHA-256 校验请运行上游 `scripts/verify_models.py`（doctor --deep 会真实运行）")
         if not python.is_file():
             self.add("sam.python", FAIL, f"sam_python 不存在：{python}", "指向 SAM checkout 的 .venv 解释器")
         else:
@@ -394,6 +416,25 @@ class Doctor:
                      f"sam dry-run 失败（exit {code}）：{error.get('code', '?')} {error.get('message', '') or (err or out).strip()[:160]}",
                      "常见：E_ENVIRONMENT（FFmpeg/权重/解释器）、E_AUDIO_NOT_FOUND、E_ANCHOR_INVALID")
 
+    def check_verify_models(self) -> None:
+        """Real upstream integrity check: scripts/verify_models.py compares byte
+        size + SHA-256 against model-manifest.json. This is the only weight
+        integrity claim we make; the default layout check does not claim it."""
+        root, python, detail = self._sam_config()
+        script = (root / "scripts" / "verify_models.py") if root else None
+        if root is None or python is None or script is None or not script.is_file() or not python.is_file():
+            self.add("sam.verify-models", FAIL, f"前置不满足（{detail}）", "先修复 sam.config / sam.entry")
+            return
+        code, out, err = run_cmd([str(python), str(script)], timeout=900, cwd=root)
+        tail = (out or err).strip()[-200:]
+        if code == 0 and "All model files verified" in (out or ""):
+            self.add("sam.verify-models", OK,
+                     "上游 scripts/verify_models.py 真实校验通过（字节+SHA-256 对照 model-manifest.json）")
+        else:
+            self.add("sam.verify-models", FAIL,
+                     f"权重完整性校验失败（exit {code}）：{tail}",
+                     "按输出补齐/修复权重（不自动下载）；校验命令：`<SAM_PYTHON> <SAM_ROOT>/scripts/verify_models.py`")
+
     @staticmethod
     def _parse_json(text: str) -> dict | None:
         """Parse the first complete JSON object found in `text` (stdout may carry a
@@ -423,6 +464,15 @@ class Doctor:
         if python:
             replacements.append((str(python), "<SAM_PYTHON>"))
         home = str(Path.home())
+        # 本地样本文件名也不进公开材料
+        manifest_path = self.ws / "audio" / "inputs" / "manifest.json"
+        if manifest_path.is_file():
+            try:
+                for entry in json.loads(manifest_path.read_text(encoding="utf-8")).get("entries", []):
+                    if entry.get("name"):
+                        replacements.append((str(entry["name"]), "<AUDIO>"))
+            except (OSError, json.JSONDecodeError):
+                pass
         for old, new in replacements:
             text = text.replace(old, new)
         return text.replace(home, "<HOME>")
@@ -442,6 +492,7 @@ class Doctor:
         self.check_gpu()
         if self.deep:
             self.check_deep()
+            self.check_verify_models()
         return 0 if not any(c["status"] == FAIL for c in self.checks) else 1
 
 

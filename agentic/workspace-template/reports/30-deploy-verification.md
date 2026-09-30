@@ -11,7 +11,7 @@
 
 | 部分 | 口径 |
 |---|---|
-| `tests/test_workspace_template.py`（18 项） | **离线 mock**：tmp 目录、`--skip-skill`、断 PATH；0 网络 0 API 0 GPU |
+| `tests/test_workspace_template.py`（27 项） | **离线 mock**：tmp 目录、`--skip-skill`、断 PATH；0 网络 0 API 0 GPU |
 | 本文件 §2–§7 | **真实**：真机 Windows、真 `gh skill install`、真 Pi run（少量 API）、真 SAM dry-run |
 | GPU 真实分离 | **blocked → issue #33**（未执行、未伪称成功） |
 
@@ -107,7 +107,7 @@ python agentic/workspace-template/bootstrap.py --workspace "<WORKSPACE>" \
 | 从空本地目录按说明部署成功；已部署再运行不会覆盖用户输入/配置 | **满足** | §2（首跑成功、二跑 `[skip]/[kept]`、冲突退出 3 不覆盖；README §2） |
 | Pi 使用指定 Gemini 模型发现 skill，SAM dry-run 能执行 | **满足** | §4–§6（模型来自 trust 的 settings；skills 段含 sam-audio；dry-run 真跑通过） |
 | 音频与 outputs/secret 全被 ignore，配置模板只使用 env 或本地配置 | **满足** | 模板 `.gitignore`（audio/outputs/local/sessions/.pi/skills/.pi/extensions/*.wav/…）；`local/config.json` 只存本机路径；模板无 key；tests 断言 |
-| 提供 smoke tests/doctor 和逐条部署实证；为任务 5 返回稳定命令及 workspace 路径 | **满足** | `tests/`（18 项离线）+ `smoke.py` + `doctor.py` + 本文件；稳定命令见 README §2/§3/§7 |
+| 提供 smoke tests/doctor 和逐条部署实证；为任务 5 返回稳定命令及 workspace 路径 | **满足** | `tests/`（27 项离线）+ `smoke.py` + `doctor.py` + 本文件；稳定命令见 README §2/§3/§7 |
 
 ## 8. 开发期真实缺陷（诚实记录，均已修复 + 回归测试）
 
@@ -129,3 +129,21 @@ python agentic/workspace-template/bootstrap.py --workspace "<WORKSPACE>" \
   沿用 issue #30 §8；`PI_AUDIO_BRIDGE_ROOT` 由启动脚本设置（settings 无 env 项），裸跑 `pi`
   会得到可读的 `E_AUDIO_*` 错误。
 - 本机真实样本只在本地登记（sha256/时长/采样率），公开材料不含音频与绝对路径。
+
+## 10. 首轮 review 修订记录（changes requested → 已修复 + 回归）
+
+针对 PR #38 首轮 review 六项（HEAD `ecf5665`）的修复；全部为可靠性/防覆盖/隐私/冻结 pin
+修正，无新功能、无新增付费/GPU 运行。
+
+| # | review 缺陷 | 修复 | 回归 |
+|---|---|---|---|
+| 1 | 桥接 pin 是 Windows CRLF working-tree 字节，LF checkout 必失败 | pin 改为 **canonical LF**（git blob）hash；bootstrap 部署写入归一化字节；doctor/测试同一归一化比较（内容漂移仍拒绝）；manifest 记录 hash 策略 | `test_manifest_pins_are_git_blob_canonical_lf`（对 `git show HEAD:` blob 校验）+ `test_bridge_deploy_writes_canonical_lf_bytes` + **fresh LF checkout**（`git clone -c core.autocrlf=false`）实跑测试/部署；真实 workspace 已 `--force-bridge` 显式更新为 canonical 字节 |
+| 2 | doctor 删用户现存 `outputs/.write-test` | 写探测改为**唯一独占创建**临时文件（进程+随机后缀）并只删该探测；文档明说“只读除该探测” | `test_doctor_preserves_existing_outputs_files`（哨兵内容+目录清单前后一致）；真实 workspace 复跑确认 |
+| 3 | `smoke --print-argv --redact` 仍露 Node/CLI/home 绝对路径 | argv 逐条脱敏（绝对路径→`<PATH>/<文件名>`，含空格路径），文本字段统一 redactor（workspace/home/任意绝对路径/样本名） | `test_smoke_redacts_all_argv_and_output`（home/repo/带空格的仓外工具路径全部不出现在输出） |
+| 4 | doctor 提示不存在的 `--rehash-audio`/`--verify-models`，并夸大权重校验 | 删除不存在 flags；音频 manifest 提示改为真实人工步骤；权重检查明说“布局+非空，非 SHA-256”；`--deep` 新增**上游真实** `scripts/verify_models.py`（字节+SHA-256） | 真实 `doctor --deep`：`sam.verify-models` 通过；离线测试断言 fix 提示真实可执行 |
+| 5 | smoke 把 runner 3/4/5/6 压成 0/1 | 按契约原样传播 runner 失败码；判据未过用独立退出码 1；文档写明完整退出码契约 | `test_smoke_propagates_runner_failure_codes` / `test_smoke_acceptance_failure_is_distinct_code`（fake runner，0 API） |
+| 6 | 已存在 skill 只看 3 文件就 skip，doctor 只报期望 pin | 校验 `SKILL.md` frontmatter `github-pinned`/`github-repo`/`name` **和** 内容 hash（SKILL.md 正文 + cli-reference.md + audio_toolbox.py；gh 会重写 frontmatter 故正文单独 pin）；错 pin/缺元数据/漂移 → 显式失败且不覆盖/不重装用户文件 | `test_skill_wrong_pin_fails_without_overwrite` / `test_skill_missing_pin_metadata_fails` / `test_skill_content_drift_fails`（假 skill 目录）+ **真实安装**校验通过（github-pinned=dfbc40a9… + 三项内容 hash） |
+
+修订后实测：离线 **27 项**新增测试 + 上游 45 项 = 72 项全绿；真实 `doctor --deep --redact`
+（含真实 `verify_models.py`）0 失败、1 项 GPU 显式 blocked；fresh LF checkout 证据见 §11 补记。
+无新增付费/GPU 调用（真实 smoke 证据仍为 §5 那次 run）。

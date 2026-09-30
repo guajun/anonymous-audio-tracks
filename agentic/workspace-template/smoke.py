@@ -21,11 +21,14 @@ proves, in order,
 Failure semantics (mirrors agentic/audio-probe/probe/run_bounded.py, reused):
   2 usage, 3 command failed/could not start, 4 timeout (process killed),
   5 provider error/aborted in the event stream, 6 empty/garbled/incomplete
-  event stream. Artifacts (events/stderr/summary) are always kept under
-  <workspace>/local/smoke/ (local only, never committed).
+  event stream. These runner codes are PROPAGATED unchanged by this script;
+  exit 1 means “the run completed but the smoke criteria failed” (acceptance
+  failure), exit 0 means everything passed. Artifacts (events/stderr/summary)
+  are always kept under <workspace>/local/smoke/ (local only, never committed).
 
-The event stream IS pi's stdout (`--mode json`), so the same file is handed to
-run_bounded as both --stdout and --events.
+With --redact every argv entry and every printed field is redacted (workspace,
+home directory and any remaining absolute path), so the output is safe to paste
+into public reports; raw full logs are never dumped.
 """
 from __future__ import annotations
 
@@ -40,6 +43,7 @@ for _stream in (_sys.stdout, _sys.stderr):
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -62,6 +66,25 @@ SMOKE-DONE skills=<comma-separated skill names> help=<first help line> err=<erro
 """
 
 EXPECTED_MODEL = "gemini-3.8-flash"
+
+
+def make_redactor(ws: Path):
+    """Return a redactor that removes workspace/home paths and any remaining
+    absolute path (kept basename) from text — safe for public paste."""
+    home = str(Path.home())
+    ws_s = str(ws)
+
+    def redact(text: str) -> str:
+        text = str(text).replace(ws_s, "<WORKSPACE>").replace(home, "<HOME>")
+        text = re.sub(r'[A-Za-z]:[\\/][^\s"\'<>|]*',
+                      lambda m: "<PATH>/" + m.group(0).replace("\\", "/").rstrip("/").split("/")[-1],
+                      text)
+        text = re.sub(r'(?<![\w:.-])/(?:[^/\s"\'<>|]+/)+[^/\s"\'<>|]*',
+                      lambda m: "<PATH>/" + m.group(0).rstrip("/").split("/")[-1],
+                      text)
+        return text
+
+    return redact
 
 
 class SmokeError(RuntimeError):
@@ -179,6 +202,16 @@ def main(argv: list[str] | None = None) -> int:
     if args.print_argv:
         printable = list(pi_argv)
         printable[-1] = "<SMOKE_PROMPT>"
+        redact = make_redactor(ws)
+        if args.redact:
+            fixed = []
+            for item in printable:
+                if item != "<SMOKE_PROMPT>" and Path(item).is_absolute():
+                    # 整条绝对路径（含空格）→ 只留文件名
+                    fixed.append("<PATH>/" + item.replace("\\", "/").rstrip("/").split("/")[-1])
+                else:
+                    fixed.append(redact(item))
+            printable = fixed
         print(json.dumps({
             "argv": printable,
             "uses_model_flag": any(a == "--model" or a.startswith("--model") for a in pi_argv),
@@ -248,9 +281,12 @@ def main(argv: list[str] | None = None) -> int:
         "note": "Pi 记账近似值，非账单真值",
     }
     summary["usage"] = usage
-    summary["result"] = "pass" if (rc == 0 and all(c["pass"] for c in summary["criteria"].values())) else "fail"
-    if rc == 4:
-        summary["result"] = "blocked-timeout"
+    criteria_pass = all(c["pass"] for c in summary["criteria"].values())
+    if rc != 0:
+        # run_bounded 失败码（2/3/4/5/6）按契约原样传播，不压成 0/1
+        summary["result"] = "blocked-timeout" if rc == 4 else f"runner-failed({rc})"
+    else:
+        summary["result"] = "pass" if criteria_pass else "criteria-failed"
     summary["artifacts"] = {
         "events": f"<WORKSPACE>/local/smoke/{events.name}",
         "stderr": f"<WORKSPACE>/local/smoke/{stderr_f.name}",
@@ -259,18 +295,22 @@ def main(argv: list[str] | None = None) -> int:
     (smoke_dir / "summary.json").write_text(
         json.dumps(summary, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
-    def redact(text: str) -> str:
-        return text.replace(str(ws), "<WORKSPACE>") if args.redact else text
+    redact = make_redactor(ws)
+
+    def out_redact(text: str) -> str:
+        return redact(text) if args.redact else str(text)
 
     if args.json:
-        print(redact(json.dumps(summary, ensure_ascii=False, indent=2)))
+        print(out_redact(json.dumps(summary, ensure_ascii=False, indent=2)))
     else:
         print(f"smoke result: {summary['result']} (run_bounded exit {rc})")
         for name, item in summary["criteria"].items():
-            print(f"  [{'pass' if item['pass'] else 'FAIL'}] {name}: {redact(item['detail'])}")
+            print(f"  [{'pass' if item['pass'] else 'FAIL'}] {name}: {out_redact(item['detail'])}")
         print(f"  usage: totalTokens={usage['totalTokens']} cost={usage['cost']}（{usage['note']}）")
-        print(f"  artifacts: {redact(str(smoke_dir))}")
-    return 0 if summary["result"] == "pass" else 1
+        print(f"  artifacts: {out_redact(str(smoke_dir))}")
+    if rc != 0:
+        return rc  # 传播文档化的 runner 失败码（2/3/4/5/6）
+    return 0 if criteria_pass else 1  # 1 = 运行完成但 smoke 判据未过（验收失败）
 
 
 if __name__ == "__main__":

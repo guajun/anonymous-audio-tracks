@@ -4,7 +4,7 @@
 `google/gemini-3.8-flash`、`sam-audio` skill（pin 安装）、明确标注的音频桥接扩展、音频输入与
 输出目录），用 `doctor.py` 自检、用 `smoke.py` 做真实模型冒烟。它不是训练项目。
 
-- 真实/mock 分离：本 README 的命令全部可实跑；**离线自动化测试**（`tests/`，18 项，不联网、
+- 真实/mock 分离：本 README 的命令全部可实跑；**离线自动化测试**（`tests/`，27 项，不联网、
   不调用模型）与**真实验证**（实机 Windows 启动 / Pi 项目 trust / Gemini skill 发现 / SAM
   help 与 dry-run）分开记录，真实证据见 [`reports/30-deploy-verification.md`](reports/30-deploy-verification.md)。
 - 冻结接口见 [`manifest.json`](manifest.json)：toolbox pin、SAM commit、桥接文件 SHA-256、
@@ -16,7 +16,7 @@
 
 | 内容 | 类型 | 位置 |
 |---|---|---|
-| 部署/幂等/冲突/诊断逻辑测试 | 离线（mock/tmp 目录） | `tests/test_workspace_template.py`（18 项） |
+| 部署/幂等/冲突/诊断逻辑测试 | 离线（mock/tmp 目录） | `tests/test_workspace_template.py`（27 项） |
 | Windows 实机启动（PowerShell 5.1 / pwsh / git-bash） | 真实 | `reports/30-deploy-verification.md` §3 |
 | project trust 加载项目设置/扩展 | 真实（零 API 探针 + 真实运行模型证据） | 报告 §4 |
 | Gemini 3.8 Flash skill 发现 + SAM CLI `--help` + `audio_attach` 错误契约 | 真实（1 次 Pi run，≈3 个 assistant 请求） | 报告 §5 |
@@ -65,7 +65,17 @@ python agentic/workspace-template/bootstrap.py \
   一律 `[skip]`/`[kept]`，**不覆盖**；fixture 生成同样不覆盖；
 - 导入音频与已有文件**同名不同 sha256** → 显式失败（退出码 3，`E_HASH_CONFLICT`），原文件不动；
 - 目标目录非空且不是本工具管理的 workspace → 拒绝（退出码 3，`E_WS_UNMANAGED`）；
-- 桥接文件与冻结 pin 不一致 → 失败（`E_BRIDGE_PIN`/`E_BRIDGE_CONFLICT`），需显式 `--force-bridge`。
+- 桥接文件与冻结 pin 不一致 → 失败（`E_BRIDGE_PIN`/`E_BRIDGE_CONFLICT`），需显式 `--force-bridge`
+  （含把部署字节规范化为 canonical LF）；
+- **skill pin 校验**：`.pi/skills/sam-audio` 已存在时校验 `SKILL.md` frontmatter 的
+  `github-pinned`/`github-repo`/`name` 元数据 **和** 内容 hash（`SKILL.md` 正文、
+  `references/cli-reference.md`、`scripts/audio_toolbox.py`）；错 pin/缺元数据/内容漂移 → 失败
+  （退出码 3，`E_SKILL_PIN`），**不覆盖、不静默重装用户文件**（人工确认后删除该目录再重跑）。
+
+**hash 策略（跨 checkout 可复现）**：所有冻结 pin 都是 **canonical LF UTF-8 字节**（CRLF→LF
+归一化，即 git blob 内容）的 sha256；bootstrap 部署写入归一化字节，doctor/测试用同一归一化
+比较——换行符差异不算漂移，**其它内容漂移仍然失败**。音频 manifest 的 sha256 是**原始字节**
+hash（二进制不受归一化影响）。
 
 退出码：`0` 成功 / `2` 用法（如音频不存在）/ `3` 守卫或冲突 / `4` 外部依赖失败（git/gh 缺失、
 `gh skill install` 失败）。
@@ -145,15 +155,23 @@ python agentic/workspace-template/smoke.py  --workspace "<WS>"           # 真�
 python agentic/workspace-template/smoke.py  --workspace "<WS>" --print-argv      # 只看启动 argv（零 API）
 ```
 
-- doctor 检查项：workspace 布局/设置模型固定/桥接 pin/skill 完整/音频 manifest hash/outputs 可写/
-  node/pi 版本/Pi google 认证状态（只读状态）/gh skill list/SAM 路径与权重布局/FFmpeg（**文件级
-  探测，≠ TorchCodec/GPU 推理**）/`gpu.inference`（标记 blocked，留给 #33）。退出码：`0` 无失败、
-  `1` 有失败、`2` 用法。
+- doctor 检查项：workspace 布局/设置模型固定/桥接 pin（canonical LF）/skill 完整 + pin 校验
+  （元数据 + 内容 hash）/音频 manifest hash/outputs 可写/node/pi 版本/Pi google 认证状态
+  （只读状态）/gh skill list/SAM 路径与权重**布局+非空**（**非** SHA-256 完整性）/FFmpeg（**文件级
+  探测，≠ TorchCodec/GPU 推理**）/`gpu.inference`（标记 blocked，留给 #33）。
+  `--deep` 追加三项真实执行：`sam check-environment`、`sam separate --dry-run`、上游
+  `scripts/verify_models.py`（**字节+SHA-256 完整性对照 model-manifest.json**）。
+  doctor 只读，唯一例外：outputs/ 写探测用**唯一独占创建**的临时文件并立即删除，现存文件
+  一律不动。退出码：`0` 无失败、`1` 有失败、`2` 用法。
 - smoke（真实，约 3 个 assistant 请求）判据：① 事件流全部 assistant 消息 `model=gemini-3.8-flash`
   （**不传 `--model`**，证明 trust 加载了项目设置）；② system prompt `skills` 段含 `sam-audio`；
   ③ bash 真实执行 `audio_toolbox.py --help`；④ `audio_attach` 失败返回 `E_AUDIO_NOT_FOUND`
-  （注册 + 错误契约）；⑤ 终态含 `SMOKE-DONE`。失败语义沿用 run_bounded：`2` 用法 / `3` 命令失败 /
-  `4` 超时（杀进程）/ `5` provider 错误 / `6` 事件流空/乱码/不完整——**blocked 不写成 success**。
+  （注册 + 错误契约）；⑤ 终态含 `SMOKE-DONE`。
+  **退出码契约**：`0` 全部通过；`1` 运行完成但 smoke 判据未过（验收失败）；runner 失败码原样
+  传播：`2` 用法 / `3` 命令失败或无法启动 / `4` 超时（杀进程）/ `5` provider 错误 / `6` 事件流
+  空/乱码/不完整——**blocked 不写成 success**（均有离线 fake-runner 回归）。
+- `--redact` 对 argv 与全部输出字段脱敏（workspace/home/任意绝对路径→`<PATH>/<文件名>`，
+  样本名→`<AUDIO>`），公开材料只贴脱敏输出，不贴完整日志。
 
 ## 8. 清理与恢复
 
@@ -162,7 +180,10 @@ rm -rf <WS>                      # 整个 workspace 是本地忽略目录，直�
 python .../bootstrap.py ...      # 重新部署（幂等）
 ```
 - 只清运行产物：删 `<WS>/outputs/*`、`<WS>/sessions/*`、`<WS>/local/smoke/*`；音频/配置保留。
-- 装坏 skill：删 `<WS>/.pi/skills/sam-audio` 后重跑 bootstrap（显式重装，不做静默修补）。
+- 装坏/无法验证 pin 的 skill：人工确认后删 `<WS>/.pi/skills/sam-audio` 后重跑 bootstrap（显式
+  重装，不做静默修补、不覆盖用户文件）。
+- 音频 manifest 与文件不一致时：不覆盖用户音频；人工确认后删除 `audio/inputs/manifest.json`
+  中对应条目并用 `bootstrap --audio <FILE>` 重新登记，或恢复文件原内容。
 - 不需要清理任何“服务端文件”：音频是请求内联字节（inlineData），**不使用 Gemini Files API**。
 
 ## 9. 常见报错
@@ -177,6 +198,7 @@ python .../bootstrap.py ...      # 重新部署（幂等）
 | `E_HASH_CONFLICT`（bootstrap，退出 3） | 导入音频与已有同名文件内容不同 | 换文件名或人工确认；绝不静默覆盖 |
 | `E_WS_UNMANAGED`（bootstrap，退出 3） | 目标目录非空且非本工具部署 | 换空目录 |
 | `Cannot find module './audio_guard.mjs'` | 桥接只拷了一半 | 用 bootstrap 部署（两个文件都 pin）；`doctor` 会指出 |
+| `E_SKILL_PIN`（bootstrap，退出 3） | skill pin 元数据/内容 hash 不符或缺失 | 人工确认来源后删 `.pi/skills/sam-audio` 重装（不覆盖用户文件） |
 | PowerShell 启动无输出/命令没执行 | PS 5.1 把无 BOM 脚本当 ANSI，中文注释吞掉下一行 | `run.ps1` 已固定 ASCII + UTF-8 BOM；改脚本时保持该约定（测试有回归） |
 | 路径含空格 | argv 被错误拼接 | 全部脚本用 argv 列表（无 shell 拼接）；测试覆盖“ws dir”路径 |
 
@@ -197,4 +219,4 @@ python .../bootstrap.py ...      # 重新部署（幂等）
 - 冻结接口与 pin：[`manifest.json`](manifest.json)
 - 上游接口：[`../toolbox/manifest.json`](../toolbox/manifest.json)（#29）、
   [`../audio-probe/README.md`](../audio-probe/README.md)（#30，§9 给下游的稳定接口）
-- 离线测试：`tests/test_workspace_template.py`（18 项，0 网络 0 API）
+- 离线测试：`tests/test_workspace_template.py`（27 项，0 网络 0 API）
