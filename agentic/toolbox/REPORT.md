@@ -120,5 +120,5 @@ gh skill install guajun/agentic-audio-toolbox sam-audio \
 ## 6. 链接
 
 - Toolbox PR: https://github.com/guajun/agentic-audio-toolbox/pull/1
-- 主仓库 PR: 本分支 PR（`agentic/issue-29` → `agentic/minimal-agent`），URL 见 PR 描述与 issue #29 评论（创建后回填本节）
+- 主仓库 PR: https://github.com/guajun/anonymous-audio-tracks/pull/36（`agentic/issue-29` → `agentic/minimal-agent`）
 - Issue: https://github.com/guajun/anonymous-audio-tracks/issues/29（Closes #29）
