@@ -2,6 +2,10 @@
   "schema_version": "agentic-audio-tracks/v1",
   "description": "跨字段语义规则（结构 schema 之外）。参考实现在 agentic_schema/semantic.py，CLI：python agentic/schema/validate.py <file.json>。浏览器侧可按本表复刻；结构校验可直接用 schema/agentic-audio-tracks-v1.schema.json（Draft 2020-12 便携子集）。",
   "tolerance_seconds": 1e-09,
+  "numeric_policy": "所有数字必须是有限数且在 IEEE-754 float64 可互操作范围内（|x| <= 1.7976931348623157e308）；NaN/Infinity 字面量、1e999 溢出浮点、10**400 类超大整数一律拒绝（E_NONFINITE/E_FINITE），绝不静默转 Infinity；布尔值不是数字。",
+  "max_depth": 64,
+  "depth_policy": "文档嵌套深度（根容器=1）不得超过 max_depth；超出即受控拒绝（E_PARSE，带 Pointer，退出码 1，无 traceback），不支持深嵌套 JSON。",
+  "pattern_policy": "id/sha256/method 的 pattern 用 ^...(?![\\s\\S]) 做绝对结尾：$ 在 Python/JS 里可能匹配在末尾换行之前，会放过 'value\\n'/'value\\r\\n'；(?![\\s\\S]) 在 Python re 与浏览器 ECMA 正则里语义一致。所有 ID/哈希/方法字段都拒绝尾随换行。",
   "rules": [
     {
       "code": "E_VERSION",
@@ -14,15 +18,15 @@
       "code": "E_NONFINITE",
       "layer": "parse",
       "pointers": ["<number>"],
-      "rule": "JSON 里的数字必须是有限数。NaN / Infinity / -Infinity 字面量（Python json 默认接受）直接拒绝；1e999 这类语法合法但解析成 inf 的数也拒绝。报错给出具体 JSON Pointer。",
-      "bad_example": "{\"audio\": {\"duration_seconds\": 1e999}}"
+      "rule": "JSON 里的数字必须是有限数且在 float64 可互操作范围内（|x| <= 1.7976931348623157e308）。NaN / Infinity / -Infinity 字面量（Python json 默认接受）直接拒绝；1e999 这类语法合法但解析成 inf 的数、10**400 这类超出 float64 范围的超大整数也拒绝（不静默转 Infinity）。报错给出具体 JSON Pointer。",
+      "bad_example": "{\"audio\": {\"duration_seconds\": 1e999}}、{\"audio\": {\"sample_rate\": 10**400}}"
     },
     {
       "code": "E_PARSE",
       "layer": "parse",
       "pointers": ["<document>"],
-      "rule": "必须是合法 UTF-8 JSON。BOM、语法错误、NaN/Infinity 字面量均拒绝。",
-      "bad_example": "\\uFEFF{\"schema_version\": ...}"
+      "rule": "必须是合法 UTF-8 JSON，且嵌套深度 <= max_depth(64)。BOM、语法错误、NaN/Infinity 字面量、嵌套过深（含超出解析递归限制）均受控拒绝（带 Pointer 的 E_PARSE，无 traceback）。",
+      "bad_example": "\\uFEFF{...}、'['*1200+'0'+']'*1200"
     },
     {
       "code": "E_DUPLICATE_KEY",
@@ -35,8 +39,15 @@
       "code": "E_FINITE",
       "layer": "semantic",
       "pointers": ["<number>"],
-      "rule": "文档中所有数字必须有限（对程序构造文档的兜底检查，与 E_NONFINITE 同义不同层）。",
-      "bad_example": "float('nan')"
+      "rule": "文档中所有数字必须有限且在 float64 可互操作范围内（对程序构造文档 validate_document/validate_semantic 的兜底检查，与 E_NONFINITE 同义不同层；语义层对结构失败后的怪异输入保持防御，不崩、不抛异常）。",
+      "bad_example": "float('nan')、10**400"
+    },
+    {
+      "code": "pattern",
+      "layer": "structure",
+      "pointers": ["/instruments/*/id", "/instruments/*/events/*/id", "/audio/sha256", "/instruments/*/stem/sha256", "/instruments/*/events/*/method"],
+      "rule": "ID/哈希/方法字段的 pattern 必须绝对结尾 ^...(?![\\s\\S])（不能用 $，它在 Python/JS 可能匹配在末尾换行之前）；'inst-1\\n'、'spectral-flux\\r\\n'、64hex+'\\n' 都必须拒绝。双引擎（stdlib/jsonschema）与浏览器行为一致。",
+      "bad_example": "\"id\": \"inst-1\\n\""
     },
     {
       "code": "E_BOOL_NUMBER",

@@ -29,6 +29,15 @@ def test_semantic_rules_cover_parse_and_version_layers():
     assert {"parse", "version", "semantic"} <= layers
 
 
+def test_semantic_rules_document_policies():
+    rules = json.loads(SEMANTIC_RULES_PATH.read_text(encoding="utf-8"))
+    assert rules["max_depth"] == 64
+    assert "float64" in rules["numeric_policy"]
+    assert "(?![" in rules["pattern_policy"]
+    layers = {rule["layer"] for rule in rules["rules"]}
+    assert "structure" in layers  # pattern 绝对结尾契约也机器可读
+
+
 def test_schema_id_and_version_agree():
     schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
     assert schema["title"] == SCHEMA_VERSION
@@ -51,6 +60,12 @@ def test_readme_documents_frozen_interface():
         "退出码",
     ):
         assert token in readme, f"README.md 缺少冻结接口说明: {token}"
+
+
+def test_readme_documents_numeric_depth_pattern_policy():
+    readme = (BASE / "README.md").read_text(encoding="utf-8")
+    for token in ("float64", "1.7976931348623157e308", "嵌套过深", "64", r"(?![\s\S])", "E_NONFINITE"):
+        assert token in readme, f"README.md 缺少数值/深度/pattern 政策说明: {token}"
 
 
 def test_readme_states_limits():

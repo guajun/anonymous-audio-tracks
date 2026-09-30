@@ -117,6 +117,19 @@ def test_pattern_rejects_bad_id(schema, doc):
     assert ("pattern", "/instruments/0/id") in struct_codes(validate_structure(doc, schema))
 
 
+@pytest.mark.parametrize("suffix", ["\n", "\r\n"])
+def test_pattern_rejects_trailing_newline(schema, doc, suffix):
+    """绝对结尾约束：'$' 会放过末尾换行，必须用 (?![\\s\\S])。"""
+    doc["instruments"][0]["id"] = "inst-1" + suffix
+    assert ("pattern", "/instruments/0/id") in struct_codes(validate_structure(doc, schema))
+    doc2 = json.loads((BASE / "fixtures" / "valid_minimal.json").read_text(encoding="utf-8"))
+    doc2["audio"]["sha256"] = "0" * 64 + suffix
+    assert ("pattern", "/audio/sha256") in struct_codes(validate_structure(doc2, schema))
+    doc2["audio"]["sha256"] = "0" * 64
+    doc2["instruments"][0]["events"][0]["method"] = "spectral-flux" + suffix
+    assert ("pattern", "/instruments/0/events/0/method") in struct_codes(validate_structure(doc2, schema))
+
+
 def test_ranges_checked(schema, doc):
     doc["instruments"][0]["confidence"] = 1.0001
     assert ("maximum", "/instruments/0/confidence") in struct_codes(validate_structure(doc, schema))

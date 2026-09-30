@@ -73,6 +73,7 @@ def main(argv: list[str] | None = None) -> int:
 
     reports = []
     usage_error = False
+    rejected = False
     for file_name in args.files:
         path = Path(file_name)
         if not path.is_file():
@@ -84,6 +85,33 @@ def main(argv: list[str] | None = None) -> int:
         except DependencyError as exc:
             print(f"error: {exc}", file=sys.stderr)
             return USAGE_EXIT
+        except RecursionError:
+            # 受控拒绝：不吐 traceback，按不合法输入处理（正常情况已被 pipeline 捕获）
+            if args.json:
+                print(
+                    json.dumps(
+                        {
+                            "source": str(path),
+                            "ok": False,
+                            "engine": args.engine,
+                            "schema_version": SCHEMA_VERSION,
+                            "issues": [
+                                {
+                                    "layer": "parse",
+                                    "code": "E_PARSE",
+                                    "pointer": "",
+                                    "message": "文档嵌套过深（递归上限），拒绝",
+                                }
+                            ],
+                        },
+                        ensure_ascii=False,
+                    )
+                )
+            else:
+                print(f"FAIL {path} (engine={args.engine})")
+                print("  <root> [parse/E_PARSE] 文档嵌套过深（递归上限），拒绝")
+            rejected = True
+            continue
         except OSError as exc:
             print(f"error: 无法读取 {file_name}: {exc}", file=sys.stderr)
             usage_error = True
@@ -104,7 +132,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if usage_error:
         return USAGE_EXIT
-    if any(not report.ok for report in reports):
+    if rejected or any(not report.ok for report in reports):
         return 1
     return 0
 

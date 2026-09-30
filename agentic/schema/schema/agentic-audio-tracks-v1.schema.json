@@ -50,8 +50,8 @@
   "$defs": {
     "identifier": {
       "type": "string",
-      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$",
-      "description": "稳定 ID：ASCII 字母数字开头，可含 . _ -，1..64 字符。乐器 id 全文档唯一，event id 全文档唯一（跨乐器也不可重复）。"
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}(?![\\s\\S])",
+      "description": "稳定 ID：ASCII 字母数字开头，可含 . _ -，1..64 字符，**绝对结尾**（用 (?![\\s\\S]) 而非 $，因 Python/JS 的 $ 可能匹配在末尾换行之前，会放过 'id\\n'）。乐器 id 全文档唯一，event id 全文档唯一（跨乐器也不可重复）。"
     },
     "confidence": {
       "type": "number",
@@ -80,8 +80,8 @@
     },
     "sha256": {
       "type": "string",
-      "pattern": "^[0-9a-f]{64}$",
-      "description": "文件内容的 SHA-256（小写十六进制 64 位）。mock/fixture 可为自生成哈希，但必须注明 provenance.source=mock。"
+      "pattern": "^[0-9a-f]{64}(?![\\s\\S])",
+      "description": "文件内容的 SHA-256（小写十六进制 64 位，绝对结尾，不允许尾随换行/空白）。mock/fixture 可为自生成哈希，但必须注明 provenance.source=mock。"
     },
     "audio": {
       "type": "object",
@@ -242,8 +242,8 @@
         },
         "method": {
           "type": "string",
-          "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$",
-          "description": "可选：产生该事件的方法标识（小写 slug，如 spectral-flux、llm-estimate、human-tap）。"
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,63}(?![\\s\\S])",
+          "description": "可选：产生该事件的方法标识（小写 slug，如 spectral-flux、llm-estimate、human-tap；绝对结尾，不允许尾随换行/空白）。"
         }
       }
     },

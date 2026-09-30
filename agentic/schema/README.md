@@ -67,6 +67,8 @@ python agentic/schema/validate.py --engine stdlib path/to/result.json  # 强制�
 | `1` | 至少一个文档不合法（`FAIL ...` + 逐条错误） |
 | `2` | 用法/文件/依赖错误（例如文件不存在、`--engine jsonschema` 但没装） |
 
+输入过深（>64 层或递归超限）按**不合法文档**处理：`FAIL` + `E_PARSE`，退出码 1，**不吐 traceback**。
+
 错误输出每行一条，格式固定：
 
 ```
@@ -146,9 +148,10 @@ FAIL fixtures/negative/neg_onset_after_end.json (engine=stdlib)
 
 ## 字段表（逐字段）
 
-约定：**必填** = schema `required`；**可空** = 允许 `null`；所有数字必须是**有限数**（拒绝 NaN/Inf），
+约定：**必填** = schema `required`；**可空** = 允许 `null`；所有数字必须是**有限数且在 float64 可互操作范围内**
+（`|x| <= 1.7976931348623157e308`；拒绝 NaN/Inf/`1e999`/`10**400`），
 布尔值不是数字；所有字符串均为 UTF-8。未知字段一律**拒绝**（`additionalProperties: false`），
-加字段=破坏性变更=新 `schema_version`。
+加字段=破坏性变更=新 `schema_version`。文档嵌套深度（根=1）不得超过 **64**（见“数值与深度政策”）。
 
 ### 顶层
 
@@ -166,7 +169,7 @@ FAIL fixtures/negative/neg_onset_after_end.json (engine=stdlib)
 | 字段 | 类型 | 必填 | 可空 | 范围/约束 | 含义 / 取值来源 |
 |---|---|---|---|---|---|
 | `filename` | string | 是 | 否 | 1..512 字符，**安全相对路径**（规则见 E_PATH） | 音频文件名，用于和本地音频根目录**匹配**，不做任意 fetch |
-| `sha256` | string | 是 | 否 | `^[0-9a-f]{64}$` | 文件内容哈希（DSP/人工计算；mock 可为自生成哈希） |
+| `sha256` | string | 是 | 否 | `^[0-9a-f]{64}(?![\s\S])`（绝对结尾，64 小写 hex） | 文件内容哈希（DSP/人工计算；mock 可为自生成哈希） |
 | `duration_seconds` | number | 是 | 否 | `> 0`，有限 | 音频总时长（秒）；一切时间边界以此为准 |
 | `sample_rate` | integer | 是 | 否 | `>= 1` | 采样率（Hz） |
 
@@ -186,7 +189,7 @@ FAIL fixtures/negative/neg_onset_after_end.json (engine=stdlib)
 
 | 字段 | 类型 | 必填 | 可空 | 范围/约束 | 含义 / 取值来源 |
 |---|---|---|---|---|---|
-| `id` | string | 是 | 否 | `^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`，全文档唯一 | 稳定 ID（跨运行可复现） |
+| `id` | string | 是 | 否 | `^[A-Za-z0-9][A-Za-z0-9._-]{0,63}(?![\s\S])`，全文档唯一 | 稳定 ID（跨运行可复现） |
 | `label` | string | 是 | 否 | 1..128 字符 | 人类可读名称；识别不出写 `"unknown"`；**允许重复**（同类多来源） |
 | `description` | string | 是 | 否 | 1..1024 字符 | 来源描述（谁产出的、依据什么） |
 | `source` | enum | 是 | 否 | 同 `tempo.source` | 识别来源类别（LLM/SAM/DSP/human/mock/native/bridge/unknown） |
@@ -198,13 +201,13 @@ FAIL fixtures/negative/neg_onset_after_end.json (engine=stdlib)
 
 | 字段 | 类型 | 必填 | 可空 | 范围/约束 | 含义 / 取值来源 |
 |---|---|---|---|---|---|
-| `id` | string | 是 | 否 | 同上 ID 规则，**全文档唯一（跨乐器）** | 稳定事件 ID |
+| `id` | string | 是 | 否 | 同上 ID 规则（绝对结尾），**全文档唯一（跨乐器）** | 稳定事件 ID |
 | `onset_seconds` | number | 是 | 否 | `[0, audio.duration_seconds]` | 事件开始（秒）。**不量化到节拍** |
 | `duration_seconds` | number | 否 | 否 | `> 0` 且 `onset + duration <= audio.duration_seconds` | 事件时长（秒）；**没证据不填** |
 | `pitch` | object | 否 | 否 | `{midi, confidence, source}` 三个字段必须一起出现；`midi` 为整数 `0..127` | 音高**估计**（不是 MIDI 真值）；**没证据不填** |
 | `confidence` | number | 否 | 否 | `[0,1]` | 事件置信度 |
 | `source` | enum | 否 | 否 | 同上 | 事件取值来源；缺省视为继承所属 instrument |
-| `method` | string | 否 | 否 | `^[a-z0-9][a-z0-9._-]{0,63}$` | 产生该事件的方法（如 `spectral-flux`、`llm-estimate`、`human-tap`） |
+| `method` | string | 否 | 否 | `^[a-z0-9][a-z0-9._-]{0,63}(?![\s\S])`（绝对结尾） | 产生该事件的方法（如 `spectral-flux`、`llm-estimate`、`human-tap`） |
 
 ### `provenance` / `limitations`
 
@@ -220,6 +223,18 @@ FAIL fixtures/negative/neg_onset_after_end.json (engine=stdlib)
 `source` 枚举语义：`human`=人工标注/输入，`dsp`=传统信号处理，`llm`=语言/多模态模型推测，
 `sam`=SAM Audio 分离结果，`mock`=自生成示例，`native`=Pi 原生声音模态，`bridge`=非原生桥接调用，
 `unknown`=未知来源。**LLM/SAM/bridge/native 都只给假设，不自动成为真值。**
+
+## 数值与深度政策（冻结）
+
+- **数值**：所有数字必须是有限数且在 IEEE-754 float64 可互操作范围内（`|x| <= 1.7976931348623157e308`）。
+  `NaN`/`Infinity` 字面量、`1e999`（溢出浮点）、`10**400`（超出 float64 范围的超大整数）一律拒绝并给出精确
+  Pointer（`E_NONFINITE`/`E_FINITE`），**绝不静默转 Infinity**；布尔值不是数字。三个入口（`validate_text` /
+  `validate_file` / `validate_document`）与两个结构引擎（stdlib / jsonschema）行为一致。
+- **深度**：文档嵌套深度（根容器=1）不得超过 **64**；超出即受控拒绝（`E_PARSE`，退出码 1，**无 traceback**）。
+  解析期递归超限（如 `'['*1200+'0'+']'*1200`）同样按 `E_PARSE` 受控拒绝；不做深嵌套 JSON 支持。
+- **pattern 绝对结尾**：`id`/`sha256`/`method` 用 `^...(?![\s\S])` 而**不是 `$`**——Python/JS 的 `$` 可能匹配在
+  末尾换行之前（`"inst-1\n"` 会被放过）；`(?![\s\S])` 在 Python `re` 与浏览器 ECMA 正则里语义一致，
+  尾随 `\n`/`\r\n` 一律拒绝。
 
 ## 时间与边界规定（冻结）
 
@@ -271,12 +286,14 @@ Windows 保留设备名（`CON`/`NUL`/`COM1`…）、字符 `< > : " | ? *`。�
 |---|---|
 | `[/] [parse/E_PARSE] JSON 语法错误` | 多/少逗号、尾逗号、单引号、注释；用严格 JSON |
 | `[parse/E_PARSE] 拒绝非标准 JSON 常量 'NaN'` | Python `json` 默认允许 `NaN/Infinity`；本协议拒绝，改成 `null` 或真实数值 |
-| `[parse/E_NONFINITE] /audio/duration_seconds` | `1e999` 等溢出数字；检查单位/量纲 |
+| `[parse/E_NONFINITE] /audio/duration_seconds` | `1e999` 溢出数字或 `10**400` 超大整数；检查单位/量纲（数值政策见上） |
+| `[parse/E_PARSE] 文档嵌套过深` | 嵌套深度 > 64 或递归超限；展平结构（深度政策见上） |
 | `[parse/E_DUPLICATE_KEY]` | 同一对象写了两个同名键；删掉一个（本协议不 last-wins） |
 | `[version/E_VERSION] /schema_version` | 版本字符串写错（必须精确 `agentic-audio-tracks/v1`） |
 | `[structure/type] /tempo/bpm` | 把 `true`/字符串当数字；`bpm` 只能是数字或 `null` |
 | `[structure/additionalProperties]` | 加了协议外字段；删掉或提出新版本 |
 | `[structure/required]` | 缺必填字段（如 `pitch` 三个证据字段要一起出现） |
+| `[structure/pattern]` | `id`/`sha256`/`method` 尾随换行（`"inst-1\n"`）或格式不对；去掉空白、用绝对结尾格式 |
 | `[semantic/E_TIME_ORDER]` | 事件没排序；按 `(onset_seconds, id)` 升序重排 |
 | `[semantic/E_TIME_RANGE]` | onset 超过音频末尾或为负；核对 `audio.duration_seconds` |
 | `[semantic/E_TIME_DURATION]` | 时长 ≤ 0，或 `onset+duration` 超时 |
@@ -320,6 +337,8 @@ Windows 保留设备名（`CON`/`NUL`/`COM1`…）、字符 `< > : " | ? *`。�
    #34 用 `fixtures/valid_*.json` 作网页开发 fixture，`bpm: null` 时允许人类输入 BPM。
 7. **错误格式**：`<file>: <JSON Pointer> [<layer>/<code>] <message>`；`--json` 输出
    `{source, ok, engine, schema_version, issues:[{layer, code, pointer, message}]}`。
+8. **数值/深度/pattern 政策**：数字有限且 `|x| <= 1.7976931348623157e308`（float64 互操作范围）；嵌套深度 ≤ 64；
+   `id`/`sha256`/`method` 绝对结尾 `^...(?![\s\S])`（拒绝尾随换行）。详见上文“数值与深度政策”。
 
 ## 限制（不夸大）
 
@@ -342,4 +361,7 @@ uv run --no-project --python 3.12 --with pytest==8.4.2 --with jsonschema==4.26.0
 覆盖：严格解析（NaN/Inf/重复键/溢出/编码）、结构（类型/必填/未知字段/范围/模式/可空/整数语义）、
 语义（时间边界含 0/末尾/相等、排序与同时 onset、ID 唯一、路径安全 20+ 反例、tempo 互斥、范围兜底）、
 fixture 契约（正例全过、负例命中 expected、纯 JSON、无私有信息）、CLI（退出码/定位/--json/cwd 无关）、
-双引擎一致性、README/规则/版本契约。成功判据：全部 pass；装了 pin 依赖时 **0 skip**。
+双引擎一致性、README/规则/版本契约，以及鲁棒性回归（review 复现项）：超大整数/溢出数字在
+validate_text/file/document 三入口与双引擎下都给稳定 Pointer 错误、结构失败后语义不崩、
+id/sha256/method 尾随 `\n`/`\r\n` 双引擎拒绝、超深嵌套受控拒绝（CLI 退出码 1 无 traceback）。
+成功判据：全部 pass；装了 pin 依赖时 **0 skip**。

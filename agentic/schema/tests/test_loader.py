@@ -50,13 +50,28 @@ def test_duplicate_key_inside_nested_object_rejected():
         ('{"audio": {"duration_seconds": 1e999}}', "/audio/duration_seconds"),
         ('{"tempo": {"bpm": -1e999}}', "/tempo/bpm"),
         ('{"instruments": [{"events": [{"onset_seconds": 1e400}]}]}', "/instruments/0/events/0/onset_seconds"),
+        ('{"audio": {"sample_rate": 1' + "0" * 400 + '}}', "/audio/sample_rate"),
     ],
 )
-def test_overflow_float_rejected_with_pointer(snippet, pointer):
-    """1e999 语法合法，但解析成 inf —— 必须拒绝并给出精确 JSON Pointer。"""
+def test_overflow_and_huge_numbers_rejected_with_pointer(snippet, pointer):
+    """1e999（溢出浮点）与 10**400（超 float64 范围整数）都必须拒绝并给出精确 JSON Pointer。"""
     data, issues = load_text(snippet)
     assert data is None
     assert codes(issues) == [("parse", "E_NONFINITE", pointer)]
+
+
+def test_extreme_nesting_rejected_controlled():
+    data, issues = load_text("[" * 1200 + "0" + "]" * 1200)
+    assert data is None
+    assert issues[0].code == "E_PARSE"
+    assert "嵌套过深" in issues[0].message
+
+
+def test_over_depth_document_rejected_controlled():
+    data, issues = load_text("[" * 70 + "0" + "]" * 70)  # 合法 JSON 但深度 > 64
+    assert data is None
+    assert issues[0].code == "E_PARSE"
+    assert "嵌套过深" in issues[0].message
 
 
 def test_malformed_json_rejected_with_position():

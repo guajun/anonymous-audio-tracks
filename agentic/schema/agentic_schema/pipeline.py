@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from .errors import Issue, Report
-from .loader import load_path, load_text
+from .loader import depth_issues, load_path, load_text, numeric_issues
 from .schema_check import jsonschema_available, validate_with_jsonschema
 from .semantic import validate_semantic
 from .structure import validate_structure
@@ -67,9 +67,16 @@ def validate_document(
     schema_path: Path | None = None,
     source: str = "<document>",
 ) -> Report:
-    """校验已解析的文档（跳过 parse 层）。"""
+    """校验已解析的文档（跳过 JSON 语法解析，但仍执行深度/数值政策）。"""
     resolved = resolve_engine(engine)
     issues: list[Issue] = []
+
+    # parse 层政策（与 validate_text/validate_file 一致）：超深/超范围数字直接受控拒绝
+    issues.extend(depth_issues(data))
+    if not issues:
+        issues.extend(numeric_issues(data))
+    if issues:
+        return Report(source=source, ok=False, engine=resolved, issues=tuple(issues))
 
     version = data.get("schema_version") if isinstance(data, dict) else None
     if version != SCHEMA_VERSION:
@@ -84,8 +91,16 @@ def validate_document(
         return Report(source=source, ok=False, engine=resolved, issues=tuple(issues))
 
     schema = load_schema(schema_path)
-    issues.extend(_structure_issues(data, schema, resolved))
-    issues.extend(validate_semantic(data))
+    try:
+        issues.extend(_structure_issues(data, schema, resolved))
+        issues.extend(validate_semantic(data))
+    except RecursionError:
+        return Report(
+            source=source,
+            ok=False,
+            engine=resolved,
+            issues=(Issue("parse", "E_PARSE", "", "文档嵌套过深（递归上限），拒绝"),),
+        )
     issues.sort(key=lambda issue: (issue.pointer, issue.code, issue.message))
     return Report(source=source, ok=not issues, engine=resolved, issues=tuple(issues))
 

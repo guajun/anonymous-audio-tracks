@@ -9,11 +9,11 @@
 
 from __future__ import annotations
 
-import math
 import re
 from typing import Any
 
 from .errors import Issue, pointer_of
+from .loader import MAX_FLOAT, _number_out_of_policy, _number_repr
 
 #: 稳定错误码（冻结；#33/#34 可依赖）
 SEMANTIC_CODES = (
@@ -94,8 +94,12 @@ class _Semantic:
         if isinstance(node, bool):
             return
         if isinstance(node, (int, float)):
-            if not math.isfinite(node):
-                self.add("E_FINITE", parts, f"数字必须是有限数，得到 {node!r}")
+            if _number_out_of_policy(node):
+                self.add(
+                    "E_FINITE",
+                    parts,
+                    f"数字必须是有限数且在 float64 可互操作范围内（|x| <= {MAX_FLOAT}），得到 {_number_repr(node)}",
+                )
             return
         if isinstance(node, dict):
             for key, value in node.items():
@@ -115,7 +119,15 @@ class _Semantic:
             return None
         if not _is_number(value):
             return None  # 类型错误由结构层报告
-        return float(value)
+        try:
+            return float(value)
+        except (OverflowError, ValueError):
+            self.add(
+                "E_FINITE",
+                parts + [key],
+                f"{key} 数字超出 float64 可互操作范围，得到 {_number_repr(value)}（拒绝）",
+            )
+            return None
 
     def check_confidence(self, node: Any, parts: list[Any]) -> None:
         value = self.check_number(node, "confidence", parts)
@@ -262,17 +274,16 @@ class _Semantic:
         tempo = self.data.get("tempo")
         if not isinstance(tempo, dict):
             return
-        self.check_number(tempo, "bpm", ["tempo"])  # 布尔冒充数字兜底
+        self.check_number(tempo, "bpm", ["tempo"])  # 布尔/超大数兜底
         bpm = tempo.get("bpm")
         source = tempo.get("source")
         has_origin = "beat_origin_seconds" in tempo
         if bpm is None:
             if source != "unknown":
                 self.add("E_TEMPO", ["tempo", "source"], "bpm 为 null 时 source 必须是 \"unknown\"")
-            confidence = tempo.get("confidence")
-            if isinstance(confidence, bool) or _is_number(confidence):
-                if float(confidence) != 0.0:
-                    self.add("E_TEMPO", ["tempo", "confidence"], "bpm 为 null 时 confidence 必须是 0")
+            confidence = self.check_number(tempo, "confidence", ["tempo"])
+            if confidence is not None and confidence != 0.0:
+                self.add("E_TEMPO", ["tempo", "confidence"], "bpm 为 null 时 confidence 必须是 0")
             if has_origin:
                 self.add(
                     "E_TEMPO",
