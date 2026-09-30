@@ -34,7 +34,7 @@ def check_environment() -> None:
     """Check FFmpeg without importing torch, TorchCodec or SAM."""
     ffmpeg = shutil.which("ffmpeg")
     if not ffmpeg:
-        raise ValueError("FFmpeg not found on PATH. Install FFmpeg 4–7 (Windows: full-shared, not static), add its bin directory to PATH, and restart the terminal.")
+        raise ValueError("FFmpeg not found on PATH. Install FFmpeg 4–8 supported by the locked TorchCodec 0.10.0 (Windows: full-shared, not static), add its bin directory to PATH, and restart the terminal.")
     if os.name == "nt":
         directory = Path(ffmpeg).parent
         missing = [name for name in ("avcodec", "avformat", "avutil", "swresample") if not list(directory.glob(f"{name}-*.dll"))]

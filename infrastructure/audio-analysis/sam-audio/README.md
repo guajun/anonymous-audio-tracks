@@ -13,7 +13,7 @@ uv sync --locked
 
 ### Windows FFmpeg 前置依赖
 
-TorchCodec 支持 FFmpeg 主版本 **4–7**；Windows 必须安装 **full-shared** 构建。static/full 静态构建即使能运行 `ffmpeg.exe`，也不提供 TorchCodec 需要的共享 DLL。解压受信任发行包，把包含 `ffmpeg.exe`、`ffprobe.exe` 和 `avcodec-*.dll`、`avformat-*.dll`、`avutil-*.dll`、`swresample-*.dll` 的 `bin` 目录加入 PATH，重新打开终端。不要仅复制 exe 或把 DLL 放入 Python 包目录。入口会注册该 DLL 搜索目录并持有 `os.add_dll_directory` 句柄，直到进程退出。
+本项目锁定的 TorchCodec **0.10.0** 支持 FFmpeg 主版本 **4–8**；Windows 必须安装 **full-shared** 构建。static/full 静态构建即使能运行 `ffmpeg.exe`，也不提供 TorchCodec 需要的共享 DLL。解压受信任发行包，把包含 `ffmpeg.exe`、`ffprobe.exe` 和 `avcodec-*.dll`、`avformat-*.dll`、`avutil-*.dll`、`swresample-*.dll` 的 `bin` 目录加入 PATH，重新打开终端。不要仅复制 exe 或把 DLL 放入 Python 包目录。入口会注册该 DLL 搜索目录并持有 `os.add_dll_directory` 句柄，直到进程退出。
 
 不加载 torch/SAM、不用 GPU、不联网的环境预检：
 
