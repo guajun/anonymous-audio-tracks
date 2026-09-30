@@ -1,0 +1,681 @@
+{
+  "schema_version": "agentic-audio-tracks/v1",
+  "audio": {
+    "filename": "demo/demo-track.wav",
+    "sha256": "07a03589a4efec6c6b49fe134dd480d3a80e144f7391b1256b64c589ade3629a",
+    "duration_seconds": 12,
+    "sample_rate": 44100
+  },
+  "tempo": {
+    "bpm": 120,
+    "source": "mock",
+    "confidence": 0.5,
+    "beat_origin_seconds": 0
+  },
+  "instruments": [
+    {
+      "id": "drums-kick",
+      "label": "<img src=x onerror=\"window.__xss=1\">kick",
+      "description": "恶意 label 测试行：<script>window.__xss=2</script>（必须按纯文本渲染）— 自生成的底鼓合成脉冲（每小节 1、3 拍）",
+      "source": "mock",
+      "confidence": 0.5,
+      "events": [
+        {
+          "id": "drums-kick-e00",
+          "onset_seconds": 0,
+          "duration_seconds": 0.16,
+          "confidence": 0.75,
+          "method": "synth-demo"
+        },
+        {
+          "id": "drums-kick-e01",
+          "onset_seconds": 1,
+          "duration_seconds": 0.16,
+          "confidence": 0.75,
+          "method": "synth-demo"
+        },
+        {
+          "id": "drums-kick-e02",
+          "onset_seconds": 2,
+          "duration_seconds": 0.16,
+          "confidence": 0.75,
+          "method": "synth-demo"
+        },
+        {
+          "id": "drums-kick-e03",
+          "onset_seconds": 3,
+          "duration_seconds": 0.16,
+          "confidence": 0.75,
+          "method": "synth-demo"
+        },
+        {
+          "id": "drums-kick-e04",
+          "onset_seconds": 4,
+          "duration_seconds": 0.16,
+          "confidence": 0.75,
+          "method": "synth-demo"
+        },
+        {
+          "id": "drums-kick-e05",
+          "onset_seconds": 5,
+          "duration_seconds": 0.16,
+          "confidence": 0.75,
+          "method": "synth-demo"
+        },
+        {
+          "id": "drums-kick-e06",
+          "onset_seconds": 6,
+          "duration_seconds": 0.16,
+          "confidence": 0.75,
+          "method": "synth-demo"
+        },
+        {
+          "id": "drums-kick-e07",
+          "onset_seconds": 7,
+          "duration_seconds": 0.16,
+          "confidence": 0.75,
+          "method": "synth-demo"
+        },
+        {
+          "id": "drums-kick-e08",
+          "onset_seconds": 8,
+          "duration_seconds": 0.16,
+          "confidence": 0.75,
+          "method": "synth-demo"
+        },
+        {
+          "id": "drums-kick-e09",
+          "onset_seconds": 9,
+          "duration_seconds": 0.16,
+          "confidence": 0.75,
+          "method": "synth-demo"
+        },
+        {
+          "id": "drums-kick-e10",
+          "onset_seconds": 10,
+          "duration_seconds": 0.16,
+          "confidence": 0.75,
+          "method": "synth-demo"
+        },
+        {
+          "id": "drums-kick-e11",
+          "onset_seconds": 11,
+          "duration_seconds": 0.16,
+          "confidence": 0.75,
+          "method": "synth-demo"
+        }
+      ]
+    },
+    {
+      "id": "hats-1",
+      "label": "<img src=x onerror=\"window.__xss=1\">hi-hat",
+      "description": "恶意 label 测试行：<script>window.__xss=2</script>（必须按纯文本渲染）— 自生成的高频 tick（仅 onset，无 duration）",
+      "source": "mock",
+      "confidence": 0.5,
+      "events": [
+        {
+          "id": "hats-1-e00",
+          "onset_seconds": 0.25,
+          "confidence": 0.75,
+          "method": "synth-demo"
+        },
+        {
+          "id": "hats-1-e01",
+          "onset_seconds": 0.75,
+          "confidence": 0.75,
+          "method": "synth-demo"
+        },
+        {
+          "id": "hats-1-e02",
+          "onset_seconds": 1.25,
+          "confidence": 0.75,
+          "method": "synth-demo"
+        },
+        {
+          "id": "hats-1-e03",
+          "onset_seconds": 1.75,
+          "confidence": 0.75,
+          "method": "synth-demo"
+        },
+        {
+          "id": "hats-1-e04",
+          "onset_seconds": 2.25,
+          "confidence": 0.75,
+          "method": "synth-demo"
+        },
+        {
+          "id": "hats-1-e05",
+          "onset_seconds": 2.75,
+          "confidence": 0.75,
+          "method": "synth-demo"
+        },
+        {
+          "id": "hats-1-e06",
+          "onset_seconds": 3.25,
+          "confidence": 0.75,
+          "method": "synth-demo"
+        },
+        {
+          "id": "hats-1-e07",
+          "onset_seconds": 3.75,
+          "confidence": 0.75,
+          "method": "synth-demo"
+        },
+        {
+          "id": "hats-1-e08",
+          "onset_seconds": 4.25,
+          "confidence": 0.75,
+          "method": "synth-demo"
+        },
+        {
+          "id": "hats-1-e09",
+          "onset_seconds": 4.75,
+          "confidence": 0.75,
+          "method": "synth-demo"
+        },
+        {
+          "id": "hats-1-e10",
+          "onset_seconds": 5.25,
+          "confidence": 0.75,
+          "method": "synth-demo"
+        },
+        {
+          "id": "hats-1-e11",
+          "onset_seconds": 5.75,
+          "confidence": 0.75,
+          "method": "synth-demo"
+        },
+        {
+          "id": "hats-1-e12",
+          "onset_seconds": 6.25,
+          "confidence": 0.75,
+          "method": "synth-demo"
+        },
+        {
+          "id": "hats-1-e13",
+          "onset_seconds": 6.75,
+          "confidence": 0.75,
+          "method": "synth-demo"
+        },
+        {
+          "id": "hats-1-e14",
+          "onset_seconds": 7.25,
+          "confidence": 0.75,
+          "method": "synth-demo"
+        },
+        {
+          "id": "hats-1-e15",
+          "onset_seconds": 7.75,
+          "confidence": 0.75,
+          "method": "synth-demo"
+        },
+        {
+          "id": "hats-1-e16",
+          "onset_seconds": 8.25,
+          "confidence": 0.75,
+          "method": "synth-demo"
+        },
+        {
+          "id": "hats-1-e17",
+          "onset_seconds": 8.75,
+          "confidence": 0.75,
+          "method": "synth-demo"
+        },
+        {
+          "id": "hats-1-e18",
+          "onset_seconds": 9.25,
+          "confidence": 0.75,
+          "method": "synth-demo"
+        },
+        {
+          "id": "hats-1-e19",
+          "onset_seconds": 9.75,
+          "confidence": 0.75,
+          "method": "synth-demo"
+        },
+        {
+          "id": "hats-1-e20",
+          "onset_seconds": 10.25,
+          "confidence": 0.75,
+          "method": "synth-demo"
+        },
+        {
+          "id": "hats-1-e21",
+          "onset_seconds": 10.75,
+          "confidence": 0.75,
+          "method": "synth-demo"
+        },
+        {
+          "id": "hats-1-e22",
+          "onset_seconds": 11.25,
+          "confidence": 0.75,
+          "method": "synth-demo"
+        },
+        {
+          "id": "hats-1-e23",
+          "onset_seconds": 11.75,
+          "confidence": 0.75,
+          "method": "synth-demo"
+        }
+      ]
+    },
+    {
+      "id": "bass-1",
+      "label": "<img src=x onerror=\"window.__xss=1\">bass",
+      "description": "恶意 label 测试行：<script>window.__xss=2</script>（必须按纯文本渲染）— 自生成的低音线条",
+      "source": "mock",
+      "confidence": 0.5,
+      "events": [
+        {
+          "id": "bass-1-e00",
+          "onset_seconds": 0,
+          "duration_seconds": 0.9,
+          "confidence": 0.75,
+          "method": "synth-demo"
+        },
+        {
+          "id": "bass-1-e01",
+          "onset_seconds": 1,
+          "duration_seconds": 0.9,
+          "confidence": 0.75,
+          "method": "synth-demo"
+        },
+        {
+          "id": "bass-1-e02",
+          "onset_seconds": 2,
+          "duration_seconds": 0.9,
+          "confidence": 0.75,
+          "method": "synth-demo"
+        },
+        {
+          "id": "bass-1-e03",
+          "onset_seconds": 3,
+          "duration_seconds": 0.9,
+          "confidence": 0.75,
+          "method": "synth-demo"
+        },
+        {
+          "id": "bass-1-e04",
+          "onset_seconds": 4,
+          "duration_seconds": 0.9,
+          "confidence": 0.75,
+          "method": "synth-demo"
+        },
+        {
+          "id": "bass-1-e05",
+          "onset_seconds": 5,
+          "duration_seconds": 0.9,
+          "confidence": 0.75,
+          "method": "synth-demo"
+        },
+        {
+          "id": "bass-1-e06",
+          "onset_seconds": 6,
+          "duration_seconds": 0.9,
+          "confidence": 0.75,
+          "method": "synth-demo"
+        },
+        {
+          "id": "bass-1-e07",
+          "onset_seconds": 7,
+          "duration_seconds": 0.9,
+          "confidence": 0.75,
+          "method": "synth-demo"
+        },
+        {
+          "id": "bass-1-e08",
+          "onset_seconds": 8,
+          "duration_seconds": 0.9,
+          "confidence": 0.75,
+          "method": "synth-demo"
+        },
+        {
+          "id": "bass-1-e09",
+          "onset_seconds": 9,
+          "duration_seconds": 0.9,
+          "confidence": 0.75,
+          "method": "synth-demo"
+        },
+        {
+          "id": "bass-1-e10",
+          "onset_seconds": 10,
+          "duration_seconds": 0.9,
+          "confidence": 0.75,
+          "method": "synth-demo"
+        },
+        {
+          "id": "bass-1-e11",
+          "onset_seconds": 11,
+          "duration_seconds": 0.9,
+          "confidence": 0.75,
+          "method": "synth-demo"
+        }
+      ]
+    },
+    {
+      "id": "piano-a",
+      "label": "<img src=x onerror=\"window.__xss=1\">piano",
+      "description": "恶意 label 测试行：<script>window.__xss=2</script>（必须按纯文本渲染）— 自生成的钢琴和弦（同一 label 的第一个 id）",
+      "source": "mock",
+      "confidence": 0.5,
+      "events": [
+        {
+          "id": "piano-a-e00",
+          "onset_seconds": 0.5,
+          "duration_seconds": 0.6,
+          "confidence": 0.75,
+          "pitch": {
+            "midi": 60,
+            "confidence": 0.5,
+            "source": "mock"
+          },
+          "method": "synth-demo"
+        },
+        {
+          "id": "piano-a-e01",
+          "onset_seconds": 1.5,
+          "duration_seconds": 0.4,
+          "confidence": 0.75,
+          "pitch": {
+            "midi": 63,
+            "confidence": 0.5,
+            "source": "mock"
+          },
+          "method": "synth-demo"
+        },
+        {
+          "id": "piano-a-e02",
+          "onset_seconds": 2.5,
+          "duration_seconds": 0.6,
+          "confidence": 0.75,
+          "pitch": {
+            "midi": 66,
+            "confidence": 0.5,
+            "source": "mock"
+          },
+          "method": "synth-demo"
+        },
+        {
+          "id": "piano-a-e03",
+          "onset_seconds": 3.5,
+          "duration_seconds": 0.4,
+          "confidence": 0.75,
+          "pitch": {
+            "midi": 69,
+            "confidence": 0.5,
+            "source": "mock"
+          },
+          "method": "synth-demo"
+        },
+        {
+          "id": "piano-a-e04",
+          "onset_seconds": 4.5,
+          "duration_seconds": 0.6,
+          "confidence": 0.75,
+          "pitch": {
+            "midi": 72,
+            "confidence": 0.5,
+            "source": "mock"
+          },
+          "method": "synth-demo"
+        },
+        {
+          "id": "piano-a-e05",
+          "onset_seconds": 5.5,
+          "duration_seconds": 0.4,
+          "confidence": 0.75,
+          "pitch": {
+            "midi": 75,
+            "confidence": 0.5,
+            "source": "mock"
+          },
+          "method": "synth-demo"
+        },
+        {
+          "id": "piano-a-e06",
+          "onset_seconds": 6.5,
+          "duration_seconds": 0.6,
+          "confidence": 0.75,
+          "pitch": {
+            "midi": 60,
+            "confidence": 0.5,
+            "source": "mock"
+          },
+          "method": "synth-demo"
+        },
+        {
+          "id": "piano-a-e07",
+          "onset_seconds": 7.5,
+          "duration_seconds": 0.4,
+          "confidence": 0.75,
+          "pitch": {
+            "midi": 63,
+            "confidence": 0.5,
+            "source": "mock"
+          },
+          "method": "synth-demo"
+        },
+        {
+          "id": "piano-a-e08",
+          "onset_seconds": 8.5,
+          "duration_seconds": 0.6,
+          "confidence": 0.75,
+          "pitch": {
+            "midi": 66,
+            "confidence": 0.5,
+            "source": "mock"
+          },
+          "method": "synth-demo"
+        },
+        {
+          "id": "piano-a-e09",
+          "onset_seconds": 9.5,
+          "duration_seconds": 0.4,
+          "confidence": 0.75,
+          "pitch": {
+            "midi": 69,
+            "confidence": 0.5,
+            "source": "mock"
+          },
+          "method": "synth-demo"
+        },
+        {
+          "id": "piano-a-e10",
+          "onset_seconds": 10.5,
+          "duration_seconds": 0.6,
+          "confidence": 0.75,
+          "pitch": {
+            "midi": 72,
+            "confidence": 0.5,
+            "source": "mock"
+          },
+          "method": "synth-demo"
+        },
+        {
+          "id": "piano-a-e11",
+          "onset_seconds": 11.5,
+          "duration_seconds": 0.4,
+          "confidence": 0.75,
+          "pitch": {
+            "midi": 75,
+            "confidence": 0.5,
+            "source": "mock"
+          },
+          "method": "synth-demo"
+        }
+      ]
+    },
+    {
+      "id": "piano-b",
+      "label": "<img src=x onerror=\"window.__xss=1\">piano",
+      "description": "恶意 label 测试行：<script>window.__xss=2</script>（必须按纯文本渲染）— 自生成的钢琴装饰音（与 piano-a 同 label 不同 id，UI 不合并）",
+      "source": "mock",
+      "confidence": 0.5,
+      "stem": {
+        "filename": "demo/demo-track.wav",
+        "sha256": "07a03589a4efec6c6b49fe134dd480d3a80e144f7391b1256b64c589ade3629a"
+      },
+      "events": [
+        {
+          "id": "piano-b-e00",
+          "onset_seconds": 0.75,
+          "duration_seconds": 0.5,
+          "confidence": 0.75,
+          "pitch": {
+            "midi": 60,
+            "confidence": 0.5,
+            "source": "mock"
+          },
+          "method": "synth-demo"
+        },
+        {
+          "id": "piano-b-e01",
+          "onset_seconds": 1.25,
+          "duration_seconds": 0.35,
+          "confidence": 0.75,
+          "pitch": {
+            "midi": 63,
+            "confidence": 0.5,
+            "source": "mock"
+          },
+          "method": "synth-demo"
+        },
+        {
+          "id": "piano-b-e02",
+          "onset_seconds": 2.75,
+          "duration_seconds": 0.5,
+          "confidence": 0.75,
+          "pitch": {
+            "midi": 66,
+            "confidence": 0.5,
+            "source": "mock"
+          },
+          "method": "synth-demo"
+        },
+        {
+          "id": "piano-b-e03",
+          "onset_seconds": 3.25,
+          "duration_seconds": 0.35,
+          "confidence": 0.75,
+          "pitch": {
+            "midi": 69,
+            "confidence": 0.5,
+            "source": "mock"
+          },
+          "method": "synth-demo"
+        },
+        {
+          "id": "piano-b-e04",
+          "onset_seconds": 4.75,
+          "duration_seconds": 0.5,
+          "confidence": 0.75,
+          "pitch": {
+            "midi": 72,
+            "confidence": 0.5,
+            "source": "mock"
+          },
+          "method": "synth-demo"
+        },
+        {
+          "id": "piano-b-e05",
+          "onset_seconds": 5.25,
+          "duration_seconds": 0.35,
+          "confidence": 0.75,
+          "pitch": {
+            "midi": 75,
+            "confidence": 0.5,
+            "source": "mock"
+          },
+          "method": "synth-demo"
+        },
+        {
+          "id": "piano-b-e06",
+          "onset_seconds": 6.75,
+          "duration_seconds": 0.5,
+          "confidence": 0.75,
+          "pitch": {
+            "midi": 60,
+            "confidence": 0.5,
+            "source": "mock"
+          },
+          "method": "synth-demo"
+        },
+        {
+          "id": "piano-b-e07",
+          "onset_seconds": 7.25,
+          "duration_seconds": 0.35,
+          "confidence": 0.75,
+          "pitch": {
+            "midi": 63,
+            "confidence": 0.5,
+            "source": "mock"
+          },
+          "method": "synth-demo"
+        },
+        {
+          "id": "piano-b-e08",
+          "onset_seconds": 8.75,
+          "duration_seconds": 0.5,
+          "confidence": 0.75,
+          "pitch": {
+            "midi": 66,
+            "confidence": 0.5,
+            "source": "mock"
+          },
+          "method": "synth-demo"
+        },
+        {
+          "id": "piano-b-e09",
+          "onset_seconds": 9.25,
+          "duration_seconds": 0.35,
+          "confidence": 0.75,
+          "pitch": {
+            "midi": 69,
+            "confidence": 0.5,
+            "source": "mock"
+          },
+          "method": "synth-demo"
+        },
+        {
+          "id": "piano-b-e10",
+          "onset_seconds": 10.75,
+          "duration_seconds": 0.5,
+          "confidence": 0.75,
+          "pitch": {
+            "midi": 72,
+            "confidence": 0.5,
+            "source": "mock"
+          },
+          "method": "synth-demo"
+        },
+        {
+          "id": "piano-b-e11",
+          "onset_seconds": 11.25,
+          "duration_seconds": 0.35,
+          "confidence": 0.75,
+          "pitch": {
+            "midi": 75,
+            "confidence": 0.5,
+            "source": "mock"
+          },
+          "method": "synth-demo"
+        }
+      ]
+    }
+  ],
+  "provenance": {
+    "steps": [
+      {
+        "tool": "aat-viewer-make-demo",
+        "source": "mock",
+        "note": "纯合成音频 + 合成事件（确定性生成器）；这是 mock 演示/测试数据，不是研究结果、不代表任何模型能力。"
+      }
+    ],
+    "notes": "mock demo for issue #34; events align with audible tones at the same absolute seconds."
+  },
+  "limitations": [
+    "本文件是自生成 mock（provenance.source=mock），不是研究结果，也不代表任何分析模型的能力。",
+    "pitch/confidence 均为随意填的演示值，不承诺正确性；没有音高证据的真实输出不应填写 pitch。",
+    "音频与事件共享同一合成时间轴（onset 秒=可听脉冲秒），用于验证显示对齐，不是真实音乐分析。"
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "name": "aat-agentic-viewer",
+  "private": true,
+  "type": "module",
+  "description": "Local high-performance viewer for agentic-audio-tracks/v1 (issue #34). No npm dependencies; Node >= 20 for tests/tools only.",
+  "scripts": {
+    "serve": "node tools/serve.mjs",
+    "demo": "node tools/make-demo.mjs",
+    "stress": "node tools/make-stress.mjs",
+    "test": "node --test tests/",
+    "browser-check": "node tools/browser-check.mjs"
+  }
+}

@@ -1,0 +1,8 @@
+# Generated artifacts of agentic/viewer: evidence and stress data, never committed.
+fixtures/generated/
+screenshots/
+reports/
+node_modules/
+*.wav
+*.png
+stress-*.json

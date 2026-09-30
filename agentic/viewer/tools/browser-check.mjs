@@ -1,0 +1,766 @@
+// Real-browser checks for agentic/viewer (issue #34).
+//
+//   node agentic/viewer/tools/browser-check.mjs
+//   node agentic/viewer/tools/browser-check.mjs --chrome "C:/path/to/chrome.exe"
+//
+// Launches the locally installed Chrome/Edge headless (no downloads), serves
+// ONLY `agentic/viewer/` on 127.0.0.1, drives the page through the Chrome
+// DevTools Protocol (DOM.setFileInputFiles + Runtime.evaluate + Input events)
+// and asserts the state the UI actually computes. It also measures real load /
+// render / frame timings for the 100k-event stress fixture and captures
+// screenshots as review evidence.
+//
+// Artifacts (all gitignored, returned to the main agent for reading):
+//   agentic/viewer/reports/browser-check.json
+//   agentic/viewer/screenshots/*.png
+//
+// Exit code 0 = all checks pass.
+
+import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+
+import { startServer } from "./serve.mjs";
+import { writeDemo, buildDemoWav, demoDoc, DEMO_WAV_NAME } from "./make-demo.mjs";
+import { writeStress } from "./make-stress.mjs";
+
+const HERE = fileURLToPath(new URL(".", import.meta.url));
+export const VIEWER_ROOT = resolve(HERE, "..");
+const SCREENSHOT_DIR = join(VIEWER_ROOT, "screenshots");
+const REPORT_DIR = join(VIEWER_ROOT, "reports");
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+function parseArgs(argv) {
+  const options = { chrome: null, timeoutMs: 120000, stressEvents: 100000 };
+  for (let index = 0; index < argv.length; index += 1) {
+    if (argv[index] === "--chrome") options.chrome = argv[++index];
+    else if (argv[index] === "--timeout-ms") options.timeoutMs = Number(argv[++index]);
+    else if (argv[index] === "--stress-events") options.stressEvents = Number(argv[++index]);
+  }
+  return options;
+}
+
+function findChrome(explicit) {
+  const candidates = [];
+  if (explicit) candidates.push(explicit);
+  if (process.env.CHROME_PATH) candidates.push(process.env.CHROME_PATH);
+  if (process.platform === "win32") {
+    candidates.push(
+      "C:/Program Files/Google/Chrome/Application/chrome.exe",
+      "C:/Program Files (x86)/Google/Chrome/Application/chrome.exe",
+      "C:/Program Files/Microsoft/Edge/Application/msedge.exe",
+      "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe",
+    );
+  } else if (process.platform === "darwin") {
+    candidates.push(
+      "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+      "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+    );
+  } else {
+    candidates.push("/usr/bin/google-chrome", "/usr/bin/chromium", "/usr/bin/chromium-browser", "/usr/bin/microsoft-edge");
+  }
+  for (const candidate of candidates) {
+    if (candidate && existsSync(candidate)) return candidate;
+  }
+  return null;
+}
+
+async function waitForHttp(url, timeoutMs = 20000) {
+  const deadline = Date.now() + timeoutMs;
+  let lastError = null;
+  while (Date.now() < deadline) {
+    try {
+      const response = await fetch(url);
+      if (response.ok) return await response.json();
+    } catch (error) {
+      lastError = error;
+    }
+    await sleep(200);
+  }
+  throw new Error(`timeout waiting for ${url}${lastError ? `: ${lastError.message}` : ""}`);
+}
+
+async function connectCdp(webSocketDebuggerUrl) {
+  const socket = new WebSocket(webSocketDebuggerUrl);
+  await new Promise((resolvePromise, rejectPromise) => {
+    socket.addEventListener("open", resolvePromise, { once: true });
+    socket.addEventListener("error", () => rejectPromise(new Error("CDP socket error")), { once: true });
+  });
+  let nextId = 1;
+  const pending = new Map();
+  socket.addEventListener("message", (event) => {
+    const message = JSON.parse(event.data);
+    if (message.id && pending.has(message.id)) {
+      const entry = pending.get(message.id);
+      pending.delete(message.id);
+      if (message.error) entry.reject(new Error(`${entry.method}: ${JSON.stringify(message.error)}`));
+      else entry.resolve(message.result);
+    }
+  });
+  return {
+    send(method, params = {}) {
+      const id = nextId++;
+      return new Promise((resolvePromise, rejectPromise) => {
+        pending.set(id, { resolve: resolvePromise, reject: rejectPromise, method });
+        socket.send(JSON.stringify({ id, method, params }));
+      });
+    },
+    close() {
+      socket.close();
+    },
+  };
+}
+
+async function evaluate(client, expression) {
+  const result = await client.send("Runtime.evaluate", {
+    expression,
+    awaitPromise: true,
+    returnByValue: true,
+    userGesture: true,
+  });
+  if (result.exceptionDetails) {
+    const description =
+      (result.exceptionDetails.exception && result.exceptionDetails.exception.description) || result.exceptionDetails.text;
+    throw new Error(`page evaluate failed: ${description}`);
+  }
+  return result.result ? result.result.value : undefined;
+}
+
+async function waitFor(client, description, expression, timeoutMs = 15000, intervalMs = 120) {
+  const deadline = Date.now() + timeoutMs;
+  let lastValue = null;
+  while (Date.now() < deadline) {
+    try {
+      const value = await evaluate(client, expression);
+      lastValue = value;
+      if (value) return value;
+    } catch {
+      // keep polling
+    }
+    await sleep(intervalMs);
+  }
+  throw new Error(`timeout waiting for ${description} (last value: ${JSON.stringify(lastValue)})`);
+}
+
+async function setFileInput(client, selector, files) {
+  const document = await client.send("DOM.getDocument", { depth: 1 });
+  const { nodeId } = await client.send("DOM.querySelector", { nodeId: document.root.nodeId, selector });
+  if (!nodeId) throw new Error(`file input not found: ${selector}`);
+  await client.send("DOM.setFileInputFiles", { files, nodeId });
+}
+
+/** Load a JSON file and wait for THIS load to complete (load-counter, no stale state). */
+async function loadJsonFile(client, path) {
+  const before = await evaluate(client, "window.__aatViewer.state().loads.json");
+  await setFileInput(client, "#json-input", [path]);
+  await waitFor(client, `json load of ${path}`, `window.__aatViewer.state().loads.json > ${before}`, 60000);
+}
+
+/** Load an audio file and wait for THIS load to complete. */
+async function loadAudioFile(client, path) {
+  const before = await evaluate(client, "window.__aatViewer.state().loads.audio");
+  await setFileInput(client, "#audio-input", [path]);
+  await waitFor(client, `audio load of ${path}`, `window.__aatViewer.state().loads.audio > ${before}`, 60000);
+}
+
+async function screenshot(client, name) {
+  const shot = await client.send("Page.captureScreenshot", { format: "png" });
+  const target = join(SCREENSHOT_DIR, `${name}.png`);
+  await writeFile(target, Buffer.from(shot.data, "base64"));
+  return target;
+}
+
+const CLOSE = (a, b, tolerance) => Math.abs(a - b) <= tolerance;
+
+export async function main(argv = process.argv.slice(2)) {
+  const options = parseArgs(argv);
+  const chromePath = findChrome(options.chrome);
+  if (!chromePath) {
+    process.stderr.write(
+      "no Chrome/Edge found; pass --chrome <path> or set CHROME_PATH. Browser checks are then UNVERIFIED.\n",
+    );
+    process.exitCode = 2;
+    return { ok: false, verified: false };
+  }
+
+  await mkdir(SCREENSHOT_DIR, { recursive: true });
+  await mkdir(REPORT_DIR, { recursive: true });
+
+  // Fixtures: deterministic demo + stress (gitignored generated assets).
+  const demo = await writeDemo({});
+  const stress = await writeStress({ events: options.stressEvents, seconds: 300 });
+  const workDir = await mkdtemp(join(tmpdir(), "aat-agentic-viewer-check-"));
+  const wrongWav = join(workDir, "wrong-duration.wav");
+  await writeFile(wrongWav, buildDemoWav({ seconds: 3, events: [] }));
+  const badJson = join(workDir, "bad.json");
+  await writeFile(badJson, '{ "schema_version": "agentic-audio-tracks/v1", ');
+  const badPathJson = join(workDir, "bad-path.json");
+  const badPathDoc = demoDoc(demo.wavSha256);
+  badPathDoc.audio.filename = "../secret/escape.wav";
+  await writeFile(badPathJson, JSON.stringify(badPathDoc));
+
+  const checks = [];
+  const screenshots = [];
+  const record = (name, ok, details) => {
+    checks.push({ name, ok: Boolean(ok), details: details === undefined ? null : details });
+    process.stdout.write(`${ok ? "PASS" : "FAIL"}  ${name}${details === undefined ? "" : ` — ${JSON.stringify(details)}`}\n`);
+  };
+
+  const { server, port } = await startServer({ port: 0 });
+  const pageUrl = `http://127.0.0.1:${port}/index.html`;
+  let chrome = null;
+  let client = null;
+  let chromeLog = "";
+  const env = { browserBinary: chromePath, pageUrl, node: process.version, platform: process.platform };
+
+  try {
+    chrome = spawn(
+      chromePath,
+      [
+        "--headless=new",
+        "--remote-debugging-port=0",
+        `--user-data-dir=${join(workDir, "chrome-profile")}`,
+        "--no-first-run",
+        "--no-default-browser-check",
+        "--disable-gpu",
+        "--mute-audio",
+        "--autoplay-policy=no-user-gesture-required",
+        "--window-size=1280,900",
+        pageUrl,
+      ],
+      { stdio: ["ignore", "pipe", "pipe"] },
+    );
+    chrome.stderr.on("data", (chunk) => {
+      chromeLog += chunk.toString();
+    });
+    chrome.stdout.on("data", (chunk) => {
+      chromeLog += chunk.toString();
+    });
+
+    let debuggingPort = null;
+    const deadline = Date.now() + 30000;
+    while (Date.now() < deadline && debuggingPort === null) {
+      const match = /DevTools listening on ws:\/\/127\.0\.0\.1:(\d+)\//.exec(chromeLog);
+      if (match) debuggingPort = Number(match[1]);
+      else await sleep(150);
+    }
+    if (debuggingPort === null) throw new Error(`Chrome DevTools port not found; log tail: ${chromeLog.slice(-500)}`);
+
+    const version = await waitForHttp(`http://127.0.0.1:${debuggingPort}/json/version`);
+    const targets = await waitForHttp(`http://127.0.0.1:${debuggingPort}/json/list`);
+    const pageTarget = targets.find((target) => target.type === "page") || null;
+    if (!pageTarget) throw new Error("no page target from Chrome");
+    client = await connectCdp(pageTarget.webSocketDebuggerUrl);
+    await client.send("Runtime.enable");
+    await client.send("DOM.enable");
+    await client.send("Page.enable");
+    await client.send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
+
+    await waitFor(client, "viewer ready", "window.__aatViewer && window.__aatViewer.ready === true", 20000);
+    env.browserVersion = version.Browser || null;
+    env.userAgent = await evaluate(client, "navigator.userAgent");
+    env.hardwareConcurrency = await evaluate(client, "navigator.hardwareConcurrency");
+    env.deviceMemory = await evaluate(client, "navigator.deviceMemory ?? null");
+    env.initialDpr = await evaluate(client, "window.devicePixelRatio");
+    record("page loads with the debug API ready", true, { userAgent: env.userAgent });
+
+    // ---- load demo JSON -------------------------------------------------
+    await loadJsonFile(client, join(VIEWER_ROOT, "fixtures", "demo", "demo-track.json"));
+    await waitFor(client, "demo doc loaded", "window.__aatViewer.state().doc !== null", 20000);
+    const docState = await evaluate(client, "window.__aatViewer.state().doc");
+    record(
+      "demo JSON: rows keep label + stable id (same label not merged)",
+      docState.rows.length === 5 &&
+        docState.rows[4].label === "piano" &&
+        docState.rows[3].label === "piano" &&
+        docState.rows[3].id !== docState.rows[4].id &&
+        docState.rows[0].id === "drums-kick",
+      { rows: docState.rows.map((r) => `${r.id}:${r.label}`), totalEvents: docState.totalEvents },
+    );
+    const gutterText = await evaluate(client, "document.getElementById('gutter-rows').textContent");
+    const gutterNodes = await evaluate(client, "document.querySelectorAll('#gutter-rows .gutter-row').length");
+    record(
+      "gutter rows are one DOM node per instrument row with textContent labels",
+      gutterNodes === 5 && gutterText.includes("drums-kick") && gutterText.includes("hi-hat"),
+      { gutterNodes },
+    );
+
+    // ---- onset alignment on the seconds axis ----------------------------
+    const alignment = await evaluate(
+      client,
+      `(() => {
+        const api = window.__aatViewer;
+        const s = api.state();
+        const rows = api.eventScreenPositions(3);
+        const width = document.getElementById('canvas-stack').clientWidth;
+        const bad = [];
+        for (const row of rows) {
+          for (const item of row.items) {
+            const expected = ((item.onset - s.view.start) / (s.view.end - s.view.start)) * width;
+            if (Math.abs(expected - item.x) > 0.01) bad.push({ id: item.id, x: item.x, expected });
+          }
+        }
+        const at500ms = api.pixelOf(0.5);
+        const expected500ms = (0.5 / s.view.end) * width; // view starts at 0 after load
+        return { bad, at500ms, expected500ms, totalEvents: s.doc.totalEvents, rows: rows.map(r => r.count) };
+      })()`,
+    );
+    record(
+      "onsets map to x = (onset - viewStart) / viewDuration * width (audio seconds are the time truth)",
+      alignment.bad.length === 0 && CLOSE(alignment.at500ms, alignment.expected500ms, 0.01),
+      { rows: alignment.rows, at500ms: alignment.at500ms },
+    );
+    const durationState = await evaluate(client, "window.__aatViewer.state().doc.durationSeconds");
+    record("JSON duration is the timeline length", durationState === 12, { durationSeconds: durationState });
+
+    // ---- audio load, hash + waveform ------------------------------------
+    await loadAudioFile(client, join(VIEWER_ROOT, "fixtures", "generated", DEMO_WAV_NAME));
+    await waitFor(client, "audio loaded", "window.__aatViewer.state().audio.loaded === true", 30000);
+    const audioState = await evaluate(client, "window.__aatViewer.state().audio");
+    const hashOk = audioState.hashHex === docState.audioSha256;
+    record(
+      "audio loads locally: SHA-256 matches the JSON, no upload",
+      hashOk && audioState.notes.filter((n) => n.level === "error").length === 0,
+      { hashHex: audioState.hashHex, notes: audioState.notes.map((n) => n.code) },
+    );
+    const wave = await evaluate(
+      client,
+      `(() => {
+        const canvas = document.getElementById('wave-canvas');
+        const ctx = canvas.getContext('2d');
+        const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+        let nonBackground = 0;
+        for (let i = 0; i < data.length; i += 4) {
+          if (data[i] !== 11 || data[i + 1] !== 15 || data[i + 2] !== 21) nonBackground += 1;
+        }
+        return { nonBackground, width: canvas.width, height: canvas.height };
+      })()`,
+    );
+    record("waveform lane is drawn from the peak pyramid (visible pixels)", wave.nonBackground > 1000, wave);
+
+    // ---- optional per-stem waveform (matched by stem filename only) -----
+    await setFileInput(client, "#stem-input", [join(VIEWER_ROOT, "fixtures", "generated", DEMO_WAV_NAME)]);
+    await waitFor(client, "stem loaded", "window.__aatViewer.state().audio.resource.stemsLoaded === 1", 30000);
+    const stemCheck = await evaluate(
+      client,
+      `(() => {
+        const canvas = document.getElementById('track-canvas');
+        const ctx = canvas.getContext('2d');
+        const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+        let stemPixels = 0;
+        for (let i = 0; i < data.length; i += 4) {
+          // faint stem waveform colour rgba(120,170,255) blended over row bg
+          if (data[i] > 40 && data[i] < 120 && data[i + 2] > 90) stemPixels += 1;
+        }
+        return { stemPixels, notes: document.getElementById('notes').textContent, stems: window.__aatViewer.state().audio.resource.stemsLoaded };
+      })()`,
+    );
+    record(
+      "per-stem waveform renders in its row when the stem file matches by name",
+      stemCheck.stems === 1 && stemCheck.stemPixels > 100 && /已绘制该行波形/.test(stemCheck.notes),
+      { stems: stemCheck.stems, stemPixels: stemCheck.stemPixels },
+    );
+    screenshots.push(await screenshot(client, "01-demo-loaded"));
+
+    // ---- BPM prefill / validation / grid-only behaviour -----------------
+    const bpmPrefill = await evaluate(client, "document.getElementById('bpm-input').value");
+    record("BPM is prefilled from JSON tempo.bpm", bpmPrefill === "120", { bpmPrefill });
+    const bpmCheck = await evaluate(
+      client,
+      `(() => {
+        const api = window.__aatViewer;
+        const before = JSON.stringify(api.onsetsSnapshot());
+        api.setBpm(240);
+        const grid = api.rowGrid();
+        const after = JSON.stringify(api.onsetsSnapshot());
+        const stateAfter = api.state().bpm;
+        const invalid = api.setBpm(0);
+        const invalidText = document.getElementById('bpm-status').textContent;
+        const kept = api.state().bpm.value;
+        api.setBpm(120);
+        return {
+          interval: grid.interval, beats: grid.beats.length,
+          onsetsUnchanged: before === after,
+          origin: stateAfter.origin,
+          invalidMessage: invalidText, keptValue: kept,
+          invalidRejected: invalid && invalid.lastInputRejected === true,
+        };
+      })()`,
+    );
+    record(
+      "BPM edit changes only the beat grid (0.25s at 240 BPM), onsets untouched",
+      CLOSE(bpmCheck.interval, 0.25, 1e-9) && bpmCheck.onsetsUnchanged && bpmCheck.beats > 0,
+      { interval: bpmCheck.interval, beats: bpmCheck.beats, onsetsUnchanged: bpmCheck.onsetsUnchanged },
+    );
+    record(
+      "invalid BPM (0) is rejected with a readable message and keeps the previous grid",
+      bpmCheck.invalidRejected && /正数/.test(bpmCheck.invalidMessage) && bpmCheck.keptValue === 240,
+      { invalidMessage: bpmCheck.invalidMessage, keptValue: bpmCheck.keptValue },
+    );
+    screenshots.push(await screenshot(client, "02-bpm-grid-240"));
+
+    // ---- wheel zoom anchored at the pointer -----------------------------
+    const stackBox = await evaluate(
+      client,
+      "(() => { const r = document.getElementById('canvas-stack').getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; })()",
+    );
+    const anchorX = Math.round(stackBox.x + stackBox.width * 0.4);
+    const anchorBefore = await evaluate(client, `window.__aatViewer.timeAtPx(${Math.round(stackBox.width * 0.4)})`);
+    await client.send("Input.dispatchMouseEvent", {
+      type: "mouseWheel",
+      x: anchorX,
+      y: Math.round(stackBox.y + 60),
+      deltaX: 0,
+      deltaY: -240,
+    });
+    await sleep(120);
+    const zoomResult = await evaluate(
+      client,
+      `(() => {
+        const api = window.__aatViewer;
+        const s = api.state();
+        return {
+          anchorAfter: api.timeAtPx(${Math.round(stackBox.width * 0.4)}),
+          start: s.view.start, end: s.view.end,
+          anchorExpected: ${anchorBefore},
+        };
+      })()`,
+    );
+    record(
+      "wheel zoom keeps the time under the pointer as the anchor",
+      CLOSE(zoomResult.anchorAfter, zoomResult.anchorExpected, 1e-6) && zoomResult.end - zoomResult.start < 12,
+      { before: zoomResult.anchorExpected, after: zoomResult.anchorAfter, window: [zoomResult.start, zoomResult.end] },
+    );
+    screenshots.push(await screenshot(client, "03-zoom-anchored"));
+
+    // zoom far out -> clamped to [0, duration]; zoom far in -> min window
+    const clamped = await evaluate(
+      client,
+      `(() => {
+        const api = window.__aatViewer;
+        for (let i = 0; i < 40; i += 1) api.zoomAt(2, 10);
+        const out = api.state().view;
+        for (let i = 0; i < 80; i += 1) api.zoomAt(0.5, 10);
+        const inn = api.state().view;
+        api.fit();
+        return { out, inn };
+      })()`,
+    );
+    record(
+      "view window is constrained: never before 0, never after the audio end, min duration kept",
+      clamped.out.start === 0 && CLOSE(clamped.out.end, 12, 1e-9) && clamped.inn.end > clamped.inn.start && clamped.inn.start >= 0,
+      clamped,
+    );
+
+    // pan + fit/reset
+    const panCheck = await evaluate(
+      client,
+      `(() => {
+        const api = window.__aatViewer;
+        api.setView(2, 8);
+        api.panPx(200);            // drag right: window looks earlier
+        const panned = api.state().view;
+        api.panPx(-100000);        // drag left: clamps at the file end
+        const atEnd = api.state().view;
+        api.panPx(100000);         // drag right: clamps at 0
+        const atStart = api.state().view;
+        api.reset();
+        const reset = api.state().view;
+        const bpm = api.state().bpm;
+        return { panned, atEnd, atStart, reset, bpm: bpm.value };
+      })()`,
+    );
+    record(
+      "pan/fit/reset behave and clamp at the file bounds",
+      panCheck.panned.start < 2 &&
+        panCheck.panned.start >= 0 &&
+        CLOSE(panCheck.atEnd.end, 12, 1e-9) &&
+        panCheck.atStart.start === 0 &&
+        panCheck.reset.start === 0 &&
+        panCheck.bpm === 120,
+      panCheck,
+    );
+
+    // ---- playback / seek / playhead ------------------------------------
+    const seekCheck = await evaluate(
+      client,
+      `(() => { window.__aatViewer.seek(3); return window.__aatViewer.playheadTime(); })()`,
+    );
+    await sleep(200);
+    const seekAfter = await evaluate(client, "window.__aatViewer.playheadTime()");
+    record("seek moves the playhead to the requested audio second", CLOSE(seekAfter, 3, 0.25), { seekAfter });
+
+    await evaluate(client, "window.__aatViewer.play()");
+    await sleep(900);
+    const playCheck = await evaluate(
+      client,
+      `(() => {
+        const api = window.__aatViewer;
+        const t = api.playheadTime();
+        const x = api.pixelOf(t);
+        const width = document.getElementById('canvas-stack').clientWidth;
+        const s = api.state();
+        const expected = ((t - s.view.start) / (s.view.end - s.view.start)) * width;
+        return { t, x, expected, playing: s.playing };
+      })()`,
+    );
+    await evaluate(client, "window.__aatViewer.pause()");
+    record(
+      "playback advances the playhead and the playhead line follows audio seconds",
+      playCheck.playing === true && playCheck.t > 3.3 && CLOSE(playCheck.x, playCheck.expected, 0.01),
+      playCheck,
+    );
+
+    // ---- malicious labels ----------------------------------------------
+    await loadJsonFile(client, join(VIEWER_ROOT, "fixtures", "demo", "demo-malicious-labels.json"));
+    await sleep(150);
+    const xssCheck = await evaluate(
+      client,
+      `(() => {
+        const gutter = document.getElementById('gutter-rows');
+        return {
+          xss: window.__xss ?? null,
+          hasImgElement: gutter.querySelectorAll('img').length,
+          hasScriptElement: gutter.querySelectorAll('script').length,
+          text: gutter.textContent,
+          notesText: document.getElementById('issues').textContent,
+        };
+      })()`,
+    );
+    record(
+      "malicious labels render as plain text (textContent/Canvas), no HTML execution",
+      xssCheck.xss === null && xssCheck.hasImgElement === 0 && xssCheck.hasScriptElement === 0 && xssCheck.text.includes("<img src=x"),
+      { xss: xssCheck.xss, imgs: xssCheck.hasImgElement },
+    );
+    screenshots.push(await screenshot(client, "04-malicious-labels-plain-text"));
+
+    // ---- unknown BPM / empty events ------------------------------------
+    await loadJsonFile(client, join(VIEWER_ROOT, "fixtures", "demo", "demo-unknown-tempo.json"));
+    const unknownBpm = await evaluate(
+      client,
+      `(() => {
+        const s = window.__aatViewer.state();
+        return {
+          value: document.getElementById('bpm-input').value,
+          placeholder: document.getElementById('bpm-input').placeholder,
+          text: document.getElementById('bpm-status').textContent,
+          unknown: s.bpm.unknown,
+          grid: window.__aatViewer.rowGrid(),
+        };
+      })()`,
+    );
+    record(
+      "tempo.bpm=null is surfaced as explicit unknown, no grid, human can type a BPM",
+      unknownBpm.unknown === true && unknownBpm.value === "" && unknownBpm.placeholder === "unknown" && /未知/.test(unknownBpm.text) && unknownBpm.grid.beats.length === 0,
+      { text: unknownBpm.text },
+    );
+    const manualBpm = await evaluate(
+      client,
+      `(() => {
+        const api = window.__aatViewer;
+        api.setBpm(90);
+        const grid = api.rowGrid();
+        return { interval: grid.interval, beats: grid.beats.length, origin: api.state().bpm.origin };
+      })()`,
+    );
+    record("manual BPM on an unknown-tempo document builds the grid", CLOSE(manualBpm.interval, 60 / 90, 1e-9) && manualBpm.beats > 0, manualBpm);
+
+    await loadJsonFile(client, join(VIEWER_ROOT, "fixtures", "demo", "demo-empty-events.json"));
+    const emptyCheck = await evaluate(
+      client,
+      `(() => {
+        const s = window.__aatViewer.state();
+        return { rows: s.doc.rows.length, total: s.doc.totalEvents, visible: s.lastRender.visibleEvents };
+      })()`,
+    );
+    record("empty events are a readable state (rows render, zero events)", emptyCheck.rows === 5 && emptyCheck.total === 0 && emptyCheck.visible === 0, emptyCheck);
+
+    // ---- error states: bad JSON, bad path, audio mismatch ---------------
+    await loadJsonFile(client, badJson);
+    await waitFor(client, "error state", "document.getElementById('status').className === 'error'");
+    const badJsonCheck = await evaluate(
+      client,
+      `(() => ({
+        status: document.getElementById('status').textContent,
+        issues: document.getElementById('issues').textContent,
+      }))()`,
+    );
+    record(
+      "malformed JSON produces a readable error (code + pointer, textContent)",
+      /E_PARSE/.test(badJsonCheck.issues) && /校验/.test(badJsonCheck.status),
+      { status: badJsonCheck.status },
+    );
+    screenshots.push(await screenshot(client, "05-error-state"));
+
+    await loadJsonFile(client, badPathJson);
+    await waitFor(client, "path error", "/E_PATH/.test(document.getElementById('issues').textContent)");
+    const pathCheck = await evaluate(client, "document.getElementById('issues').textContent");
+    record("unsafe audio path (../) is rejected with E_PATH, no fetch is attempted", /E_PATH/.test(pathCheck), { issues: pathCheck.slice(0, 160) });
+
+    await loadJsonFile(client, join(VIEWER_ROOT, "fixtures", "demo", "demo-track.json"));
+    await loadAudioFile(client, wrongWav);
+    await waitFor(client, "mismatch notes", "window.__aatViewer.state().audio.notes.length > 0", 30000);
+    const mismatchCheck = await evaluate(
+      client,
+      `(() => ({
+        notes: window.__aatViewer.state().audio.notes,
+        status: document.getElementById('status').textContent,
+      }))()`,
+    );
+    const codes = mismatchCheck.notes.map((n) => n.code);
+    record(
+      "audio mismatch (hash + duration) is an explicit error, never a silent retime",
+      codes.includes("A_HASH") && codes.includes("A_DURATION") && /不重定时|不一致/.test(mismatchCheck.status),
+      { codes, status: mismatchCheck.status },
+    );
+
+    // ---- resize / DPR ---------------------------------------------------
+    await client.send("Emulation.setDeviceMetricsOverride", { width: 900, height: 700, deviceScaleFactor: 2, mobile: false });
+    await sleep(300);
+    const dprCheck = await evaluate(
+      client,
+      `(() => {
+        const api = window.__aatViewer;
+        api.renderNow ? api.renderNow() : null;
+        const m = api.canvasMetrics();
+        return { m, width: document.getElementById('canvas-stack').clientWidth };
+      })()`,
+    );
+    record(
+      "resize + devicePixelRatio=2: canvas backing store matches CSS size * dpr",
+      dprCheck.m.dpr === 2 && dprCheck.m.track.width === Math.round(dprCheck.width * 2),
+      dprCheck,
+    );
+    await client.send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
+    await sleep(200);
+
+    // ---- 100k stress ----------------------------------------------------
+    await loadJsonFile(client, stress.jsonPath);
+    await waitFor(client, "stress doc loaded", "window.__aatViewer.state().doc !== null", 60000);
+    await loadAudioFile(client, stress.wavPath);
+    await waitFor(client, "stress audio loaded", "window.__aatViewer.state().audio.loaded === true", 60000);
+    const stressFull = await evaluate(client, `window.__aatViewer.setView(0, 300)`);
+    void stressFull;
+    await sleep(400);
+    await evaluate(client, "window.__aatViewer.startFrameProbe(60)");
+    await sleep(1200);
+    const stressStats = await evaluate(
+      client,
+      `(() => {
+        const api = window.__aatViewer;
+        const s = api.state();
+        return {
+          totalEvents: s.doc.totalEvents,
+          metrics: s.metrics,
+          render: s.lastRender,
+          domNodes: document.querySelectorAll('*').length,
+          rows: s.doc.rows.length,
+        };
+      })()`,
+    );
+    const domLean = stressStats.domNodes < 400;
+    const visibleSum = stressStats.render.rows.reduce((sum, row) => sum + row.visible, 0);
+    const frames = stressStats.metrics.frameDeltasMs;
+    const avgFrame = frames.length ? frames.reduce((a, b) => a + b, 0) / frames.length : null;
+    record(
+      "100k events: viewport culling + LOD keeps DOM lean and visible counts reported",
+      stressStats.totalEvents === options.stressEvents && domLean && visibleSum > 0,
+      {
+        totalEvents: stressStats.totalEvents,
+        domNodes: stressStats.domNodes,
+        visibleSum,
+        drawn: stressStats.render.drawnEvents,
+        aggregatedRows: stressStats.render.aggregatedRows,
+        rows: stressStats.render.rows.map((r) => `${r.id}: visible=${r.visible} drawn=${r.drawn}`),
+      },
+    );
+    record(
+      "100k events: measured timings recorded (load/validate/render/frame)",
+      typeof stressStats.metrics.validateMs === "number" && typeof stressStats.metrics.lastRenderMs === "number",
+      {
+        validateMs: stressStats.metrics.validateMs,
+        decodeMs: stressStats.metrics.decodeMs,
+        firstRenderMs: stressStats.metrics.firstRenderMs,
+        lastRenderMs: stressStats.metrics.lastRenderMs,
+        frameAvgMs: avgFrame,
+        frameMaxMs: frames.length ? Math.max(...frames) : null,
+        frameSamples: frames.length,
+      },
+    );
+    screenshots.push(await screenshot(client, "06-stress-100k"));
+
+    // zoom into a busy region for a second stress screenshot
+    await evaluate(client, `(() => { const api = window.__aatViewer; api.setView(100, 102); })()`);
+    await sleep(300);
+    const zoomedStress = await evaluate(
+      client,
+      `(() => {
+        const s = window.__aatViewer.state();
+        return { render: s.lastRender, view: s.view };
+      })()`,
+    );
+    record(
+      "100k events zoomed-in: only the visible subset is drawn (binary search culling)",
+      zoomedStress.render.visibleEvents > 0 && zoomedStress.render.visibleEvents < stressStats.totalEvents,
+      { view: zoomedStress.view, visible: zoomedStress.render.visibleEvents, drawn: zoomedStress.render.drawnEvents },
+    );
+    screenshots.push(await screenshot(client, "07-stress-zoomed"));
+
+    // ---- resource cleanup ----------------------------------------------
+    const cleanup = await evaluate(
+      client,
+      `(async () => {
+        const before = window.__aatViewer.resourceState();
+        await window.__aatViewer.dispose();
+        const after = window.__aatViewer.resourceState();
+        return { before, after };
+      })()`,
+    );
+    record(
+      "dispose() releases ObjectURLs / AudioContext / Workers",
+      cleanup.after.objectUrls === 0 && cleanup.after.workers === 0 && cleanup.after.validateWorkerActive === false && cleanup.after.audioContextState === "closed" && cleanup.after.audioSrc === null,
+      cleanup,
+    );
+  } finally {
+    if (client) client.close();
+    if (chrome) {
+      chrome.kill();
+      await sleep(300);
+    }
+    server.close();
+    await rm(workDir, { recursive: true, force: true }).catch(() => {});
+  }
+
+  const failures = checks.filter((check) => !check.ok);
+  const report = {
+    schema_version: "aat-viewer-browser-check/1",
+    ok: failures.length === 0,
+    generated_at_utc: new Date().toISOString(),
+    environment: env,
+    measurement: {
+      method: "Chrome DevTools Protocol: DOM.setFileInputFiles + Runtime.evaluate + Input.dispatchMouseEvent; timings from performance.now()/rAF deltas inside the page",
+      stressFixture: { events: options.stressEvents, seconds: 300, json: stress.jsonPath, wav: stress.wavPath },
+      note: "人工验收未完成：这些是主 Agent 浏览器自动检查结果，不是人类验收。",
+    },
+    checks,
+    screenshots,
+  };
+  await writeFile(join(REPORT_DIR, "browser-check.json"), `${JSON.stringify(report, null, 2)}\n`, "utf8");
+  process.stdout.write(
+    `\n${checks.length - failures.length}/${checks.length} checks passed. report: ${join(REPORT_DIR, "browser-check.json")}\n`,
+  );
+  if (failures.length > 0) {
+    process.exitCode = 1;
+  }
+  return report;
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+  await main();
+}
+
+export { buildDemoWav, demoDoc };

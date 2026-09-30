@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self' blob:; worker-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'">
+  <title>匿名音轨分析查看器 · agentic-audio-tracks/v1（agentic/viewer）</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header>
+    <h1>匿名音轨分析查看器</h1>
+    <p class="subtitle">
+      协议 <code>agentic-audio-tracks/v1</code> · 纵轴=乐器条目（label + 稳定 id，同类不同 id 不合并），
+      横轴=音频秒时间轴（onset + 波形） · 全部本地加载，<strong>不上传任何服务、无 CDN</strong>。
+    </p>
+  </header>
+
+  <section id="loaders" class="panel">
+    <h2>1. 加载本地文件</h2>
+    <p class="hint">顺序：先 JSON 结果文件，再音频文件（可选再选 stem 音频）。文件只留在本机浏览器内存中。</p>
+    <div class="loader-row">
+      <label class="file-label">JSON 结果文件
+        <input id="json-input" type="file" accept=".json,application/json">
+      </label>
+      <label class="file-label">音频文件（与 JSON 同一时间轴）
+        <input id="audio-input" type="file" accept="audio/*,.wav,.mp3,.flac,.ogg,.m4a">
+      </label>
+      <label class="file-label">可选 stem 音频（按 JSON stem 文件名匹配）
+        <input id="stem-input" type="file" accept="audio/*,.wav" multiple>
+      </label>
+    </div>
+  </section>
+
+  <section id="status-panel" class="panel">
+    <h2>2. 状态与校验</h2>
+    <div id="status" role="status">等待加载 JSON 结果文件。</div>
+    <div id="file-state" class="muted"></div>
+    <ul id="notes"></ul>
+    <ul id="issues"></ul>
+  </section>
+
+  <section id="transport-panel" class="panel">
+    <h2>3. 播放 / 视图</h2>
+    <div class="controls">
+      <button id="play-button" type="button">播放</button>
+      <button id="pause-button" type="button">暂停</button>
+      <label>跳转（秒）<input id="seek-input" type="number" step="0.1" min="0" value="0"></label>
+      <button id="fit-button" type="button">fit（显示全部）</button>
+      <button id="reset-button" type="button">reset</button>
+      <button id="zoom-in-button" type="button">放大（缩小时间窗）</button>
+      <button id="zoom-out-button" type="button">缩小（扩大时间窗）</button>
+      <span id="view-window" class="muted"></span>
+    </div>
+    <p class="hint">
+      滚轮：以鼠标指针位置为锚点缩放时间窗；Shift+滚轮 或 拖拽：平移；单击标尺/波形/轨道：跳转（seek）。
+      时间窗始终约束在 [0, 音频时长]。
+    </p>
+  </section>
+
+  <section id="bpm-panel" class="panel">
+    <h2>4. BPM（只调节拍网格，绝不重定时 onset）</h2>
+    <div class="controls">
+      <label>BPM <input id="bpm-input" type="number" step="0.1" min="0" max="1000" placeholder="unknown"></label>
+      <button id="bpm-apply" type="button">应用 BPM</button>
+      <button id="bpm-json" type="button">恢复 JSON 值</button>
+      <span id="bpm-origin" class="muted"></span>
+    </div>
+    <div id="bpm-status" class="muted"></div>
+  </section>
+
+  <section id="timeline-section" class="panel">
+    <h2>5. 时间轴视图</h2>
+    <div id="timeline-area">
+      <div id="gutter">
+        <div id="gutter-head">乐器（label + id）</div>
+        <div id="gutter-wave">整体波形</div>
+        <div id="gutter-rows"></div>
+      </div>
+      <div id="canvas-stack">
+        <canvas id="ruler-canvas"></canvas>
+        <canvas id="wave-canvas"></canvas>
+        <canvas id="track-canvas"></canvas>
+      </div>
+    </div>
+    <div id="metrics" class="muted"></div>
+  </section>
+
+  <footer class="muted">
+    <p>
+      数据契约：issue #32 冻结的 <code>agentic-audio-tracks/v1</code>（结构 schema + 语义规则，见
+      <code>agentic/viewer/schema/</code>，与 <code>agentic/schema/</code> 字节一致）。
+      demo/stress 数据均为自生成 mock（<code>provenance.source=mock</code>），不是研究结果。
+    </p>
+  </footer>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
