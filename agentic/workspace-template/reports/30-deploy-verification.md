@@ -11,7 +11,7 @@
 
 | 部分 | 口径 |
 |---|---|
-| `tests/test_workspace_template.py`（27 项） | **离线 mock**：tmp 目录、`--skip-skill`、断 PATH；0 网络 0 API 0 GPU |
+| `tests/test_workspace_template.py`（28 项） | **离线 mock**：tmp 目录、`--skip-skill`、断 PATH；0 网络 0 API 0 GPU |
 | 本文件 §2–§7 | **真实**：真机 Windows、真 `gh skill install`、真 Pi run（少量 API）、真 SAM dry-run |
 | GPU 真实分离 | **blocked → issue #33**（未执行、未伪称成功） |
 
@@ -107,7 +107,7 @@ python agentic/workspace-template/bootstrap.py --workspace "<WORKSPACE>" \
 | 从空本地目录按说明部署成功；已部署再运行不会覆盖用户输入/配置 | **满足** | §2（首跑成功、二跑 `[skip]/[kept]`、冲突退出 3 不覆盖；README §2） |
 | Pi 使用指定 Gemini 模型发现 skill，SAM dry-run 能执行 | **满足** | §4–§6（模型来自 trust 的 settings；skills 段含 sam-audio；dry-run 真跑通过） |
 | 音频与 outputs/secret 全被 ignore，配置模板只使用 env 或本地配置 | **满足** | 模板 `.gitignore`（audio/outputs/local/sessions/.pi/skills/.pi/extensions/*.wav/…）；`local/config.json` 只存本机路径；模板无 key；tests 断言 |
-| 提供 smoke tests/doctor 和逐条部署实证；为任务 5 返回稳定命令及 workspace 路径 | **满足** | `tests/`（27 项离线）+ `smoke.py` + `doctor.py` + 本文件；稳定命令见 README §2/§3/§7 |
+| 提供 smoke tests/doctor 和逐条部署实证；为任务 5 返回稳定命令及 workspace 路径 | **满足** | `tests/`（28 项离线）+ `smoke.py` + `doctor.py` + 本文件；稳定命令见 README §2/§3/§7 |
 
 ## 8. 开发期真实缺陷（诚实记录，均已修复 + 回归测试）
 
@@ -144,6 +144,21 @@ python agentic/workspace-template/bootstrap.py --workspace "<WORKSPACE>" \
 | 5 | smoke 把 runner 3/4/5/6 压成 0/1 | 按契约原样传播 runner 失败码；判据未过用独立退出码 1；文档写明完整退出码契约 | `test_smoke_propagates_runner_failure_codes` / `test_smoke_acceptance_failure_is_distinct_code`（fake runner，0 API） |
 | 6 | 已存在 skill 只看 3 文件就 skip，doctor 只报期望 pin | 校验 `SKILL.md` frontmatter `github-pinned`/`github-repo`/`name` **和** 内容 hash（SKILL.md 正文 + cli-reference.md + audio_toolbox.py；gh 会重写 frontmatter 故正文单独 pin）；错 pin/缺元数据/漂移 → 显式失败且不覆盖/不重装用户文件 | `test_skill_wrong_pin_fails_without_overwrite` / `test_skill_missing_pin_metadata_fails` / `test_skill_content_drift_fails`（假 skill 目录）+ **真实安装**校验通过（github-pinned=dfbc40a9… + 三项内容 hash） |
 
-修订后实测：离线 **27 项**新增测试 + 上游 45 项 = 72 项全绿；真实 `doctor --deep --redact`
-（含真实 `verify_models.py`）0 失败、1 项 GPU 显式 blocked；fresh LF checkout 证据见 §11 补记。
+修订后实测：离线 **28 项**新增测试 + 上游 45 项 = 73 项全绿；真实 `doctor --deep --redact`
+（含真实 `verify_models.py`）0 失败、1 项 GPU 显式 blocked；fresh LF checkout 证据见 §11。
 无新增付费/GPU 调用（真实 smoke 证据仍为 §5 那次 run）。
+
+## 11. fresh LF checkout 实证（review 项 1）
+
+方法：`git clone -c core.autocrlf=false --branch agentic/issue-31 <origin> <fresh>`（Windows，
+`file` 确认源文件为 LF、raw sha256 == manifest pin == `git show HEAD:` blob hash）。
+
+| 在 LF checkout 内执行 | 结果 |
+|---|---|
+| 离线测试全套（`pytest agentic/workspace-template/tests`） | **28 passed**（含 `test_manifest_pins_are_git_blob_canonical_lf`：逐文件对 `git show HEAD:` blob 校验 pin） |
+| `bootstrap.py --workspace <tmp> --fixture --skip-skill` | 退出 0；`[ok] …（canonical LF sha256 dac9abe552cf… / 61f3980e4d06…）`（修复前此处必报 `E_BRIDGE_PIN`） |
+| 部署字节检查 | `audio-bridge.ts`/`audio_guard.mjs` 均无 CRLF，raw sha256 == pin |
+| `doctor.py --redact` | `bridge.pin: ok`（canonical LF）；其余 fail 均为 fixture 预期（--skip-skill 未装 skill、未配 SAM） |
+
+同时在原 Windows CRLF checkout（本 worktree）同套测试 28 项全绿——两侧口径一致（归一化策略生效）。
+真实部署 workspace 的桥接已 `--force-bridge` 显式写入 canonical pin 字节（sha256 == pin）。

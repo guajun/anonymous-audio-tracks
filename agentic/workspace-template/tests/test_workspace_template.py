@@ -272,6 +272,16 @@ def test_doctor_detects_bridge_drift(workspace: Path):
     assert "pin" in by_id["bridge.pin"]["detail"]
 
 
+def test_doctor_hints_only_advertise_real_commands(workspace: Path):
+    """Regression (review 4): no fix hint may reference flags that do not exist."""
+    result = run_script(DOCTOR, ["--workspace", str(workspace), "--json"])
+    for bogus in ("--rehash-audio", "--verify-models"):
+        assert bogus not in result.stdout, f"doctor must not advertise nonexistent {bogus}"
+    payload = json.loads(result.stdout)
+    for check in payload["checks"]:
+        assert "Traceback" not in check.get("detail", "")
+
+
 def test_doctor_redacts_absolute_paths(workspace: Path):
     result, payload = _doctor_json(workspace, extra=["--redact"])
     assert str(workspace) not in result.stdout

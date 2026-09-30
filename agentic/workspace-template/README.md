@@ -4,7 +4,7 @@
 `google/gemini-3.8-flash`、`sam-audio` skill（pin 安装）、明确标注的音频桥接扩展、音频输入与
 输出目录），用 `doctor.py` 自检、用 `smoke.py` 做真实模型冒烟。它不是训练项目。
 
-- 真实/mock 分离：本 README 的命令全部可实跑；**离线自动化测试**（`tests/`，27 项，不联网、
+- 真实/mock 分离：本 README 的命令全部可实跑；**离线自动化测试**（`tests/`，28 项，不联网、
   不调用模型）与**真实验证**（实机 Windows 启动 / Pi 项目 trust / Gemini skill 发现 / SAM
   help 与 dry-run）分开记录，真实证据见 [`reports/30-deploy-verification.md`](reports/30-deploy-verification.md)。
 - 冻结接口见 [`manifest.json`](manifest.json)：toolbox pin、SAM commit、桥接文件 SHA-256、
@@ -16,7 +16,7 @@
 
 | 内容 | 类型 | 位置 |
 |---|---|---|
-| 部署/幂等/冲突/诊断逻辑测试 | 离线（mock/tmp 目录） | `tests/test_workspace_template.py`（27 项） |
+| 部署/幂等/冲突/诊断逻辑测试 | 离线（mock/tmp 目录） | `tests/test_workspace_template.py`（28 项） |
 | Windows 实机启动（PowerShell 5.1 / pwsh / git-bash） | 真实 | `reports/30-deploy-verification.md` §3 |
 | project trust 加载项目设置/扩展 | 真实（零 API 探针 + 真实运行模型证据） | 报告 §4 |
 | Gemini 3.8 Flash skill 发现 + SAM CLI `--help` + `audio_attach` 错误契约 | 真实（1 次 Pi run，≈3 个 assistant 请求） | 报告 §5 |
@@ -219,4 +219,4 @@ python .../bootstrap.py ...      # 重新部署（幂等）
 - 冻结接口与 pin：[`manifest.json`](manifest.json)
 - 上游接口：[`../toolbox/manifest.json`](../toolbox/manifest.json)（#29）、
   [`../audio-probe/README.md`](../audio-probe/README.md)（#30，§9 给下游的稳定接口）
-- 离线测试：`tests/test_workspace_template.py`（27 项，0 网络 0 API）
+- 离线测试：`tests/test_workspace_template.py`（28 项，0 网络 0 API）
