@@ -18,8 +18,8 @@
 
 ## 2. 固定来源与许可
 
-- toolbox pin：`f8eeac443aaf9d8aa0f7ded0d26783abcb517a48`（任务分支 HEAD，review
-  合并后更新为合并 commit）。
+- toolbox pin：`dfbc40a9541f686207b65b93b1332bb505654261`（toolbox PR #1 squash
+  合并到 `main` 的 merge commit；安装即 pin 该 commit，无需正式 release）。
 - SAM 上游：`guajun/anonymous-audio-tracks@infrastructure/audio-analysis/sam-audio`
   commit `c603de8794cc16880dc01be0f1e868f6c2845417`（branch `infra/audio-analysis-migration`，
   对应 PR #26，不修改）。
@@ -68,11 +68,11 @@ frontmatter/自包含布局。
 
 ```sh
 gh skill install guajun/agentic-audio-toolbox sam-audio \
-  --agent pi --scope project --pin f8eeac443aaf9d8aa0f7ded0d26783abcb517a48
+  --agent pi --scope project --pin dfbc40a9541f686207b65b93b1332bb505654261
 ```
 
 结果：
-- `Using ref f8eeac443aaf9d8aa0f7ded0d26783abcb517a48` → `✓ Installed sam-audio (from guajun/agentic-audio-toolbox@f8eeac44...) in .pi\skills`
+- `Using ref dfbc40a9541f686207b65b93b1332bb505654261 (dfbc40a9)` → `✓ Installed sam-audio (from guajun/agentic-audio-toolbox@dfbc40a9541f686207b65b93b1332bb505654261) in .pi\skills`
 - `gh skill list` → `sam-audio  pi  project  guajun/agentic-audio-toolbox`
 - 安装目录自包含（仅 `SKILL.md`、`references/cli-reference.md`、`scripts/audio_toolbox.py`），
   从安装目录直接可用：
@@ -85,9 +85,24 @@ gh skill install guajun/agentic-audio-toolbox sam-audio \
 ### 3.5 主仓库集成测试
 
 命令（本 worktree）：`python -m unittest discover -s agentic/toolbox/tests -v`
-结果：见 PR 测试栏（`Ran 5 tests … OK`；校验 manifest pin/固定来源/退出码映射/
-文档引用/无密钥无个人路径无权重音频入库）。根锁文件未改动（`git diff --name-only`
-仅含 `agentic/toolbox/`）。
+结果：`Ran 7 tests in 0.671s — OK`。校验内容：manifest pin/固定来源/退出码映射/
+文档引用；以及 **git 跟踪列表卫生**（`git ls-files`，仅判断受控跟踪文件：禁止
+tracked 音频/权重/密钥/个人路径/超大文件）。按 review 指令，卫生检查不再扫描
+磁盘目录内容：#30/#31 在 gitignored 目录（`.local/`、`outputs/` 等）生成的合法
+fixture/音频/会话不会被误判为 committed；并新增 temp repo 回归：被忽略的本地
+fixture 不误报、真正被跟踪的二进制被拒绝、被跟踪的密钥被拒绝。根锁文件未改动
+（改动仅 `agentic/toolbox/`）。
+
+### 3.6 合并后修订（主仓库 PR review 指令）
+
+- toolbox 已按授权 squash 合并（PR #1，merge commit `dfbc40a9541f686207b65b93b1332bb505654261`；
+  合并前校验 HEAD 未变、mergeable、`--match-head-commit`，未用 `--admin`、未删分支；
+  PR body 跨库 `Closes #29` 已改为 `Refs #29`，#29 由主仓库 PR 关闭）。
+- 最终 pin 更新为该 merge SHA（manifest/INSTALL/REPORT/PR body），并在临时 git 仓库
+  重新做远程隔离安装验证（见 3.4，pin 即 `dfbc40a…`）。
+- 修正 INSTALL.md 成功判据输出残留旧 pin 的问题（现为 `Using ref dfbc40a9…` /
+  `@dfbc40a9...`）。
+- `test_manifest.py` 卫生检查改为 `git ls-files` 受控跟踪列表（见 3.5）。
 
 ## 4. Review 修复记录（PR #1 changes requested）
 
@@ -104,14 +119,15 @@ gh skill install guajun/agentic-audio-toolbox sam-audio \
    traceback 并丢输出。修复：捕获 bytes、UTF-8+replace 解码，子进程 `PYTHONIOENCODING=utf-8`；
    测试覆盖非法字节/非 ASCII 路径/单 JSON 文档承诺，无 traceback。
 
-修复 commit：`f8eeac443aaf9d8aa0f7ded0d26783abcb517a48`；测试数 34 → 44。
+修复 commit：`f8eeac443aaf9d8aa0f7ded0d26783abcb517a48`（内容经 squash 并入
+merge commit `dfbc40a9541f686207b65b93b1332bb505654261`）；测试数 34 → 44。
 
 ## 5. 未验项与限制（不写成完成）
 
 - **真实 GPU 推理/真实分离产物未执行**（`target.wav`/`residual.wav` 的真实分离），
   按约定留给 #33 统一执行；本报告中 dry-run/preflight/失败输入均不冒充真实分离。
-- `gh skill publish` 正式发布与合并后的最终 pin 更新待 review 放行后执行（当前 pin
-  为任务分支 HEAD `f8eeac44...`）。
+- `gh skill publish` 正式发布未执行（非必需；固定 SHA 安装已验证满足 `gh skill`
+  支持）。pin 已更新为 toolbox merge commit `dfbc40a9541f686207b65b93b1332bb505654261`。
 - 上游 `--check-environment` 不保证 TorchCodec ABI / CUDA 驱动兼容性（上游文档已声明），
   本 wrapper 不额外验证。
 - 自动测试与真实模型证据分开记录（3.1 为 fake entry 自动测试；3.3/3.4 为真实入口但
@@ -119,6 +135,6 @@ gh skill install guajun/agentic-audio-toolbox sam-audio \
 
 ## 6. 链接
 
-- Toolbox PR: https://github.com/guajun/agentic-audio-toolbox/pull/1
+- Toolbox PR: https://github.com/guajun/agentic-audio-toolbox/pull/1（已 squash 合并，merge commit `dfbc40a9541f686207b65b93b1332bb505654261`）
 - 主仓库 PR: https://github.com/guajun/anonymous-audio-tracks/pull/36（`agentic/issue-29` → `agentic/minimal-agent`）
 - Issue: https://github.com/guajun/anonymous-audio-tracks/issues/29（Closes #29）

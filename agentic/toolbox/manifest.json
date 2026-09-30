@@ -16,9 +16,9 @@
     "pr": "https://github.com/guajun/agentic-audio-toolbox/pull/1",
     "pin": {
       "type": "commit",
-      "sha": "f8eeac443aaf9d8aa0f7ded0d26783abcb517a48",
-      "role": "task-branch-head",
-      "note": "review 放行合并后更新为合并 commit 的 SHA（gh skill update / 重新 pin）"
+      "sha": "dfbc40a9541f686207b65b93b1332bb505654261",
+      "role": "squash-merge-commit",
+      "note": "toolbox PR #1 squash 合并到 main 的 commit；安装即 pin 该 commit（无需正式 release）"
     },
     "license": "MIT (wrapper code only)",
     "cli": {
@@ -32,10 +32,10 @@
     "name": "sam-audio",
     "path": "skills/sam-audio",
     "install": {
-      "command": "gh skill install guajun/agentic-audio-toolbox sam-audio --agent pi --scope project --pin f8eeac443aaf9d8aa0f7ded0d26783abcb517a48",
+      "command": "gh skill install guajun/agentic-audio-toolbox sam-audio --agent pi --scope project --pin dfbc40a9541f686207b65b93b1332bb505654261",
       "agent": "pi",
       "scope": "project",
-      "pin": "f8eeac443aaf9d8aa0f7ded0d26783abcb517a48",
+      "pin": "dfbc40a9541f686207b65b93b1332bb505654261",
       "verified": true
     },
     "self_contained": true,

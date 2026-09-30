@@ -1,7 +1,7 @@
 # SAM Audio 工具箱安装与调用说明（issue #29）
 
 固定版本见 [`manifest.json`](manifest.json)：toolbox 仓库 `guajun/agentic-audio-toolbox`
-pin `f8eeac443aaf9d8aa0f7ded0d26783abcb517a48`；SAM 上游
+pin `dfbc40a9541f686207b65b93b1332bb505654261`；SAM 上游
 `guajun/anonymous-audio-tracks@infrastructure/audio-analysis/sam-audio` commit
 `c603de8794cc16880dc01be0f1e868f6c2845417`（Meta SAM License，权重不分发）。
 本文件中的路径一律用占位符：`<SAM_ROOT>`（SAM checkout 根目录）、`<PYTHON>`
@@ -15,10 +15,11 @@ pin `f8eeac443aaf9d8aa0f7ded0d26783abcb517a48`；SAM 上游
 ```sh
 cd <PROJECT>
 gh skill install guajun/agentic-audio-toolbox sam-audio \
-  --agent pi --scope project --pin f8eeac443aaf9d8aa0f7ded0d26783abcb517a48
+  --agent pi --scope project --pin dfbc40a9541f686207b65b93b1332bb505654261
 ```
 
-成功判据：命令输出 `✓ Installed sam-audio (from guajun/agentic-audio-toolbox@608e59a5...) in .pi\skills`，
+成功判据：命令输出 `Using ref dfbc40a9541f686207b65b93b1332bb505654261` 与
+`✓ Installed sam-audio (from guajun/agentic-audio-toolbox@dfbc40a9...) in .pi\skills`，
 且 `gh skill list` 出现一行 `sam-audio  pi  project  guajun/agentic-audio-toolbox`。
 
 安装结果（自包含，仅 3 个文件，无需源仓库其它文件）：
