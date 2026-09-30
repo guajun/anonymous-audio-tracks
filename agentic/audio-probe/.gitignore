@@ -1,0 +1,10 @@
+# Generated audio fixtures (do not commit binaries, see issue #30 执行约定)
+fixtures/
+*.wav
+*.mp3
+*.ogg
+*.flac
+*.m4a
+
+# Scratch: real run events, session JSONL, temp payloads
+tmp/
