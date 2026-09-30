@@ -1,0 +1,46 @@
+{
+  "schema_version": "agentic-audio-tracks/v1",
+  "audio": {
+    "filename": "fixtures-audio/mock-drums.wav",
+    "sha256": "d1b98952fa65a700b065b1a8a75f37ed59ba395829810aa491181dc89001824f",
+    "duration_seconds": 8.0,
+    "sample_rate": 44100
+  },
+  "tempo": {
+    "bpm": null,
+    "source": "unknown",
+    "confidence": 0
+  },
+  "instruments": [
+    {
+      "id": "inst-1",
+      "label": "unknown",
+      "description": "检测到两个能量团，来源未知（label 允许 unknown）",
+      "source": "unknown",
+      "confidence": 0.3,
+      "events": [
+        {
+          "id": "inst-1-ev-1",
+          "onset_seconds": 2.0
+        },
+        {
+          "id": "inst-1-ev-2",
+          "onset_seconds": 5.0
+        }
+      ]
+    }
+  ],
+  "provenance": {
+    "steps": [
+      {
+        "tool": "aat-schema-fixtures",
+        "source": "mock",
+        "note": "tempo 未知策略示例"
+      }
+    ]
+  },
+  "limitations": [
+    "tempo 未知：bpm=null，UI 应允许人类补 BPM",
+    "乐器来源未知，不做乐器猜测"
+  ]
+}

@@ -1,0 +1,91 @@
+{
+  "schema_version": "agentic-audio-tracks/v1",
+  "audio": {
+    "filename": "fixtures-audio/mock-full.wav",
+    "sha256": "1fac38d06ac20728890cd9aa321ada7ccadbacab627458fbce5b913df7202b7c",
+    "duration_seconds": 30.0,
+    "sample_rate": 44100
+  },
+  "tempo": {
+    "bpm": 128.0,
+    "source": "human",
+    "confidence": 1.0,
+    "beat_origin_seconds": 0.0
+  },
+  "instruments": [
+    {
+      "id": "inst-1",
+      "label": "bass",
+      "description": "人类标注的贝斯来源（含人工 onset 与分离参考）",
+      "source": "human",
+      "confidence": 0.95,
+      "stem": {
+        "filename": "stems/mock-full.bass.wav",
+        "sha256": "66833e91f0348894488d981b30c4a4dcc0836aa8f64c42e69adc032feb31647f"
+      },
+      "events": [
+        {
+          "id": "inst-1-ev-01",
+          "onset_seconds": 0.0,
+          "duration_seconds": 1.0,
+          "pitch": {
+            "midi": 36,
+            "confidence": 0.9,
+            "source": "human"
+          },
+          "confidence": 0.95,
+          "source": "human",
+          "method": "human-tap"
+        },
+        {
+          "id": "inst-1-ev-02",
+          "onset_seconds": 28.0,
+          "duration_seconds": 2.0
+        }
+      ]
+    },
+    {
+      "id": "inst-2",
+      "label": "unknown",
+      "description": "bridge 模式听到的模糊来源；事件恰好落在文件末尾（onset = 音频时长，允许）",
+      "source": "bridge",
+      "confidence": 0.2,
+      "events": [
+        {
+          "id": "inst-2-ev-03",
+          "onset_seconds": 30.0
+        }
+      ]
+    }
+  ],
+  "provenance": {
+    "steps": [
+      {
+        "tool": "aat-human",
+        "source": "human",
+        "note": "人工标注 onset 与 BPM"
+      },
+      {
+        "tool": "pi-audio-bridge",
+        "source": "bridge",
+        "note": "非原生桥接模型只给乐器假设"
+      },
+      {
+        "tool": "audio-toolbox.sam",
+        "source": "sam",
+        "note": "SAM 分离参考，不是真值"
+      },
+      {
+        "tool": "aat-dsp",
+        "source": "dsp",
+        "note": "谱通量确认 onset"
+      }
+    ],
+    "notes": "混合来源示例：human/bridge/sam/dsp 各自可追溯"
+  },
+  "limitations": [
+    "piano-roll-like 不是 MIDI 也不是音高真值",
+    "SAM/LLM/bridge 只提供假设，不自动成为真值",
+    "事件未量化到节拍，秒是时间真值"
+  ]
+}

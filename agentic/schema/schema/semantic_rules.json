@@ -1,0 +1,98 @@
+{
+  "schema_version": "agentic-audio-tracks/v1",
+  "description": "跨字段语义规则（结构 schema 之外）。参考实现在 agentic_schema/semantic.py，CLI：python agentic/schema/validate.py <file.json>。浏览器侧可按本表复刻；结构校验可直接用 schema/agentic-audio-tracks-v1.schema.json（Draft 2020-12 便携子集）。",
+  "tolerance_seconds": 1e-09,
+  "rules": [
+    {
+      "code": "E_VERSION",
+      "layer": "version",
+      "pointers": ["/schema_version"],
+      "rule": "schema_version 必须精确等于 \"agentic-audio-tracks/v1\"。不匹配时校验器只返回这一个错误并停止后续检查（未来版本兼容策略）。",
+      "bad_example": "{\"schema_version\": \"agentic-audio-tracks/v2\"}"
+    },
+    {
+      "code": "E_NONFINITE",
+      "layer": "parse",
+      "pointers": ["<number>"],
+      "rule": "JSON 里的数字必须是有限数。NaN / Infinity / -Infinity 字面量（Python json 默认接受）直接拒绝；1e999 这类语法合法但解析成 inf 的数也拒绝。报错给出具体 JSON Pointer。",
+      "bad_example": "{\"audio\": {\"duration_seconds\": 1e999}}"
+    },
+    {
+      "code": "E_PARSE",
+      "layer": "parse",
+      "pointers": ["<document>"],
+      "rule": "必须是合法 UTF-8 JSON。BOM、语法错误、NaN/Infinity 字面量均拒绝。",
+      "bad_example": "\\uFEFF{\"schema_version\": ...}"
+    },
+    {
+      "code": "E_DUPLICATE_KEY",
+      "layer": "parse",
+      "pointers": ["<object>"],
+      "rule": "对象内不允许重复键（Python json 默认静默取最后一个）。拒绝并报告键名（重复键无法定位完整路径，这是已知限制）。策略=拒绝，不做 last-wins。",
+      "bad_example": "{\"label\": \"a\", \"label\": \"b\"}"
+    },
+    {
+      "code": "E_FINITE",
+      "layer": "semantic",
+      "pointers": ["<number>"],
+      "rule": "文档中所有数字必须有限（对程序构造文档的兜底检查，与 E_NONFINITE 同义不同层）。",
+      "bad_example": "float('nan')"
+    },
+    {
+      "code": "E_BOOL_NUMBER",
+      "layer": "semantic",
+      "pointers": ["<number-field>"],
+      "rule": "布尔值不得冒充数字（true/false 不是 1/0）。结构层 type=number/integer 也拒绝，此处兜底。",
+      "bad_example": "{\"tempo\": {\"bpm\": true}}"
+    },
+    {
+      "code": "E_TIME_RANGE",
+      "layer": "semantic",
+      "pointers": ["/instruments/*/events/*/onset_seconds", "/tempo/beat_origin_seconds"],
+      "rule": "时间边界：t=0 为音频文件开头。0 <= onset_seconds <= audio.duration_seconds（允许恰好为 0 或恰好落在文件末尾）；0 <= beat_origin_seconds <= audio.duration_seconds。比较容差 1e-9 秒。",
+      "bad_example": "onset_seconds 超过 audio.duration_seconds"
+    },
+    {
+      "code": "E_TIME_DURATION",
+      "layer": "semantic",
+      "pointers": ["/instruments/*/events/*/duration_seconds"],
+      "rule": "duration_seconds 必须 > 0（不允许 0 或负数），且 onset_seconds + duration_seconds <= audio.duration_seconds；相等允许（事件恰好在文件末尾结束）。比较容差 1e-9 秒。",
+      "bad_example": "onset 28.0 + duration 3.0 > audio 30.0"
+    },
+    {
+      "code": "E_TIME_ORDER",
+      "layer": "semantic",
+      "pointers": ["/instruments/*/events/*"],
+      "rule": "每个 instrument.events 必须按 (onset_seconds 升序, id 升序) 排序。允许同时 onset（不同事件相同 onset_seconds 合法）。不量化到节拍。",
+      "bad_example": "events[0].onset_seconds=2.0 排在 events[1].onset_seconds=1.0 之前"
+    },
+    {
+      "code": "E_TEMPO",
+      "layer": "semantic",
+      "pointers": ["/tempo"],
+      "rule": "tempo 未知与已知互斥：bpm 为 null ⟺ source==\"unknown\" 且 confidence==0 且没有 beat_origin_seconds；bpm 为数值时 source 不得为 \"unknown\"。BPM 只是辅助网格，UI 在 bpm=null 时应允许人类输入。",
+      "bad_example": "{\"bpm\": null, \"source\": \"dsp\", \"confidence\": 0.5}"
+    },
+    {
+      "code": "E_ID_UNIQUE",
+      "layer": "semantic",
+      "pointers": ["/instruments/*/id", "/instruments/*/events/*/id"],
+      "rule": "ID 唯一性：instrument.id 全文档唯一；event.id 全文档唯一（跨乐器也不可重复）。稳定 id 要求跨运行可复现（同一来源同一事件用同一 id）。",
+      "bad_example": "两个事件都是 \"ev-1\""
+    },
+    {
+      "code": "E_PATH",
+      "layer": "semantic",
+      "pointers": ["/audio/filename", "/instruments/*/stem/filename"],
+      "rule": "路径安全：只允许安全相对路径，用于和本地音频根目录匹配，不做任意 fetch。拒绝：空/超长(>512)/控制字符/反斜杠/绝对路径(/开头)/盘符(C:)/UNC(\\\\server 或 //)/URL( scheme:// )/.././空段/段首尾空格或尾点/Windows 保留名(CON、NUL、COM1..)/字符 <>:\"|?*。使用方必须再做根目录包含检查。",
+      "bad_example": "\"../secret/a.wav\"、\"C:/music/a.wav\"、\"https://host/a.wav\""
+    },
+    {
+      "code": "E_RANGE",
+      "layer": "semantic",
+      "pointers": ["<confidence>", "/instruments/*/events/*/pitch/midi"],
+      "rule": "取值范围兜底：confidence 必须在 [0,1]；pitch.midi 必须是 0..127 的整数（不是布尔）。结构层也检查，此处兜底。",
+      "bad_example": "confidence 1.5、midi 200"
+    }
+  ]
+}

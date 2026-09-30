@@ -1,0 +1,10 @@
+# 可选依赖 pin（issue #32 局部依赖，不写根 uv.lock）
+#
+# 校验器核心是纯标准库；jsonschema 只是可选的官方 Draft 2020-12 引擎，
+# 用于交叉验证和与浏览器端同源行为。安装示例（独立环境，零痕迹）：
+#
+#   uv run --no-project --python 3.12 --with jsonschema==4.26.0 python agentic/schema/validate.py <file.json>
+#   uv venv agentic/schema/.venv
+#   uv pip install --python agentic/schema/.venv -r agentic/schema/requirements.txt
+#
+jsonschema==4.26.0

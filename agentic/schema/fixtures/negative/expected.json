@@ -1,0 +1,139 @@
+{
+  "schema_version": "agentic-audio-tracks/v1",
+  "description": "负例索引：每个文件应被校验器拒绝，并至少命中下面这条错误（layer/code/pointer 精确匹配其一）。多报其他错误不影响通过。",
+  "cases": [
+    {
+      "file": "neg_unknown_field.json",
+      "layer": "structure",
+      "code": "additionalProperties",
+      "pointer": "",
+      "why": "顶层出现未定义字段"
+    },
+    {
+      "file": "neg_bad_id_pattern.json",
+      "layer": "structure",
+      "code": "pattern",
+      "pointer": "/instruments/0/id",
+      "why": "id 含空格和感叹号"
+    },
+    {
+      "file": "neg_bool_number.json",
+      "layer": "structure",
+      "code": "type",
+      "pointer": "/tempo/bpm",
+      "why": "布尔 true 冒充数字"
+    },
+    {
+      "file": "neg_confidence_range.json",
+      "layer": "structure",
+      "code": "maximum",
+      "pointer": "/instruments/0/confidence",
+      "why": "confidence 1.5 越界"
+    },
+    {
+      "file": "neg_negative_onset.json",
+      "layer": "structure",
+      "code": "minimum",
+      "pointer": "/instruments/0/events/0/onset_seconds",
+      "why": "onset_seconds 为负数"
+    },
+    {
+      "file": "neg_nonfinite_number.json",
+      "layer": "parse",
+      "code": "E_NONFINITE",
+      "pointer": "/audio/duration_seconds",
+      "why": "1e999 语法合法但解析成 inf"
+    },
+    {
+      "file": "neg_duplicate_event_id.json",
+      "layer": "semantic",
+      "code": "E_ID_UNIQUE",
+      "pointer": "/instruments/0/events/1/id",
+      "why": "event.id 重复"
+    },
+    {
+      "file": "neg_unsorted_events.json",
+      "layer": "semantic",
+      "code": "E_TIME_ORDER",
+      "pointer": "/instruments/0/events/1",
+      "why": "events 未按 (onset, id) 排序"
+    },
+    {
+      "file": "neg_onset_after_end.json",
+      "layer": "semantic",
+      "code": "E_TIME_RANGE",
+      "pointer": "/instruments/0/events/0/onset_seconds",
+      "why": "onset 超过音频末尾"
+    },
+    {
+      "file": "neg_duration_overflow.json",
+      "layer": "semantic",
+      "code": "E_TIME_DURATION",
+      "pointer": "/instruments/0/events/0/duration_seconds",
+      "why": "onset + duration 超过音频末尾"
+    },
+    {
+      "file": "neg_path_absolute.json",
+      "layer": "semantic",
+      "code": "E_PATH",
+      "pointer": "/audio/filename",
+      "why": "绝对路径"
+    },
+    {
+      "file": "neg_path_traversal.json",
+      "layer": "semantic",
+      "code": "E_PATH",
+      "pointer": "/instruments/0/stem/filename",
+      "why": ".. 路径逃逸"
+    },
+    {
+      "file": "neg_path_url.json",
+      "layer": "semantic",
+      "code": "E_PATH",
+      "pointer": "/audio/filename",
+      "why": "URL 形式路径"
+    },
+    {
+      "file": "neg_path_unc.json",
+      "layer": "semantic",
+      "code": "E_PATH",
+      "pointer": "/audio/filename",
+      "why": "UNC 路径"
+    },
+    {
+      "file": "neg_version.json",
+      "layer": "version",
+      "code": "E_VERSION",
+      "pointer": "/schema_version",
+      "why": "schema_version 不是 v1"
+    },
+    {
+      "file": "neg_tempo_null_origin.json",
+      "layer": "semantic",
+      "code": "E_TEMPO",
+      "pointer": "/tempo/beat_origin_seconds",
+      "why": "bpm=null 却给出节拍原点"
+    },
+    {
+      "file": "neg_tempo_null_source.json",
+      "layer": "semantic",
+      "code": "E_TEMPO",
+      "pointer": "/tempo/source",
+      "why": "bpm=null 但 source 不是 unknown"
+    },
+    {
+      "file": "neg_pitch_missing_confidence.json",
+      "layer": "structure",
+      "code": "required",
+      "pointer": "/instruments/0/events/0/pitch",
+      "why": "pitch 有值却缺 confidence（证据字段必须一起出现）"
+    },
+    {
+      "file": "neg_missing_events.json",
+      "layer": "structure",
+      "code": "required",
+      "pointer": "/instruments/0",
+      "why": "乐器缺 events"
+    }
+  ]
+}

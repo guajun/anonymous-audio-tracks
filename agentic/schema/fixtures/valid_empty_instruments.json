@@ -1,0 +1,28 @@
+{
+  "schema_version": "agentic-audio-tracks/v1",
+  "audio": {
+    "filename": "fixtures-audio/mock-silence.wav",
+    "sha256": "5c87247ef0266bed79b93e1d94520a5f82d2938be2ce0a1e2f3e3f05879de627",
+    "duration_seconds": 3.0,
+    "sample_rate": 44100
+  },
+  "tempo": {
+    "bpm": null,
+    "source": "unknown",
+    "confidence": 0
+  },
+  "instruments": [],
+  "provenance": {
+    "steps": [
+      {
+        "tool": "aat-schema-fixtures",
+        "source": "mock",
+        "note": "空结果策略示例"
+      }
+    ]
+  },
+  "limitations": [
+    "空结果=没有找到可信来源，不表示音频无声",
+    "下游应把空结果当作‘无事件’而不是错误"
+  ]
+}
