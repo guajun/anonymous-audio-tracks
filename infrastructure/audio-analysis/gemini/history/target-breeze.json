@@ -1,0 +1,13 @@
+{
+  "case_id": "breeze-target-at-11.3",
+  "duration_s": 30,
+  "clip_start_in_original_s": 0,
+  "reference_start_in_clip_s": 10.5,
+  "reference_end_in_clip_s": 12.0,
+  "target_audible_at_clip_s": 11.3,
+  "user_observation": "这一小段约11.0秒的一次鼓击之后，有另一个非鼓声音起音，11.3秒附近听感明显；目标此前也与鼓重叠出现。此信息用于定位参考对象，具体起音和是否纯净需听音频确认。",
+  "accepted_sam_prompt": "melodic sound",
+  "accepted_sam_result": null,
+  "accepted_sam_result_note": "The original local SAM output was not part of this migration; keep any replacement path local and untracked.",
+  "acceptance_scope": "用户认为提取很接近目标；不等于所有起音、尾音或缺失处均已验证"
+}

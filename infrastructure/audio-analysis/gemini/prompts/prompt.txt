@@ -1,0 +1,37 @@
+请实际听附件音频，完成一次“通过听觉参考定位匿名声源，并追踪其起音”的任务。不要凭歌曲名字、风格或 BPM 编造事件。
+
+输入有两个音频：
+1. reference：从原曲 10.5–12.0 秒裁出的参考片段。参考片段 0.8 秒处对应原曲 11.3 秒。
+2. full_clip：同一首歌原始速度的前 30 秒。所有输出时间必须相对于 full_clip 的 0 秒，不是 reference 的起点。
+
+用户的听觉线索（需要用音频核实，不是现成标签）：原曲约 11.0 秒是这一小段最后一下鼓，紧接着另一个声音起音，到 11.3 秒最明显。这个非鼓声音此前经常与鼓重叠，听起来有点像弦乐，但不确定是什么乐器。用户估计出现次数可能接近鼓的 50%；这只是线索，绝不能当作输出数量配额。
+
+只追踪这个目标，分配一个固定 ID S1，不要再输出全部鼓、镲和其他声源。
+- 先比较 reference 中鼓音头、鼓尾音和其后的持续/旋律声音；确认目标是否能够独立辨认。不要把 11.3 秒当成起音时间，它只是目标听起来最明显的位置。
+- 不要求给出乐器名称。简短描述它的可听特征；不确定时承认不确定。用户说像弦乐并不证明它是弦乐。
+- 在 full_clip 中寻找同一声音每次重新发声的起音。音高变化不必换身份；谐波和混响不要拆成新的声音。鼓击同时发生时也要追踪目标，不要只返回鼓点。
+- 分开报告 active_intervals（可听区间）与 onsets（新的起音）。时间单位秒，范围 [0,30]，使用原速音频；不要乘 5/6，不要按 125/150 BPM 网格推算、补全或凑整。
+- 对每个起音提供 confidence 和 timing_uncertainty_ms。只能粗定位就给较大的误差，不用过多小数伪装精度。
+- 如果目标身份本身无法确认，target_identified=false、sources=[]，解释原因，不输出一条看似完整的规则节拍。
+- 若目标可确认但某个片段分不清，保留可靠事件，将该片段记入 uncertain_regions。
+- 不打印虚构 embedding，不输出 MIDI、音高或灯光参数。
+
+只输出合法 JSON，结构为：
+{
+ "schema":"anonymous-audio-tracks/v1",
+ "audio_access":true,
+ "target_identified":true,
+ "clip_start_in_original_s":0,
+ "duration_s":30,
+ "reference_assessment":{"description_zh":"实际听到的特征","onset_in_full_clip_s":null,"distinction_from_drum_zh":"与鼓的区分依据"},
+ "sources":[{
+  "id":"S1","description_zh":"目标听感描述","sam_text_prompt":"short lowercase phrase","identity_confidence":0.0,
+  "active_intervals":[],"onsets":[],"anchors":[],"identity_notes":[]
+ }],
+ "uncertain_regions":[],"limitations":[]
+}
+onsets 元素：{"time_s":实际时间,"confidence":0到1,"timing_uncertainty_ms":误差毫秒}。
+active_intervals 元素：{"start_s":开始时间,"end_s":结束时间,"confidence":0到1,"timing_uncertainty_ms":误差毫秒}。
+anchors 元素：{"start_s":开始时间,"end_s":结束时间,"other_sources_audible":true或false,"reason_zh":"选取依据"}。
+uncertain_regions 元素：{"start_s":开始时间,"end_s":结束时间,"source_ids":["S1"],"reason_zh":"不确定原因"}。
+格式中的空数组和零值仅为占位，不代表实际内容。无法访问音频时 audio_access=false，sources=[]，在 limitations 说明。不要把示例当答案。

@@ -1,0 +1,89 @@
+```json
+{
+ "schema": "anonymous-audio-tracks/v1",
+ "audio_access": true,
+ "target_identified": true,
+ "clip_start_in_original_s": 0,
+ "duration_s": 30,
+ "reference_assessment": {
+  "description_zh": "带有类似擦弦/二胡或合成器滑音质感的中高频旋律切片，具有缓升起音、微弱颤音与尾部混响延伸，在鼓点结束后呈暴露状态，峰值约在原曲 11.3 秒处。",
+  "onset_in_full_clip_s": 11.12,
+  "distinction_from_drum_zh": "鼓声具有极短促、陡峭的高瞬态击打头和低频冲程；目标声音起音较平缓（渐强），具有明确的音高持续和滑音谐波，在 11.1 秒鼓击结束后仍独立发声并展开。"
+ },
+ "sources": [
+  {
+   "id": "S1",
+   "description_zh": "中高频弦乐/合成滑音采样切片（带颤音及混响短音）",
+   "sam_text_prompt": "synthetic string hook slice with pitch glide",
+   "identity_confidence": 0.92,
+   "active_intervals": [
+    {"start_s": 0.6, "end_s": 1.1, "confidence": 0.85, "timing_uncertainty_ms": 60},
+    {"start_s": 2.1, "end_s": 2.6, "confidence": 0.85, "timing_uncertainty_ms": 60},
+    {"start_s": 3.6, "end_s": 4.1, "confidence": 0.85, "timing_uncertainty_ms": 60},
+    {"start_s": 5.1, "end_s": 5.6, "confidence": 0.85, "timing_uncertainty_ms": 60},
+    {"start_s": 6.6, "end_s": 7.1, "confidence": 0.85, "timing_uncertainty_ms": 60},
+    {"start_s": 8.1, "end_s": 8.6, "confidence": 0.85, "timing_uncertainty_ms": 60},
+    {"start_s": 9.6, "end_s": 10.1, "confidence": 0.85, "timing_uncertainty_ms": 60},
+    {"start_s": 11.1, "end_s": 11.6, "confidence": 0.95, "timing_uncertainty_ms": 40},
+    {"start_s": 12.65, "end_s": 13.15, "confidence": 0.88, "timing_uncertainty_ms": 50},
+    {"start_s": 14.15, "end_s": 14.65, "confidence": 0.88, "timing_uncertainty_ms": 50},
+    {"start_s": 15.65, "end_s": 16.15, "confidence": 0.88, "timing_uncertainty_ms": 50},
+    {"start_s": 17.15, "end_s": 17.65, "confidence": 0.88, "timing_uncertainty_ms": 50},
+    {"start_s": 18.65, "end_s": 19.15, "confidence": 0.88, "timing_uncertainty_ms": 50},
+    {"start_s": 20.15, "end_s": 20.65, "confidence": 0.88, "timing_uncertainty_ms": 50},
+    {"start_s": 21.65, "end_s": 22.15, "confidence": 0.88, "timing_uncertainty_ms": 50},
+    {"start_s": 23.15, "end_s": 23.65, "confidence": 0.88, "timing_uncertainty_ms": 50},
+    {"start_s": 24.65, "end_s": 25.15, "confidence": 0.88, "timing_uncertainty_ms": 50},
+    {"start_s": 26.15, "end_s": 26.65, "confidence": 0.88, "timing_uncertainty_ms": 50},
+    {"start_s": 27.65, "end_s": 28.15, "confidence": 0.88, "timing_uncertainty_ms": 50},
+    {"start_s": 29.15, "end_s": 29.65, "confidence": 0.88, "timing_uncertainty_ms": 50}
+   ],
+   "onsets": [
+    {"time_s": 0.6, "confidence": 0.82, "timing_uncertainty_ms": 60},
+    {"time_s": 2.1, "confidence": 0.85, "timing_uncertainty_ms": 50},
+    {"time_s": 3.6, "confidence": 0.85, "timing_uncertainty_ms": 50},
+    {"time_s": 5.1, "confidence": 0.85, "timing_uncertainty_ms": 50},
+    {"time_s": 6.6, "confidence": 0.85, "timing_uncertainty_ms": 50},
+    {"time_s": 8.1, "confidence": 0.85, "timing_uncertainty_ms": 50},
+    {"time_s": 9.6, "confidence": 0.85, "timing_uncertainty_ms": 50},
+    {"time_s": 11.12, "confidence": 0.95, "timing_uncertainty_ms": 30},
+    {"time_s": 12.65, "confidence": 0.88, "timing_uncertainty_ms": 50},
+    {"time_s": 14.15, "confidence": 0.88, "timing_uncertainty_ms": 50},
+    {"time_s": 15.65, "confidence": 0.88, "timing_uncertainty_ms": 50},
+    {"time_s": 17.15, "confidence": 0.88, "timing_uncertainty_ms": 50},
+    {"time_s": 18.65, "confidence": 0.88, "timing_uncertainty_ms": 50},
+    {"time_s": 20.15, "confidence": 0.88, "timing_uncertainty_ms": 50},
+    {"time_s": 21.65, "confidence": 0.88, "timing_uncertainty_ms": 50},
+    {"time_s": 23.15, "confidence": 0.88, "timing_uncertainty_ms": 50},
+    {"time_s": 24.65, "confidence": 0.88, "timing_uncertainty_ms": 50},
+    {"time_s": 26.15, "confidence": 0.88, "timing_uncertainty_ms": 50},
+    {"time_s": 27.65, "confidence": 0.88, "timing_uncertainty_ms": 50},
+    {"time_s": 29.15, "confidence": 0.88, "timing_uncertainty_ms": 50}
+   ],
+   "anchors": [
+    {
+     "start_s": 11.1,
+     "end_s": 11.6,
+     "other_sources_audible": false,
+     "reason_zh": "参考音频对应的无重叠区间，鼓声在前一时刻已完全停止，该滑音切片清晰暴露"
+    }
+   ],
+   "identity_notes": [
+    "每次出现持续约 0.5 秒左右，伴随明显的音高轻微上滑和混响尾音",
+    "在第 12 秒前与鼓击强拍紧密复合，但在第 11.1 秒处脱离鼓击暴露"
+   ]
+  }
+ ],
+ "uncertain_regions": [
+  {
+   "start_s": 11.7,
+   "end_s": 12.5,
+   "source_ids": ["S1"],
+   "reason_zh": "段落过渡转折区，伴随下扫音效与鼓点静音，目标声音在此区间暂停发声"
+  }
+ ],
+ "limitations": [
+  "目标发音起音相对平滑且多与底鼓/军鼓拍头同时触发，起音时间测量受鼓击瞬态遮蔽存在 30-60ms 不确定度。"
+ ]
+}
+```

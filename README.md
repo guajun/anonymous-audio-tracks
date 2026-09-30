@@ -43,6 +43,12 @@ uv run python -m http.server 8123 --bind 127.0.0.1 --directory viewer
 
 完整复现步骤、运行预算与隐私边界见 [docs/REPRODUCE.md](docs/REPRODUCE.md)。
 
+## 音频分析基础设施
+
+Gemini 音频分析和 SAM Audio 本地分离已经整理到
+[infrastructure/audio-analysis/](infrastructure/audio-analysis/)。两套工具可以独立安装、独立推理：Gemini 需要 API key 和网络，SAM Audio 使用本地权重并默认离线。迁移关系、模型下载/校验、旧目录保留和敏感配置边界见
+[docs/audio-analysis-infrastructure.md](docs/audio-analysis-infrastructure.md)。大型模型权重、API key 和本地音频均不会提交到 Git。
+
 ## 总目标
 
 输入一首混合音乐，识别其中可辨认的声音层，跨音高、响度、重叠和短暂休止保持来源身份，为每个来源输出连续活动轨迹。最终一条轨迹驱动一条灯带，动态随真实音乐变化，不受游戏难度或固定物件密度约束。

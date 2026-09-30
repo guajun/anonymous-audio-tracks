@@ -1,0 +1,15 @@
+[project]
+name = "anonymous-audio-gemini"
+version = "0.1.0"
+description = "Standalone Gemini audio-analysis runner for anonymous-audio-tracks"
+requires-python = ">=3.12"
+dependencies = [
+    "google-genai>=2.25.0",
+    "python-dotenv>=1.2.3",
+]
+
+[dependency-groups]
+dev = ["pytest>=8.3,<9"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

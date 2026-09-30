@@ -1,0 +1,6 @@
+{
+  "model": "gemini-3.8-flash",
+  "audio": "F:\\LED\\sam-audio\\clips\\Breeze-first30s.wav",
+  "reference": "F:\\LED\\sam-audio\\clips\\Breeze-anchor-10.5-12.0.wav",
+  "auxiliary": "C:\\Users\\MSI-NB\\Documents\\Codex\\sam-audio-results\\breeze-user-anchor-11.3s\\C-target.wav"
+}
