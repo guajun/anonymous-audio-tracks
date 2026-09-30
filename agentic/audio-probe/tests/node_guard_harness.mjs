@@ -7,7 +7,10 @@ import { sep } from "node:path";
 import {
   ALLOWED_AUDIO_MIME,
   DEFAULT_MAX_BYTES,
+  ERROR_CODES,
+  checkQueueBudget,
   checkSize,
+  fail,
   isWithinRoot,
   resolveWithinRoot,
   safeBasename,
@@ -41,11 +44,21 @@ assert.throws(() => resolveWithinRoot(root, "   "), /non-empty/, "empty rejected
 assert.ok(isWithinRoot(root, root + sep + "x"), "root containment positive");
 assert.ok(!isWithinRoot(root, root + "-sibling" + sep + "x"), "sibling dir rejected");
 
-// --- checkSize -----------------------------------------------------------
+// --- checkSize / checkQueueBudget ------------------------------------------
 assert.equal(checkSize(1, DEFAULT_MAX_BYTES), 1);
 assert.throws(() => checkSize(0), /empty/, "empty size rejected");
 assert.throws(() => checkSize(DEFAULT_MAX_BYTES + 1), /size limit/, "oversize rejected");
 assert.throws(() => checkSize(11, 10), /size limit/, "custom limit enforced");
+assert.equal(checkQueueBudget(0, 100, 200), 100);
+assert.equal(checkQueueBudget(50, 150, 200), 200);
+assert.throws(() => checkQueueBudget(150, 100, 200), /cumulative/, "queue overflow rejected");
+
+// --- fail(): stable code, absolute paths never in the message ---------------
+const leaked = fail(ERROR_CODES.READ, "EACCES: permission denied, open 'C:\\secret\\dir\\a.wav'");
+assert.ok(leaked.message.startsWith("E_AUDIO_READ:"), "stable error code prefix");
+assert.ok(!leaked.message.includes("C:"), `message must not leak paths: ${leaked.message}`);
+assert.ok(leaked.message.includes("<PATH>"), "leaked path replaced by marker");
+assert.ok(fail(ERROR_CODES.MIME, "plain reason").message === "E_AUDIO_MIME: plain reason");
 
 // --- safeBasename (no absolute paths leak into model context) ------------
 assert.equal(safeBasename(root + sep + "tone.wav"), "tone.wav");

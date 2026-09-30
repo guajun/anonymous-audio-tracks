@@ -105,6 +105,26 @@ class TestBridgeGuard:
         assert "OK" in proc.stdout
 
 
+class TestExtensionMock:
+    """Extension-level offline tests against the REAL bridge extension
+    (mock Pi registry/context; review item 2)."""
+
+    def test_extension_harness(self) -> None:
+        if NODE is None:
+            pytest.skip("node not available")
+        proc = run_node("tests/node_extension_harness.mjs")
+        assert proc.returncode == 0, proc.stderr
+        for marker in (
+            "OK happy attach",
+            "OK multiple attachments + one-shot injection",
+            "OK model restriction",
+            "OK failed inputs",
+            "OK lifecycle clear boundaries",
+            "OK no transcript persistence",
+        ):
+            assert marker in proc.stdout, f"missing marker: {marker}\n{proc.stdout}"
+
+
 # ---------------------------------------------------------------------------
 # Pi payload shape / native-path probes (require installed Pi package)
 # ---------------------------------------------------------------------------
@@ -182,3 +202,61 @@ class TestRedaction:
         out = extract_evidence.redact(f"reading {home}/secret/notes.txt")
         assert home not in out
         assert "<HOME>" in out
+
+    def test_redacts_before_truncation_boundary(self) -> None:
+        """Secrets near the truncation cutoff must not leak a prefix
+        (review item 4: redact the full text, truncate afterwards)."""
+        import extract_evidence
+
+        raw = "p" * 560 + " " + "sk-" + "b" * 40 + " " + "q" * 30
+        out = extract_evidence.format_record(raw, 600)
+        assert "sk-" not in out
+        assert "bbbb" not in out
+
+        # truncation still applies to long sanitized text
+        assert extract_evidence.format_record("lorem ipsum " * 80, 600).endswith("…[truncated]")
+
+        # even when the cutoff lands inside a redaction marker, no secret chars survive
+        raw2 = "r" * 300 + " sk-" + "e" * 60 + " " + "u" * 400
+        out2 = extract_evidence.format_record(raw2, 30)
+        assert "sk-" not in out2
+        assert "eeee" not in out2
+        assert extract_evidence.find_unsanitized(out2) == []
+
+        raw_b64 = "z" * 590 + "C" * 200 + "tail"
+        out_b64 = extract_evidence.format_record(raw_b64, 600)
+        assert "CCCC" not in out_b64
+
+    def test_json_escaped_windows_paths(self) -> None:
+        import extract_evidence
+
+        raw = '{"path":"F:\\\\LED\\\\agentic-worktrees\\\\issue-30\\\\agentic\\\\x.wav"}'
+        out = extract_evidence.redact(raw)
+        assert "F:" not in out
+        assert "<REPO>" in out
+
+    def test_out_of_home_paths_are_scrubbed(self) -> None:
+        import extract_evidence
+
+        out = extract_evidence.redact("see D:\\other\\place\\f.txt for details")
+        assert "D:" not in out
+        assert "<PATH>" in out
+
+    def test_repo_root_is_repo_root(self) -> None:
+        import extract_evidence
+
+        root = extract_evidence.repo_root()
+        assert (root / "pyproject.toml").exists(), "repo root must contain pyproject.toml"
+        assert root.name != "agentic", "parents[2] would be the agentic dir"
+        out = extract_evidence.redact(str(root / "agentic" / "x.wav"))
+        assert out.startswith("<REPO>")
+
+    def test_main_end_to_end_no_leak(self, tmp_path: Path) -> None:
+        import extract_evidence
+
+        raw_file = tmp_path / "raw.txt"
+        raw_file.write_text("p" * 590 + "sk-" + "c" * 40 + " tail " + str(Path.home()), encoding="utf-8")
+        out = extract_evidence.format_record(raw_file.read_text(encoding="utf-8"), 600)
+        assert extract_evidence.find_unsanitized(out) == []
+        assert "sk-" not in out
+        assert str(Path.home()) not in out

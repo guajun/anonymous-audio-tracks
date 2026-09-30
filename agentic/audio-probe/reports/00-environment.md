@@ -26,13 +26,26 @@ google      gemini-3.8-flash                           1.0M     65.5K    yes    
 
 | 命令 | 类型 | 结果 |
 |---|---|---|
-| `uv run pytest tests -v`（或仓库根 `uv run pytest agentic/audio-probe/tests -v`） | OFFLINE | 8 passed |
+| `uv run pytest tests -v`（或仓库根 `uv run pytest agentic/audio-probe/tests -v`） | OFFLINE | 22 passed |
 | `python probe/make_fixture.py --all` | OFFLINE | fixture-a.wav / fixture-b.wav 各 24044 B |
 | `node probe/native_paths_probe.mjs --file fixtures/fixture-a.wav` | OFFLINE | 见 20 |
 | `node probe/payload_shape.mjs` | OFFLINE | 见 20 |
-| `bash probe/run_real_native.sh` | **REAL**（1 次模型调用） | 见 30 |
-| `bash probe/run_real_bridge.sh` | **REAL**（1 次模型调用） | 见 40 |
+| `bash probe/run_real_native.sh` | **REAL**（1 次 Pi run） | 见 30 |
+| `bash probe/run_real_bridge.sh` | **REAL**（1 次 Pi run） | 见 40 |
 | `python probe/extract_evidence.py tmp/*.jsonl` | OFFLINE | 脱敏证据 |
 
-真实调用预算：**2 次模型调用**（每次一个脚本、一次运行；脚本失败即停并保留 stderr，不重试循环）。
-SAM GPU 不在本项运行（依 issue 约定）。
+真实调用预算：**2 次 Pi run**；每次 Pi run **不是**一次模型调用——两次 run 各含 **2 个 assistant
+requests**（tool-use 轮 + 最终轮），合计 4 个 assistant requests。脚本经 `probe/run_bounded.py`
+加硬超时（默认 300s，可 `AUDIO_PROBE_TIMEOUT` 调整）、失败/超时保留产物并以非零退出、
+且能识别 Pi 退出 0 但事件流含 provider error/aborted 的失败（退出码 5）；不重试循环。
+
+## 实测用量（取自两次真实 run 的事件流 `usage`，非估算）
+
+| run | assistant requests | input tokens | output tokens | totalTokens | Pi 记账 cost（usage.cost.total） |
+|---|---|---|---|---|---|
+| native（30） | 2（toolUse + stop） | 65,425 | 729 | 66,154 | 0.0518 |
+| bridge（40） | 2（toolUse + stop） | 2,296 | 941 | 3,237 | 0.0053 |
+
+注：native 第 2 个 request input 高达 43,479 tokens——乱码文本路径把 WAV 字节当文本，token 消耗
+远高于桥接音频路径（Gemini 对内联音频按音频 token 计量）；费用为 Pi 从 provider usage 元数据
+记账的 USD 近似值，非账单真值。SAM GPU 不在本项运行（依 issue 约定）。

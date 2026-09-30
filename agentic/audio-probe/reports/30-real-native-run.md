@@ -38,6 +38,16 @@ or whether the pitch goes up, down, or stays level.
 
 （`stopReason: stop`，`model: gemini-3.8-flash`，`provider: google`）
 
+本 run 实测用量（事件流 `usage`，**一次 Pi run = 2 个 assistant requests**，非 1 次 API 调用）：
+
+| request | stopReason | input | output | totalTokens | Pi 记账 cost |
+|---|---|---|---|---|---|
+| 1 | toolUse | 21,946 | 359 | 22,305 | 0.0178 |
+| 2 | stop | 43,479 | 370 | 43,849 | 0.0340 |
+| 合计 | — | 65,425 | 729 | 66,154 | 0.0518 |
+
+（乱码文本路径 token 消耗高：第 2 个 request 的 43K input 主要是 WAV 字节被当文本编码所致。）
+
 ## 30.3 判定
 
 - **Pi 原生音频输入 = 不支持（REAL 复证）**：真实调用中模型明确表示无法感知音频；
@@ -45,3 +55,6 @@ or whether the pitch goes up, down, or stays level.
 - 该运行**不**用于任何音频理解准确度声明；它只是失败证据。
 - 备注：`@file` 与消息必须是**两个 argv**（`-- "@x.wav" "消息"`）；首次运行因合成一个参数报
   `File not found: …fixture-a.wav Use the read tool…`，已修正脚本并保留该 stderr 于 tmp/（属本地脚本错误，非 blocked）。
+  该修正之后，`probe/run_real_*.sh` 均经 `probe/run_bounded.py` 加硬超时（默认 300s）并以退出码
+  区分：0 成功 / 3 命令失败 / 4 超时 / 5 事件流含 provider error 或 aborted（即使 Pi 退出 0）；
+  失败/超时均保留事件流与 stderr 产物；失败语义已用 fake pi 离线回归（`tests/test_real_run_scripts.py`，无 API 调用）。

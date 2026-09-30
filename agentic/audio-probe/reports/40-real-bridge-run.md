@@ -56,6 +56,14 @@ TOOL: audio_attach → {"attached":"fixture-b.wav","mime":"audio/wav","bytes":24
 
 （`stopReason: stop`，`model: gemini-3.8-flash`，`provider: google`）
 
+本 run 实测用量（事件流 `usage`，**一次 Pi run = 2 个 assistant requests**，非 1 次 API 调用）：
+
+| request | stopReason | input | output | totalTokens | Pi 记账 cost |
+|---|---|---|---|---|---|
+| 1 | toolUse | 791 | 270 | 1,061 | 0.0016 |
+| 2 | stop | 1,505 | 671 | 2,176 | 0.0036 |
+| 合计 | — | 2,296 | 941 | 3,237 | 0.0053 |
+
 ## 40.4 对照与判定
 
 | 项目 | 构造真值 | 模型回答 | 判定 |
@@ -64,9 +72,10 @@ TOOL: audio_attach → {"attached":"fixture-b.wav","mime":"audio/wav","bytes":24
 | fixture-b 音高方向 | 下降 | down | ✅ 一致 |
 | 事件计数 | 3 个 tone | 1（听成连续 sweep） | ❌ 不一致 |
 
-- 两个文件方向**不同**且文件名/提示不泄露，若模型只看到文本或文件名不可能双双答对方向
-  → **模型确实听到了音频字节**；结合 OFFLINE payload 证据，可判定 audio 经 Pi 管道送达 Gemini。
-- **不主张**时间戳/事件计数级真值准确度（事件计数已实测不一致）；仅“音高方向”这种
-  定性判断作为听音证据。音乐/复音场景的能力上限不在此 issue 范围。
+- 两个文件方向不同、文件名/提示不泄露答案，两问方向均与构造真值一致。这是音频已送达模型的
+  **支持性证据**，与 OFFLINE payload 证据（`inlineData` 含 MIME+字节）互相印证；**不是统计证明**：
+  n=2 且为二选一方向判断，纯猜测也可能蒙对，故不能由此推导听音准确度或泛化能力。
+- **不主张**时间戳/事件计数级真值准确度（事件计数已实测不一致，上表）；仅记录定性观察。
+  音乐/复音场景的能力上限不在此 issue 范围。
 - session 隐私核查（grep 实测）：bridge session JSONL 中**无** base64 音频（注入是请求级、
   Pi 恢复自身状态）；工具结果只含文件名/sha256 等元数据。

@@ -23,7 +23,7 @@ Pi 安装位置以下记 `<HOME>/.pi/agent/install/releases/0.87.1/node_modules/
 | `pi-coding-agent/dist/core/agent-session.js` `_normalizePromptImages` | RPC/SDK/`sendUserMessage` 图片入口统一走 `processImage`，失败仅留文字提示、图片丢弃 |
 | `pi-coding-agent/dist/cli/file-processor.js` | `@file`：`detectSupportedImageMimeTypeFromFile` 为 null → **UTF-8 文本分支** |
 | `pi-coding-agent/dist/core/tools/read.js` | 非图片文件：`buffer.toString("utf-8")` → 文本 |
-| `pi-coding-agent/dist/api/google-shared.js` `convertMessages` | 非 text 块 → `inlineData{mimeType, data}`（user parts 与 toolResult `functionResponse.parts` 均如此）——**桥接可用性的根因** |
+| `pi-ai/dist/api/google-shared.js` `convertMessages` | 非 text 块 → `inlineData{mimeType, data}`（user parts 与 toolResult `functionResponse.parts` 均如此）——**桥接可用性的根因** |
 | `pi-coding-agent/dist/utils/tool-result-images.js` | 工具结果图片块 `processImage` 失败时**原样保留**（工具结果桥接通道的根因） |
 
 ## 20.3 离线执行 Pi 真实代码（OFFLINE）

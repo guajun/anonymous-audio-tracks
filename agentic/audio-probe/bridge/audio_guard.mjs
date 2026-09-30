@@ -87,6 +87,40 @@ export function checkSize(sizeBytes, maxBytes = DEFAULT_MAX_BYTES) {
   return sizeBytes;
 }
 
+/**
+ * Cumulative queue budget: the inline request cap is 20 MiB and base64 costs
+ * 4/3 x raw bytes, so the sum of queued raw bytes must stay bounded even when
+ * every single file passes `checkSize`. Throws on overflow.
+ */
+export function checkQueueBudget(queuedBytes, newBytes, maxQueueBytes) {
+  const total = queuedBytes + newBytes;
+  if (total > maxQueueBytes) {
+    throw new Error(
+      `queued audio exceeds cumulative budget (${total} > ${maxQueueBytes} bytes)`,
+    );
+  }
+  return total;
+}
+
+/** Error-code prefixes used by the bridge (stable contract for downstream). */
+export const ERROR_CODES = {
+  ARGS: "E_AUDIO_ARGS",
+  PATH: "E_AUDIO_PATH",
+  NOT_FOUND: "E_AUDIO_NOT_FOUND",
+  NOT_FILE: "E_AUDIO_NOT_FILE",
+  SIZE: "E_AUDIO_SIZE",
+  QUEUE: "E_AUDIO_QUEUE",
+  MIME: "E_AUDIO_MIME",
+  READ: "E_AUDIO_READ",
+  MODEL: "E_AUDIO_MODEL",
+};
+
+/** Build an error whose message is guaranteed free of absolute paths. */
+export function fail(code, message) {
+  const safe = String(message).replace(/[A-Za-z]:[\\/][^\s"']*/g, "<PATH>");
+  return new Error(`${code}: ${safe}`);
+}
+
 /** Only the file name is safe to echo into model context or reports. */
 export function safeBasename(fullPath) {
   const parts = pathResolve(fullPath).split(sep);
