@@ -272,6 +272,39 @@ def test_doctor_detects_bridge_drift(workspace: Path):
     assert "pin" in by_id["bridge.pin"]["detail"]
 
 
+def test_doctor_collision_never_deletes_foreign_file(workspace: Path, monkeypatch):
+    """Regression (review round 2 repro): when the exclusive create FAILS with
+    EEXIST (mocked os.urandom forces a name collision), the pre-existing file
+    with the probe name must survive with content and existence unchanged."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("doctor_mod", DOCTOR)
+    doctor_mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(doctor_mod)
+    monkeypatch.setattr(doctor_mod.os, "urandom", lambda n: b"\x00" * n)  # 强制碰撞名
+    name = f".doctor-write-probe-{os.getpid()}-00000000"
+    sentinel = workspace / "outputs" / name
+    sentinel.parent.mkdir(parents=True, exist_ok=True)
+    sentinel.write_text("USER_DATA", encoding="utf-8")
+    doctor = doctor_mod.Doctor(workspace, deep=False, deep_audio=None, redact=True)
+    doctor.check_outputs()
+    assert sentinel.exists(), "EEXIST collision must never delete the pre-existing file"
+    assert sentinel.read_text(encoding="utf-8") == "USER_DATA", "collision must never modify it"
+    check = [c for c in doctor.checks if c["id"] == "outputs.writable"][0]
+    assert check["status"] == "fail"  # 碰撞如实报告为探测失败，不假报成功
+    assert not any(p.name.startswith(".doctor-write-probe-") and p.name != name
+                   for p in sentinel.parent.iterdir())
+
+
+def test_doctor_cleans_up_its_own_probe(workspace: Path):
+    """Regression (review round 2): a successful run must clean up its OWN
+    probe (and only that one)."""
+    result = run_script(DOCTOR, ["--workspace", str(workspace), "--json"])
+    assert result.returncode == 1  # skill/sam 未配置仍 fail，不影响本断言
+    leftovers = [p.name for p in (workspace / "outputs").iterdir()
+                 if p.name.startswith(".doctor-write-probe-")]
+    assert leftovers == [], f"doctor must remove its own probe, left: {leftovers}"
+
+
 def test_doctor_hints_only_advertise_real_commands(workspace: Path):
     """Regression (review 4): no fix hint may reference flags that do not exist."""
     result = run_script(DOCTOR, ["--workspace", str(workspace), "--json"])

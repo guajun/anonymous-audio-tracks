@@ -4,7 +4,7 @@
 `google/gemini-3.8-flash`、`sam-audio` skill（pin 安装）、明确标注的音频桥接扩展、音频输入与
 输出目录），用 `doctor.py` 自检、用 `smoke.py` 做真实模型冒烟。它不是训练项目。
 
-- 真实/mock 分离：本 README 的命令全部可实跑；**离线自动化测试**（`tests/`，28 项，不联网、
+- 真实/mock 分离：本 README 的命令全部可实跑；**离线自动化测试**（`tests/`，30 项，不联网、
   不调用模型）与**真实验证**（实机 Windows 启动 / Pi 项目 trust / Gemini skill 发现 / SAM
   help 与 dry-run）分开记录，真实证据见 [`reports/30-deploy-verification.md`](reports/30-deploy-verification.md)。
 - 冻结接口见 [`manifest.json`](manifest.json)：toolbox pin、SAM commit、桥接文件 SHA-256、
@@ -16,7 +16,7 @@
 
 | 内容 | 类型 | 位置 |
 |---|---|---|
-| 部署/幂等/冲突/诊断逻辑测试 | 离线（mock/tmp 目录） | `tests/test_workspace_template.py`（28 项） |
+| 部署/幂等/冲突/诊断逻辑测试 | 离线（mock/tmp 目录） | `tests/test_workspace_template.py`（30 项） |
 | Windows 实机启动（PowerShell 5.1 / pwsh / git-bash） | 真实 | `reports/30-deploy-verification.md` §3 |
 | project trust 加载项目设置/扩展 | 真实（零 API 探针 + 真实运行模型证据） | 报告 §4 |
 | Gemini 3.8 Flash skill 发现 + SAM CLI `--help` + `audio_attach` 错误契约 | 真实（1 次 Pi run，≈3 个 assistant 请求） | 报告 §5 |
@@ -162,7 +162,7 @@ python agentic/workspace-template/smoke.py  --workspace "<WS>" --print-argv     
   `--deep` 追加三项真实执行：`sam check-environment`、`sam separate --dry-run`、上游
   `scripts/verify_models.py`（**字节+SHA-256 完整性对照 model-manifest.json**）。
   doctor 只读，唯一例外：outputs/ 写探测用**唯一独占创建**的临时文件并立即删除，现存文件
-  一律不动。退出码：`0` 无失败、`1` 有失败、`2` 用法。
+  一律不动；独占创建失败（同名碰撞/权限）时**绝不删除任何文件**（归属标志保护）。退出码：`0` 无失败、`1` 有失败、`2` 用法。
 - smoke（真实，约 3 个 assistant 请求）判据：① 事件流全部 assistant 消息 `model=gemini-3.8-flash`
   （**不传 `--model`**，证明 trust 加载了项目设置）；② system prompt `skills` 段含 `sam-audio`；
   ③ bash 真实执行 `audio_toolbox.py --help`；④ `audio_attach` 失败返回 `E_AUDIO_NOT_FOUND`
@@ -219,4 +219,4 @@ python .../bootstrap.py ...      # 重新部署（幂等）
 - 冻结接口与 pin：[`manifest.json`](manifest.json)
 - 上游接口：[`../toolbox/manifest.json`](../toolbox/manifest.json)（#29）、
   [`../audio-probe/README.md`](../audio-probe/README.md)（#30，§9 给下游的稳定接口）
-- 离线测试：`tests/test_workspace_template.py`（28 项，0 网络 0 API）
+- 离线测试：`tests/test_workspace_template.py`（30 项，0 网络 0 API）

@@ -199,24 +199,31 @@ class Doctor:
 
     def check_outputs(self) -> None:
         """outputs/ writability via a UNIQUE exclusively-created probe file.
-        Only that probe is removed; every pre-existing file (including a user's
-        outputs/.write-test) is preserved untouched."""
+        Only a probe this run created (ownership flag set right after the
+        exclusive create succeeds) is ever deleted. If creation fails — e.g.
+        an EEXIST name collision with a pre-existing file — NOTHING is deleted:
+        a foreign file that happens to carry the probe name is left untouched."""
         out = self.ws / "outputs"
         probe = out / f".doctor-write-probe-{os.getpid()}-{os.urandom(4).hex()}"
+        owned = False  # 只有独占创建成功的自有探测文件才允许删除
         try:
             out.mkdir(parents=True, exist_ok=True)
             fd = os.open(str(probe), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            owned = True
             with os.fdopen(fd, "wb") as handle:
                 handle.write(b"doctor write probe")
         except OSError as exc:
-            try:
-                probe.unlink()
-            except OSError:
-                pass
-            self.add("outputs.writable", FAIL, f"outputs/ 不可写：{exc.__class__.__name__}", "检查权限/磁盘")
+            self.add("outputs.writable", FAIL,
+                     f"outputs/ 写探测失败：{exc.__class__.__name__}（同名冲突或不可写；非本进程创建的文件一律不删除）",
+                     "检查 outputs/ 权限与同名文件（doctor 只清理自己独占创建的探测文件）")
+            if owned:
+                try:
+                    probe.unlink()
+                except OSError:
+                    pass
             return
         try:
-            probe.unlink()  # 只删除本探测文件（唯一独占创建）
+            probe.unlink()  # 只删除本探测文件（独占创建成功、归属明确）
         except OSError:
             pass
         self.add("outputs.writable", OK, "outputs/ 可写（唯一独占临时探测文件已删除；现存文件一律不动；结果约定 outputs/result.json，schema 归 issue #32）")
