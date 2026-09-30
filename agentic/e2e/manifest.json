@@ -1,0 +1,102 @@
+{
+  "schema": "agentic-e2e-manifest/v1",
+  "issue": "guajun/anonymous-audio-tracks#33",
+  "parent_issue": "guajun/anonymous-audio-tracks#28",
+  "research_log": "guajun/anonymous-audio-tracks#27",
+  "integration": {
+    "branch": "agentic/issue-33",
+    "pr_base": "agentic/minimal-agent",
+    "docs": ["agentic/e2e/README.md"],
+    "tests": "agentic/e2e/tests",
+    "owns": ["e2e", "harness", "e2e fixtures", "e2e tests", "e2e reports"],
+    "does_not_own": [
+      "schema (issue #32, frozen)",
+      "workspace-template/bootstrap/doctor/smoke (issue #31, frozen)",
+      "viewer (issue #34)",
+      "root lock files"
+    ]
+  },
+  "roles": {
+    "impl_worker": {
+      "model": "openrouter/xiaomi/mimo-v2.6-pro",
+      "role": "实施/开发 worker（本 PR 代码与文档）",
+      "note": "与音乐 Agent 是两个角色，模型不同"
+    },
+    "music_agent": {
+      "model": "google/gemini-3.8-flash",
+      "role": "真正处理音乐的 Agent（Pi workspace 内运行）",
+      "fixed_by": "issue #30 bridge 冻结接口（agentic/audio-probe/README.md §9），.pi/settings.json 固定 defaultProvider/defaultModel",
+      "launch_note": "运行命令不传 --model/--provider，用 project trust 加载项目设置以证明模型固定"
+    }
+  },
+  "pipeline": {
+    "real": [
+      "harness（用户）：受控 clip → 任务 prompt（目标输出=冻结协议）",
+      "Pi/gemini-3.8-flash 经 audio_attach bridge 收到 MIME+音频字节（Pi native=unsupported）",
+      "Agent 自主：听音假设 → 读 sam-audio SKILL.md → audio-toolbox sam separate（真实 GPU 分离）",
+      "Agent 自写 Python DSP（或选用 harness helper）检测各 stem onset、估计 BPM",
+      "Agent 产出 outputs/e2e/<run-id>/result.json（agentic-audio-tracks/v1）",
+      "harness：冻结 schema 校验 + e2e 一致性 → overlay/抽查 → run manifest → LATEST"
+    ],
+    "forbidden": [
+      "预固定 outputs / 预写事件或分离结果后让 LLM 润色冒充 Agent 产出",
+      "把 mock/MIDI 控制时点/fixture 当作实际检测结果",
+      "为了让校验通过而篡改 onset 时间或静默量化"
+    ]
+  },
+  "contracts": {
+    "result_schema": "agentic-audio-tracks/v1（issue #32 冻结；validate.py 退出码 0/1/2）",
+    "result_path": "outputs/e2e/<run-id>/result.json（每 run 独立，不覆盖旧 run）",
+    "latest_pointer": "outputs/e2e/LATEST.txt（单行 run id；最近一次 run）",
+    "filename_bases": {
+      "audio.filename": "相对 <WS>/audio/inputs（= PI_AUDIO_BRIDGE_ROOT）",
+      "instruments[].stem.filename": "相对 <WS>/outputs/e2e/<run-id>/"
+    },
+    "event_provenance": "DSP 检出事件必须 source='dsp' + method=<检测法>；乐器 source=假设来源（sam/llm）；事件按 (onset,id) 升序；秒时间轴 t=0=clip 开头",
+    "audio_pathway": "bridge（audio_attach）；Pi 原生音频=unsupported（issue #30），结果不得标 native",
+    "run_manifest": "agentic-e2e-run-manifest/v1：输入 hash、commit/model/tool pin、参数、耗时/GPU 设备、用量与请求数、tool trace 摘要、成功/失败 stage、输出校验、限制、复现命令",
+    "spotcheck": "agentic-e2e-spotcheck/v1：overlay + 能量上升/串音/独立检测器差异；口径=抽查迹象，非总体准确率"
+  },
+  "clip": {
+    "name": "e2e-clip-001.wav",
+    "tool": "harness/make_clip.py",
+    "budget": "单文件 ≤4 MiB、排队 ≤8 MiB（issue #30 桥接预算）",
+    "timeline": "clip t=0 = 源文件 offset_s；所有 onset 用 clip 时轴",
+    "registry": "audio/inputs/manifest.json（issue #31 workspace-audio-manifest/v1，sha256=原始字节 hash）",
+    "privacy": "真实音频/clip/stems 不入 git；只在本地 ignored 目录"
+  },
+  "budget": {
+    "pi_run_timeout_s": 2400,
+    "sam_separations_max_per_clip": 3,
+    "sam_call_timeout_s": 900,
+    "validator_fix_fixes_max": 2,
+    "real_model_runs": "≤2（主 run + 至多 1 次有限修复/抽查 followup）",
+    "parameter_sweeps": "禁止",
+    "cleanup": "只清理本任务自己的进程（run_bounded 杀 Pi；SAM 自带 --timeout），不做全局 taskkill"
+  },
+  "pins": {
+    "pi": "0.87.1",
+    "sam_skill": "sam-audio",
+    "toolbox_pin": "dfbc40a9541f686207b65b93b1332bb505654261",
+    "sam_upstream_commit": "c603de8794cc16880dc01be0f1e868f6c2845417",
+    "bridge_files_sha256": {
+      "audio-bridge.ts": "dac9abe552cf47c5963b98273f8588e5ca1f47475c939619b5ef2ad94bd833de",
+      "audio_guard.mjs": "61f3980e4d06fc0631d497947bd01251b66bc4d6fa1705184fafac4dacbd7214"
+    },
+    "validator": "agentic/schema/validate.py（issue #32 冻结接口）"
+  },
+  "exit_codes": {
+    "0": "成功（验收判据全过）",
+    "1": "运行完成但验收未过（result 缺失或校验失败）",
+    "2": "用法错误",
+    "3": "命令失败或无法启动",
+    "4": "硬超时（杀进程，blocked）",
+    "5": "provider error / aborted",
+    "6": "事件流空/乱码/不完整"
+  },
+  "privacy": {
+    "committed": ["纯 JSON fixture/真值（自生成 mock）", "代码与文档", "脱敏报告"],
+    "never_committed": ["真实音频/clip/stems", "模型权重", "API key", "完整会话/事件流", "个人绝对路径"],
+    "redaction": "harness/common.make_redactor（路径→占位符）+ find_private（key 形态/长 base64/绝对路径）+ validate_result privacy 检查"
+  }
+}
