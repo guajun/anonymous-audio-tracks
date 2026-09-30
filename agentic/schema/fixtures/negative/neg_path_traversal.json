@@ -1,0 +1,49 @@
+{
+  "schema_version": "agentic-audio-tracks/v1",
+  "audio": {
+    "filename": "fixtures-audio/mock-neg.wav",
+    "sha256": "82931b5d23e35274d87a5ea2099a3fb4dfd8d520402f7dbc1ba09093941c5a82",
+    "duration_seconds": 12.0,
+    "sample_rate": 44100
+  },
+  "tempo": {
+    "bpm": 100.0,
+    "source": "mock",
+    "confidence": 0.5
+  },
+  "instruments": [
+    {
+      "id": "inst-1",
+      "label": "piano",
+      "description": "负例 fixture 的乐器来源",
+      "source": "mock",
+      "confidence": 0.5,
+      "events": [
+        {
+          "id": "inst-1-ev-1",
+          "onset_seconds": 1.0
+        },
+        {
+          "id": "inst-1-ev-2",
+          "onset_seconds": 2.0
+        }
+      ],
+      "stem": {
+        "filename": "../secret/stem.wav",
+        "sha256": "007bf691e6c3ef7ada668ce5b71a4442b7261c01163a826d6bdc8ae83f466992"
+      }
+    }
+  ],
+  "provenance": {
+    "steps": [
+      {
+        "tool": "aat-schema-fixtures",
+        "source": "mock",
+        "note": "负例 fixture：应被校验器拒绝"
+      }
+    ]
+  },
+  "limitations": [
+    "负例示例，不是合法文档"
+  ]
+}

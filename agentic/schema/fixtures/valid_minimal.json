@@ -1,0 +1,46 @@
+{
+  "schema_version": "agentic-audio-tracks/v1",
+  "audio": {
+    "filename": "fixtures-audio/mock-etude.wav",
+    "sha256": "787f9d428c8ceb9e009604253177cedc164ab3542acc24729329262717714c72",
+    "duration_seconds": 12.0,
+    "sample_rate": 44100
+  },
+  "tempo": {
+    "bpm": 120.0,
+    "source": "mock",
+    "confidence": 0.9
+  },
+  "instruments": [
+    {
+      "id": "inst-1",
+      "label": "piano",
+      "description": "合成 fixture：单一 mock 乐器来源",
+      "source": "mock",
+      "confidence": 1.0,
+      "events": [
+        {
+          "id": "inst-1-ev-1",
+          "onset_seconds": 0.0
+        },
+        {
+          "id": "inst-1-ev-2",
+          "onset_seconds": 2.5,
+          "duration_seconds": 1.25
+        }
+      ]
+    }
+  ],
+  "provenance": {
+    "steps": [
+      {
+        "tool": "aat-schema-fixtures",
+        "source": "mock",
+        "note": "自生成纯 JSON fixture，无真实音频"
+      }
+    ]
+  },
+  "limitations": [
+    "纯合成示例，不代表任何模型精度"
+  ]
+}

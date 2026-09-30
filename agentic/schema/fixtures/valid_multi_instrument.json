@@ -1,0 +1,114 @@
+{
+  "schema_version": "agentic-audio-tracks/v1",
+  "audio": {
+    "filename": "fixtures-audio/mock-trio.wav",
+    "sha256": "1f25d89031e2c6198c350c195659b738392deb0ba8c48d9e3c840d00b2420fe2",
+    "duration_seconds": 30.0,
+    "sample_rate": 48000
+  },
+  "tempo": {
+    "bpm": 96.0,
+    "source": "dsp",
+    "confidence": 0.6,
+    "beat_origin_seconds": 0.5
+  },
+  "instruments": [
+    {
+      "id": "inst-1",
+      "label": "piano",
+      "description": "SAM stem A：钢琴类来源（乐器标签是分离假设，不是真值）",
+      "source": "sam",
+      "confidence": 0.7,
+      "stem": {
+        "filename": "stems/mock-trio.piano.wav",
+        "sha256": "007bf691e6c3ef7ada668ce5b71a4442b7261c01163a826d6bdc8ae83f466992"
+      },
+      "events": [
+        {
+          "id": "inst-1-ev-1",
+          "onset_seconds": 1.0,
+          "duration_seconds": 0.5,
+          "pitch": {
+            "midi": 60,
+            "confidence": 0.4,
+            "source": "llm"
+          },
+          "confidence": 0.8,
+          "source": "llm",
+          "method": "llm-estimate"
+        },
+        {
+          "id": "inst-1-ev-2",
+          "onset_seconds": 1.0,
+          "duration_seconds": 0.5
+        },
+        {
+          "id": "inst-1-ev-3",
+          "onset_seconds": 2.5
+        }
+      ]
+    },
+    {
+      "id": "inst-2",
+      "label": "piano",
+      "description": "SAM stem B：同类乐器的第二个来源（label 可重复，id 不可重复）",
+      "source": "sam",
+      "confidence": 0.5,
+      "events": [
+        {
+          "id": "inst-2-ev-4",
+          "onset_seconds": 1.0
+        },
+        {
+          "id": "inst-2-ev-5",
+          "onset_seconds": 4.0,
+          "duration_seconds": 2.0
+        }
+      ]
+    },
+    {
+      "id": "inst-3",
+      "label": "drums",
+      "description": "DSP 谱通量 onset：打击乐类来源",
+      "source": "dsp",
+      "confidence": 0.9,
+      "stem": {
+        "filename": "stems/mock-trio.drums.wav",
+        "sha256": "1dc48b2c7665c9e65beaffc801e7a1b6f2001ef58fbd1e819296ec3385a2a945"
+      },
+      "events": [
+        {
+          "id": "inst-3-ev-6",
+          "onset_seconds": 0.5,
+          "confidence": 0.9,
+          "source": "dsp",
+          "method": "spectral-flux"
+        },
+        {
+          "id": "inst-3-ev-7",
+          "onset_seconds": 3.0,
+          "duration_seconds": 0.25
+        }
+      ]
+    }
+  ],
+  "provenance": {
+    "steps": [
+      {
+        "tool": "audio-toolbox.sam",
+        "source": "sam",
+        "note": "SAM 分离只提供乐器假设，不自动成为真值"
+      },
+      {
+        "tool": "aat-dsp-onsets",
+        "source": "dsp",
+        "note": "谱通量 onset 检测"
+      }
+    ]
+  },
+  "limitations": [
+    "乐器标签来自分离/模型假设，不是真值",
+    "pitch 为近似参考，不是 MIDI 真值",
+    "事件未量化到节拍"
+  ]
+}
