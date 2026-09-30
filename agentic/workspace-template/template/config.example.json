@@ -1,0 +1,5 @@
+{
+  "sam_root": "<SAM checkout 根目录，只留本地，不提交>",
+  "sam_python": "<该 checkout 的解释器（如 .venv 下的 python），只留本地>",
+  "ffmpeg": ""
+}

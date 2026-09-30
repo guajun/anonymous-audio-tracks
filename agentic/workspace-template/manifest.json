@@ -1,0 +1,123 @@
+{
+  "schema": "agentic.workspace-template-manifest/v1",
+  "issue": "guajun/anonymous-audio-tracks#31",
+  "parent_issue": "guajun/anonymous-audio-tracks#28",
+  "research_log": "guajun/anonymous-audio-tracks#27",
+  "integration": {
+    "branch": "agentic/issue-31",
+    "pr_base": "agentic/minimal-agent",
+    "docs": ["agentic/workspace-template/README.md"],
+    "tests": "agentic/workspace-template/tests/test_workspace_template.py",
+    "owns": ["workspace-template", "bootstrap", "doctor", "smoke", "docs", "tests"],
+    "does_not_own": ["schema (issue #32)", "e2e runs (issue #33)", "viewer (issue #34)"]
+  },
+  "model": {
+    "provider": "google",
+    "id": "gemini-3.8-flash",
+    "fixed_by": "issue #30 bridge contract (agentic/audio-probe/README.md §9)",
+    "note": "研究模型固定为 google/gemini-3.8-flash；项目 .pi/settings.json 固定 defaultProvider/defaultModel，运行命令不再重复传 --model，以便用真实运行证明项目设置经 project trust 生效。实现/开发 worker 模型与此不同，见 issue 执行约定。"
+  },
+  "toolbox": {
+    "repository": "guajun/agentic-audio-toolbox",
+    "skill": "sam-audio",
+    "pin": "dfbc40a9541f686207b65b93b1332bb505654261",
+    "source_of_pin": "agentic/toolbox/manifest.json (issue #29, 冻结接口)",
+    "install_command": "gh skill install guajun/agentic-audio-toolbox sam-audio --agent pi --scope project --pin dfbc40a9541f686207b65b93b1332bb505654261",
+    "installed_files": [".pi/skills/sam-audio/SKILL.md", ".pi/skills/sam-audio/references/cli-reference.md", ".pi/skills/sam-audio/scripts/audio_toolbox.py"],
+    "verification": {
+      "hash_policy": "所有 hash 均为 canonical LF UTF-8 字节的 sha256（CRLF 归一化为 LF，即 git blob 内容）；SKILL.md 只对 frontmatter 之后的正文做 hash（gh skill install 会重排/增补 frontmatter，全文 hash 不稳定）",
+      "metadata_file": ".pi/skills/sam-audio/SKILL.md",
+      "frontmatter_must_match": {
+        "github-pinned": "dfbc40a9541f686207b65b93b1332bb505654261",
+        "github-repo": "https://github.com/guajun/agentic-audio-toolbox",
+        "name": "sam-audio"
+      },
+      "content_hashes": {
+        ".pi/skills/sam-audio/references/cli-reference.md": "c4cfd20bd39b0708a1fd51c388e9472e924c955b9cc32036f33f24513d4df271",
+        ".pi/skills/sam-audio/scripts/audio_toolbox.py": "754929410ee584db60fc24105a11511da0b62d4ff80f4d39e536561386706df1",
+        ".pi/skills/sam-audio/SKILL.md#body": "72b01874b5b27012f8c0e9b7f6fb92a9a772cdcb31f8d4713a75f579a508647b"
+      },
+      "verified_note": "代码内容 hash 已校验：cli-reference.md + audio_toolbox.py 全文，SKILL.md 正文（frontmatter 除外）；frontmatter 另按 github-pinned/github-repo 元数据校验。"
+    },
+    "cli_schema": "audio-toolbox.sam/v1",
+    "cli_exit_codes": {"0": "success", "2": "usage", "3": "input", "4": "environment", "5": "upstream-failed", "6": "timeout", "7": "output"}
+  },
+  "sam_source": {
+    "repository": "guajun/anonymous-audio-tracks",
+    "path": "infrastructure/audio-analysis/sam-audio",
+    "commit": "c603de8794cc16880dc01be0f1e868f6c2845417",
+    "entry": "scripts/run_inference.py",
+    "weights": {
+      "distributed": false,
+      "local_layout": ["model-cache/sam-audio-small/checkpoint.pt", "model-cache/sam-audio-small/config.json", "model-cache/t5-base/model.safetensors", "model-cache/t5-base/config.json"],
+      "integrity": "upstream model-manifest.json + scripts/verify_models.py；永不自动下载"
+    }
+  },
+  "bridge": {
+    "kind": "explicit project-local extension (NOT Pi-native audio; Pi 0.87.1 native audio = unsupported)",
+    "frozen_in": "agentic/audio-probe/README.md §9 (issue #30)",
+    "hash_policy": "sha256 over canonical LF UTF-8 bytes（CRLF→LF 归一化 = git blob 内容）；部署写入归一化字节，doctor/测试用同一归一化比较（不弱化实质内容漂移检测，只豁免换行符差异）",
+    "files": [
+      {
+        "source": "agentic/audio-probe/bridge/audio-bridge.ts",
+        "install_path": ".pi/extensions/audio-bridge.ts",
+        "sha256": "dac9abe552cf47c5963b98273f8588e5ca1f47475c939619b5ef2ad94bd833de",
+        "role": "Pi extension (audio_attach tool + context injection)"
+      },
+      {
+        "source": "agentic/audio-probe/bridge/audio_guard.mjs",
+        "install_path": ".pi/extensions/audio_guard.mjs",
+        "sha256": "61f3980e4d06fc0631d497947bd01251b66bc4d6fa1705184fafac4dacbd7214",
+        "role": "纯校验模块（audio-bridge.ts 的同目录依赖，必须一起部署）"
+      }
+    ],
+    "loaded_via": ".pi/settings.json -> extensions: [\"extensions/audio-bridge.ts\"] (project trust required)",
+    "tool": {
+      "name": "audio_attach",
+      "args": {"path": "relative to PI_AUDIO_BRIDGE_ROOT (workspace: audio/inputs)"},
+      "success_json": ["attached", "mime", "bytes", "sha256", "queueDepth", "queuedBytes", "note"],
+      "error_codes": ["E_AUDIO_ARGS", "E_AUDIO_PATH", "E_AUDIO_NOT_FOUND", "E_AUDIO_NOT_FILE", "E_AUDIO_SIZE", "E_AUDIO_QUEUE", "E_AUDIO_MIME", "E_AUDIO_READ", "E_AUDIO_MODEL"]
+    },
+    "env": {
+      "PI_AUDIO_BRIDGE_ROOT": "workspace audio/inputs 目录（run.ps1/run.sh/smoke.py 设置；不设置时默认指向 audio-probe/fixtures，不适合本 workspace）",
+      "PI_AUDIO_BRIDGE_MAX_BYTES": "单文件上限（默认 4 MiB）",
+      "PI_AUDIO_BRIDGE_MAX_QUEUE_BYTES": "排队上限（默认 8 MiB）"
+    }
+  },
+  "trust": {
+    "mode": "per-process `pi --approve`（run 脚本固定携带）",
+    "persists_global_state": false,
+    "note": "不修改 ~/.pi/agent/trust.json、不修改全局 settings/认证；交互式用户可用 /trust 自行持久化（本模板不代做）。实证：.pi/settings.json 的 extensions 在 --approve 下加载、--no-approve 下不加载。"
+  },
+  "workspace": {
+    "default_path": "<repo>/.local/agentic/workspace (gitignored)",
+    "layout": [
+      "AGENTS.md",
+      ".pi/settings.json",
+      ".pi/extensions/audio-bridge.ts",
+      ".pi/skills/sam-audio/ (gh skill install, pinned)",
+      "audio/inputs/ (输入音频 + manifest.json)",
+      "outputs/ (outputs/result.json + outputs/runs/<run-id>/)",
+      "local/ (本机配置/证据；不提交)",
+      "sessions/ (Pi sessionDir，workspace 本地)",
+      "run.ps1 / run.sh"
+    ],
+    "outputs": {
+      "result_json": "outputs/result.json",
+      "runs_dir": "outputs/runs/<run-id>/",
+      "schema": {"owner": "guajun/anonymous-audio-tracks#32", "status": "parallel, not owned here", "note": "本项只约定路径；不发明 schema。schema 合并前 Agent 写 outputs/notes.md 与 runs 产物，不自造 schema 并宣称兼容。"}
+    },
+    "audio_manifest": {
+      "path": "audio/inputs/manifest.json",
+      "schema": "workspace-audio-manifest/v1",
+      "fields": ["name", "sha256", "bytes", "format", "duration_s", "sample_rate", "channels", "probe", "source"]
+    }
+  },
+  "constraints": {
+    "no_gpu_inference": "deferred to guajun/anonymous-audio-tracks#33",
+    "no_weights_audio_keys_paths_in_git": true,
+    "root_lockfiles_touched": false,
+    "global_settings_auth_untouched": true,
+    "sam_network": "disabled (HF_HUB_OFFLINE=1 / TRANSFORMERS_OFFLINE=1 in upstream wrapper); 禁止自动下载权重"
+  }
+}

@@ -1,0 +1,18 @@
+# workspace 本地忽略规则（issue #31）。
+# 音频 / 输出 / 本机配置 / 会话 / 权重 / 密钥 全部不入库。
+audio/
+outputs/
+local/
+sessions/
+.pi/skills/
+.pi/extensions/
+*.wav
+*.mp3
+*.ogg
+*.flac
+*.m4a
+*.jsonl
+*.pt
+*.safetensors
+.env
+.env.*

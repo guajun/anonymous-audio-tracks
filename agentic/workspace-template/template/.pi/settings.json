@@ -1,0 +1,6 @@
+{
+  "defaultProvider": "google",
+  "defaultModel": "gemini-3.8-flash",
+  "sessionDir": "sessions",
+  "extensions": ["extensions/audio-bridge.ts"]
+}
