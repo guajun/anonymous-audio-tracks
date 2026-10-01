@@ -53,6 +53,20 @@
       <button id="zoom-out-button" type="button">缩小（扩大时间窗）</button>
       <span id="view-window" class="muted"></span>
     </div>
+    <div class="global-seek-row">
+      <label for="global-seek">全局播放滑条（整曲：左端=音频文件开头，右端=音频文件结尾）</label>
+      <input id="global-seek" type="range"
+             min="0" max="0" step="0.1" value="0" disabled
+             aria-label="全局播放位置（整曲，秒）"
+             aria-valuetext="未加载音频，滑条停用">
+      <span id="global-seek-time" class="muted">已播 0.00s / 全长 0.00s（未加载可解码音频：滑条停用）</span>
+      <p class="hint">
+        滑条属于播放器，不属于时间轴：范围固定为 <strong>0 → 实际已加载音频时长</strong>（解码后的文件真实长度，
+        不用 JSON 声明的 duration，也不随缩放/平移缩放或移动）。拖动、或聚焦后按 Home/End/箭头/PageUp/PageDown
+        可跳到整曲任意位置；seek 只改播放位置，<strong>不自动平移/缩放时间窗，也不改 BPM 与 onset</strong>。
+        当前播放位置落在时间窗外时 playhead 暂时不可见（不强行跟随）。
+      </p>
+    </div>
     <p class="hint">
       滚轮：以鼠标指针位置为锚点缩放时间窗；Shift+滚轮 或 拖拽：平移；单击标尺/波形/轨道：跳转（seek）。
       时间窗始终约束在 [0, 音频时长]。

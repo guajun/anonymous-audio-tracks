@@ -2,7 +2,8 @@
 
 读取 `agentic-audio-tracks/v1`（issue #32 冻结协议）分析结果 JSON 与本地音乐文件，
 **纵轴逐行显示乐器条目（label + 稳定 id，同类不同 id 绝不合并），横轴按音频秒显示 onset 事件与波形**，
-支持 BPM 网格调节、滚轮锚点缩放、平移、播放/暂停/seek/playhead。**纯本地：file input 加载，不上传任何服务、无 CDN。**
+支持 BPM 网格调节、滚轮锚点缩放、平移、播放/暂停/seek/playhead，
+以及**全局整曲 seek 滑条**（范围固定 0 → 实际音频文件结尾，不随时间窗缩放/平移）。**纯本地：file input 加载，不上传任何服务、无 CDN。**
 
 - 数据契约：`agentic/schema/`（issue #32 冻结）。本目录 `schema/` 是字节一致的构建副本（`schema/SOURCE.json` 记录来源 sha256，测试校对）。
 - demo / stress 数据全部是**自生成 mock**（`provenance.source=mock`），**不是研究结果**，不代表任何模型能力。
@@ -22,6 +23,7 @@ agentic/viewer/
     protocol.js          校验流水线 parse→version→structure→semantic（对齐 pipeline.py）
     model.js             视图模型（typed arrays；BPM 状态/beat grid；onset 永不被改动）
     timeline.js          时间窗数学（锚点缩放/平移/fit/约束、二分查找可视切片）
+    global-seek.js       全局整曲 seek 滑条模型（min=0 / max=真实音频时长，独立于视图与 JSON 声明）
     peaks.js             波形 min/max 金字塔 + LOD 选择
     render.js            Canvas 绘制（viewport culling + 事件密度 LOD）
     transport.js         本地音频（文件名匹配/SHA-256/解码/ObjectURL/AudioContext/Worker 清理）
@@ -31,7 +33,7 @@ agentic/viewer/
   fixtures/demo/         已提交的小型 demo JSON（mock）
   fixtures/generated/    生成物（demo wav / 100k stress JSON+wav）— gitignore，不提交
   tools/                 serve.mjs / make-demo.mjs / make-stress.mjs / browser-check.mjs
-  tests/                 Node 单测（102 项）
+  tests/                 Node 单测（158 项）
   screenshots/ reports/  浏览器截图与报告 — gitignore，作为证据返回主 Agent
 ```
 
@@ -87,6 +89,22 @@ node agentic/viewer/tools/make-demo.mjs
 | seek | 单击标尺/波形/轨道任意位置 | playhead 跳到该处音频秒；「跳转（秒）」输入框同步 |
 | 播放 | 点「播放」或空格 | playhead 按真实音频秒推进；←/→ 快退/快进 1 秒 |
 
+### 3.1 全局整曲 seek 滑条（issue #41）
+
+「播放 / 视图」面板内的 **全局播放滑条**（`<input type="range">`，带 label / `aria-valuetext` /
+“已播 x / 全长 y”文本）属于**播放器**，不属于缩放后的时间轴：
+
+- **范围 = 真实音频文件**：`min=0`（文件开头），`max=实际已加载音频的 duration`
+ （解码后的 `AudioBuffer.duration`，回退有限的 `HTMLMediaElement.duration`）。
+ **不用 JSON 声明的 `audio.duration_seconds` 当真实全长**：JSON 与文件不一致时仍然红字报 mismatch、
+ 时间轴继续按 JSON 秒显示，但滑条范围只认真实文件（两端就是文件头/尾）。
+- **不跟随视图**：缩放/平移/fit 都不改滑条范围与当前值；seek 也不自动平移/缩放时间窗，
+ 不改 BPM 与 onset（onset 秒数组永不改变）。播放位置落在当前时间窗之外时 playhead 暂时不可见（不强行跟随）。
+- **操作**：拖动滑条；或聚焦后按 `Home`（=0）/ `End`（=文件结尾）/ `←``→`（步进 0.1s）/ `PageUp``PageDown`；
+ 播放时滑条值与“已播/全长”文本按真实音频秒同步。
+- **边界与清理**：未加载音频 / 解码失败时滑条停用（无假范围）；换音频文件后范围更新为新文件真实时长；
+ 滑条值永不超出实际音频末尾；换文件/`dispose()` 时音频、监听器、rAF 一并释放（浏览器回归断言）。
+
 ### 4. 大文件 / 格式错误时会发生什么（可读状态）
 
 - **格式错误 JSON**：状态区红色 `JSON 未通过 agentic-audio-tracks/v1 校验…`，下方逐条列出
@@ -102,16 +120,16 @@ node agentic/viewer/tools/make-demo.mjs
 ## 测试
 
 ```bash
-# 单元测试（147 项：结构/语义负例、原型键/Unicode 对齐、字节级入口、BPM 不改 onset、
+# 单元测试（158 项：结构/语义负例、原型键/Unicode 对齐、字节级入口、BPM 不改 onset、
 # 锚点缩放、持续事件裁剪、bounded ruler/beat grid、worker 回退不假零、加载生命周期、
-# server 逃逸、差分回归、卫生检查…）
+# 全局滑条范围=真实音频时长/夹取/禁用/替换（issue #41）、server 逃逸、差分回归、卫生检查…）
 node --test "agentic/viewer/tests/*.test.js"
 
-# 真实浏览器检查（46 项 demo/stress/lifecycle/并发/资源）+ 100k stress 量化 + 截图
+# 真实浏览器检查（58 项 demo/stress/lifecycle/并发/资源/全局滑条）+ 100k stress 量化 + 截图
 node agentic/viewer/tools/make-stress.mjs --events 100000     # 生成 gitignore 的 stress 夹具
 node agentic/viewer/tools/browser-check.mjs                    # 需要本机 Chrome/Edge（Node ≥ 22）
 
-# 真实输出集成回归（+6 项，输入路径由 CLI 指定，不硬写私有路径）
+# 真实输出集成回归（+11 项，输入路径由 CLI 指定，不硬写私有路径；含真 16s 文件的全局滑条回归）
 node agentic/viewer/tools/browser-check.mjs \
   --real-json  <result.json> \
   --real-audio <clip.wav> \
@@ -120,7 +138,8 @@ node agentic/viewer/tools/browser-check.mjs \
 
 - 浏览器检查输出：`agentic/viewer/reports/browser-check.json`（含环境/测量方法/逐项结果/截图时状态快照），
   截图 `agentic/viewer/screenshots/*.png`（01 demo、02 BPM 网格、03 锚点缩放、04 恶意 label、05 错误态、
-  06/07 100k stress、08 持续事件裁剪、10 真实集成、**10b 图表区（3 行 onsets+各 stem 波形）**、10c 全页）。
+  06/07 100k stress、08 持续事件裁剪、10 真实集成、**10b 图表区（3 行 onsets+各 stem 波形）**、10c 全页、
+  **11 全局滑条 + 真实 3 行图表（issue #41 证据：滑条 50% 处 + drums/bass/synthesizer 三行）**）。
   **这些均本地 gitignore，不入 GitHub。**
 - 差分测试会调用 `python agentic/schema/validate.py --json`，把本目录 JS 校验器与 #32 冻结 Python 参考的
   `(layer, code, pointer)` 集合逐文件对比；无 Python 时显式 skip（不会假报成功）。
@@ -176,6 +195,8 @@ node agentic/viewer/tools/browser-check.mjs \
 4. 极端情况（>200k 事件单行、BPM/时长极端到超出可计算范围）已被拒绝或给出可读 “网格不支持” 状态，未做更极端压测。
 5. 浏览器兼容：按 Chrome/Edge 现代特性实现；其他浏览器未验证。headless 截图需强制合成提交（工具已处理），
    否则可能拍到上一帧。
+6. 全局滑条（issue #41）的 max 取已解码 `AudioBuffer.duration`（回退有限的 `HTMLMediaElement.duration`）；
+   时长未知/无限的媒体（如流式 `duration=Infinity`）不支持，滑条会明确停用而不是给假范围。
 
 ## 人类验收指南（按 issue #34 验收项）
 
@@ -189,3 +210,8 @@ node agentic/viewer/tools/browser-check.mjs \
    恶意 label 不执行；故意选错音频（如 3s wav）验证 hash/时长 mismatch 明确报错且不重定时。
 6. 真实结果验收：加载 #33 真实 `result.json` + 16s clip（+ 3 份 stem `target.wav`，按 hash 自动消歧到对应行），
    确认 3 行（drums/bass/synthesizer）、110 事件、BPM 显示 unknown 可手输；**不做准确率评价**。
+7. 全局滑条验收（issue #41，对照 `screenshots/11-global-seek-slider-and-real-chart.png`）：
+   加载 16s 音频后滑条右端=16.00s、左端=0；把时间窗缩放到 4–6s 后**滑条范围/值不动**；
+   拖动滑条（或 Home/End/←/→）到 0 / 8 / 16，**时间窗不自动平移/缩放，BPM 与 onset 不变**；
+   播放时滑条与“已播/全长”文本跟随；换一个时长不同的文件（如 3s）滑条右端跟着变（mismatch 仍红字）；
+   未加载/坏文件时滑条停用。

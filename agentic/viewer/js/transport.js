@@ -394,6 +394,25 @@ export class MediaEngine {
     return this.main ? this.main.audio : null;
   }
 
+  /**
+   * REAL loaded audio duration in seconds (issue #41): the decoded
+   * AudioBuffer duration first, the finite HTMLMediaElement duration as a
+   * fallback, `null` when nothing usable is loaded. This is the file's own
+   * length — it never returns the JSON-declared `audio.duration_seconds`
+   * (a wrong JSON declaration is only reported as an explicit mismatch).
+   */
+  durationSeconds() {
+    if (!this.main) return null;
+    const candidates = [
+      this.main.buffer ? this.main.buffer.duration : NaN,
+      this.main.audio ? this.main.audio.duration : NaN,
+    ];
+    for (const candidate of candidates) {
+      if (Number.isFinite(candidate) && candidate > 0) return candidate;
+    }
+    return null;
+  }
+
   play() {
     if (this.main) return this.main.audio.play();
     return Promise.resolve();
@@ -405,8 +424,10 @@ export class MediaEngine {
 
   seek(seconds) {
     if (this.main && Number.isFinite(seconds)) {
-      const duration = this.main.audio.duration || this.main.buffer.duration;
-      this.main.audio.currentTime = Math.min(Math.max(0, seconds), duration);
+      // clamp to the REAL file length (never to a JSON declaration)
+      const duration = this.durationSeconds();
+      const clamped = duration === null ? Math.max(0, seconds) : Math.min(Math.max(0, seconds), duration);
+      this.main.audio.currentTime = clamped;
     }
   }
 
