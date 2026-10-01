@@ -38,7 +38,8 @@ agentic/viewer/
 ## 新手复现（在哪个目录、装什么、跑什么）
 
 **运行目录**：仓库 worktree 根目录（本文件所在仓库的根，下面命令均为根目录相对路径）。
-**依赖**：Node.js ≥ 20（实测 Node 24.19）；Chrome 或 Edge 本机已安装（不下载浏览器、无 npm 安装、无根 lock 改动）。
+**依赖**：Node.js ≥ 22（实测 Node 24.19；`tools/browser-check.mjs` 使用全局 WebSocket，Node 22+ 才提供；
+Node 20 可跑单测但跑不了浏览器工具）；Chrome 或 Edge 本机已安装（不下载浏览器、无 npm 安装、无根 lock 改动）。
 Python 3 仅用于可选的差分测试与上游 CLI 校验；没有 Python 时对应测试会显式 skip，其余照常通过。
 
 ### 1. 启动本地页面
@@ -101,56 +102,72 @@ node agentic/viewer/tools/make-demo.mjs
 ## 测试
 
 ```bash
-# 单元测试（102 项：结构/语义负例、BPM 不改 onset、锚点缩放、peaks、差分回归、卫生检查…）
+# 单元测试（131 项：结构/语义负例、原型键/Unicode 对齐、字节级入口、BPM 不改 onset、
+# 锚点缩放、持续事件裁剪、bounded beat grid、server 逃逸、差分回归、卫生检查…）
 node --test "agentic/viewer/tests/*.test.js"
 
-# 真实浏览器检查（28 项）+ 100k stress 量化 + 截图
+# 真实浏览器检查（40 项 demo/stress/lifecycle）+ 100k stress 量化 + 截图
 node agentic/viewer/tools/make-stress.mjs --events 100000     # 生成 gitignore 的 stress 夹具
-node agentic/viewer/tools/browser-check.mjs                    # 需要本机 Chrome/Edge
+node agentic/viewer/tools/browser-check.mjs                    # 需要本机 Chrome/Edge（Node ≥ 22）
+
+# 真实输出集成回归（+6 项，输入路径由 CLI 指定，不硬写私有路径）
+node agentic/viewer/tools/browser-check.mjs \
+  --real-json  <result.json> \
+  --real-audio <clip.wav> \
+  --real-stem  <stems/a/target.wav> --real-stem <stems/b/target.wav> --real-stem <stems/c/target.wav>
 ```
 
-- 浏览器检查输出：`agentic/viewer/reports/browser-check.json`（含环境/测量方法/逐项结果），
-  截图 `agentic/viewer/screenshots/*.png`（01 demo、02 BPM 网格、03 锚点缩放、04 恶意 label、05 错误态、06/07 100k stress）。
+- 浏览器检查输出：`agentic/viewer/reports/browser-check.json`（含环境/测量方法/逐项结果/截图时状态快照），
+  截图 `agentic/viewer/screenshots/*.png`（01 demo、02 BPM 网格、03 锚点缩放、04 恶意 label、05 错误态、
+  06/07 100k stress、08 持续事件裁剪、10 真实集成）。**这些均本地 gitignore，不入 GitHub。**
 - 差分测试会调用 `python agentic/schema/validate.py --json`，把本目录 JS 校验器与 #32 冻结 Python 参考的
   `(layer, code, pointer)` 集合逐文件对比；无 Python 时显式 skip（不会假报成功）。
 - 所有测试只用相对路径，换 checkout 可直接跑；不提交私有路径/key/音频/权重/完整会话。
 
 ## 性能：测量方法与实测（不空喊）
 
-**方法**：Chrome DevTools Protocol 驱动真实 Chrome（headless），计时取页面内 `performance.now()` 与 rAF 帧间隔；
-“可见事件数”由渲染层 culling 结果直接上报。测量条件见 `reports/browser-check.json` 的 `environment`
-（本机实测：Chrome 150.0.7871.101 / Windows / 16 核 / deviceMemory 32 / DPR 1，2026-10-01）。
+**方法**：Chrome DevTools Protocol 驱动真实 Chrome（headless），计时取页面内 `performance.now()`；
+帧采样**每帧执行整场景重绘**（标尺+波形+全部行）后记录 rAF 间隔与重绘耗时——不测“空转调度”就声称含重绘的 fps；
+每个数据集（JSON/音频）加载时指标**重置**，`firstRenderMs` 只属于当前数据集。可见/候选/绘制事件数由渲染层直接上报。
+测量条件见 `reports/browser-check.json` 的 `environment`（实测：Chrome 150.0.7871.101 / Windows / 16 核 / deviceMemory 32 / DPR 1）。
 
 **100k 事件 stress**（8 行 × 12500 事件 + 300s 音频，`fixtures/generated/stress-100000.json`）：
 
-| 指标 | 实测 |
+| 指标 | 实测（每帧含整场景重绘） |
 | --- | --- |
-| JSON 解析+结构+语义校验（Worker） | ≈ 970–1270 ms（100k 事件，一次性） |
-| 音频解码（300s WAV） | ≈ 424–697 ms |
-| 首次渲染 / 单帧渲染 | ≈ 0.4 ms / 1.3–2.6 ms |
-| 60 帧 rAF 平均间隔 / 最大 | ≈ 16.1 ms / 18.1 ms（≈60fps，含重绘） |
-| 整曲视图可见事件 | 100000（全部可见）→ **按像素密度聚合显示**（aggregatedRows=8，不画 10 万个图元） |
-| 放大 2s 窗口可见/绘制 | 830 可见 / 691 绘制（二分查找 culling） |
-| DOM 节点总数 | **102**（每乐器行 1 个标签节点；**没有每事件/每采样 DOM**） |
+| JSON 解析+结构+语义校验（Worker） | ~0.93–1.27 s（一次性） |
+| 音频解码（300s WAV） | ~0.41–0.70 s |
+| 当前数据集首帧渲染 / 单帧渲染 | ~5.4 ms / ~2.6–2.9 ms |
+| 60 帧 rAF 间隔 avg / max | 13.3 ms / 15.4 ms（含每帧整场景重绘） |
+| 60 帧重绘耗时 avg / max | 2.7 ms / 3.3 ms |
+| 整曲视图候选/可见事件 | 100000 / 100000 → **按像素密度聚合**（aggregatedRows=8，不画 10 万图元） |
+| 放大 2s 窗口 | 可见/绘制 725（二分查找 culling + 边缘裁剪） |
+| DOM 节点总数 | **103**（每乐器行 1 个标签节点；**没有每事件/每采样 DOM**） |
 
 ## 安全 / 隐私
 
 - 只用 `<input type=file>` 本地读取；无上传、无遥测、无第三方 URL（页面代码中 `http(s)://` 零命中，测试强制）。
+- **严格字节入口**：不用 `File.text()`（它会吞掉 UTF-8 BOM、把非法 UTF-8 替换成 `\uFFFD`）；原始字节先查 BOM、
+  再严格 UTF-8 解码（`E_PARSE` 受控拒绝），与冻结 Python loader 同判定（字节级+真实 File+差分回归）。
 - label / 错误文本一律 `textContent` 或 Canvas `fillText`；禁用 `innerHTML` 等 sink（测试强制），CSP `default-src 'none'`。
 - JSON 里的 `audio.filename` / `stem.filename` **只做本地文件名匹配**，绝不按其路径 fetch（`../`、盘符、UNC、URL、
-  保留名等由语义层 `E_PATH` 拒绝）。
-- 音频走 ObjectURL + AudioContext：换文件/`dispose()` 即 revoke/close/terminate（浏览器测试断言全部归零）。
-- 本地服务只暴露 `agentic/viewer/`；生成的 wav/stress JSON/截图/报告全部 gitignore，不进 Git。
+  保留名等由语义层 `E_PATH` 拒绝）；**同名 stem（如多份 `target.wav`）按 SHA-256 身份消歧**，hash/时长不符明确报错
+  且不渲染、不报成功，绝不自动对齐/重定时。
+- 本地服务只暴露 `agentic/viewer/`，**realpath 容器检查**（junction/symlink 逃逸也被拒，回归测试含合成 junction）。
+- 音频走 ObjectURL + AudioContext：换文件/`dispose()` 即 revoke/close/terminate（浏览器测试断言全部归零，含加载中 dispose）。
+- 生成的 wav/stress JSON/截图/报告/真实产物全部 gitignore，不进 Git；公开只出脱敏摘要。
 
 ## 限制与 pending（不假称全验收）
 
-1. **任务 5（#33）真实输出集成 = pending**。当前只能加载冻结 fixture 与自生成 mock demo；
-   #33 的真实 JSON + 音频产出后，需按同样的“先 JSON 后音频”流程试载并复跑浏览器检查（本 PR 不冒充已完成）。
-2. **人类验收 = pending**。上述截图/浏览器检查是主 Agent 自动验证证据，**不能代替人类验收**；
-   人类验收后由主 Agent 在 issue #34 勾选/评论。
+1. **真实输出集成（#33）已可加载并有集成回归**（CLI 传路径：3 行 drums/bass/synthesizer、110 原始事件、
+   tempo=null/unknown、hash/时长核对、3 份同名 stem 按 hash 映射到各行、seek/缩放）；但 **#33 后端 spotcheck
+   统计存在 float32 解码/采样率窗口问题、正在离线纠正**——UI 只展示冻结 schema 的原始事件与**标注为
+   “文档自述（非验证结论）”的 limitations/provenance**，不展示任何 isolation/leak 等质量指标，**不宣称研究准确率**。
+2. **人类验收 = pending**。截图/浏览器检查是主 Agent 自动验证证据，**不能代替人类验收**。
 3. `pitch` 仅在事件确有音高证据时显示参考信息，不承诺 MIDI 真值；demo 的 pitch/confidence 是随意演示值。
-4. 极端情况（>200k 事件单行、超过 float64 的时间值等）已被拒绝或聚合，但未做更极端规模的压测。
-5. 浏览器兼容：按 Chrome/Edge 现代特性实现（module worker、OffscreenCanvas 未使用）；其他浏览器未验证。
+4. 极端情况（>200k 事件单行、BPM/时长极端到超出可计算范围）已被拒绝或给出可读 “网格不支持” 状态，未做更极端压测。
+5. 浏览器兼容：按 Chrome/Edge 现代特性实现；其他浏览器未验证。headless 截图需强制合成提交（工具已处理），
+   否则可能拍到上一帧。
 
 ## 人类验收指南（按 issue #34 验收项）
 
@@ -162,4 +179,5 @@ node agentic/viewer/tools/browser-check.mjs                    # 需要本机 Ch
    播放看 playhead 推进、fit/reset。
 5. 加载 `demo-unknown-tempo.json` 验证“BPM 未知”提示与手动输入；加载 `demo-malicious-labels.json` 验证
    恶意 label 不执行；故意选错音频（如 3s wav）验证 hash/时长 mismatch 明确报错且不重定时。
-6. 真实验收：待 #33 产出真实 JSON + 音频后重复步骤 2–5。
+6. 真实结果验收：加载 #33 真实 `result.json` + 16s clip（+ 3 份 stem `target.wav`，按 hash 自动消歧到对应行），
+   确认 3 行（drums/bass/synthesizer）、110 事件、BPM 显示 unknown 可手输；**不做准确率评价**。

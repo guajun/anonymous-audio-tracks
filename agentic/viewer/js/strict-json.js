@@ -242,6 +242,9 @@ class StrictParser {
 
   parseObject(parts, depth) {
     this.pos += 1; // {
+    // Null-prototype-free plain object, but every key is created as an OWN
+    // property: raw `"__proto__"` keys must survive as own keys (prototype
+    // pollution guard) so the structural layer can reject them like Python.
     const out = {};
     const seen = new Set();
     this.skipWs();
@@ -268,7 +271,12 @@ class StrictParser {
       if (this.text[this.pos] !== ":") this.fail("JSON 语法错误：对象键后缺少 ':'");
       this.pos += 1;
       this.skipWs();
-      out[key] = this.parseValue(parts.concat([key]), depth + 1);
+      Object.defineProperty(out, key, {
+        value: this.parseValue(parts.concat([key]), depth + 1),
+        enumerable: true,
+        writable: true,
+        configurable: true,
+      });
       this.skipWs();
       const ch = this.text[this.pos];
       if (ch === ",") {
@@ -307,6 +315,63 @@ class StrictParser {
       this.fail("JSON 语法错误：数组元素后缺少 ',' 或 ']'");
     }
   }
+}
+
+/**
+ * Strict UTF-8 decoding for FILE ENTRY POINTS (mirrors `loader.load_path`).
+ *
+ * `File.text()` silently strips a UTF-8 BOM and replaces invalid UTF-8 bytes
+ * with U+FFFD, so the strict parse layer would never see either problem. This
+ * helper checks the raw bytes first: a leading BOM is rejected explicitly and
+ * invalid UTF-8 is a controlled `E_PARSE` — same verdict as the frozen Python
+ * loader (`raw.decode("utf-8")` strict + BOM rejection).
+ *
+ * @param {ArrayBuffer|Uint8Array} bytes
+ * @returns {{text: string|null, issues: Array}}
+ */
+export function decodeUtf8Strict(bytes, source = "<bytes>") {
+  const view = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  if (view.length >= 3 && view[0] === 0xef && view[1] === 0xbb && view[2] === 0xbf) {
+    return {
+      text: null,
+      issues: [makeIssue("parse", "E_PARSE", "", `拒绝 UTF-8 BOM（\uFEFF 开头不是合法 JSON 文本，${source}）`)],
+    };
+  }
+  try {
+    // fatal: invalid byte sequences throw; ignoreBOM: keep \uFEFF visible so
+    // the parser's own BOM rule applies to any later occurrence too.
+    const decoder = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
+    return { text: decoder.decode(view), issues: [] };
+  } catch {
+    return {
+      text: null,
+      issues: [
+        makeIssue(
+          "parse",
+          "E_PARSE",
+          "",
+          `文件必须是 UTF-8 文本（${source}）：存在非法 UTF-8 字节序列（受控拒绝，不用替换字符\uFFFD 静默容错）`,
+        ),
+      ],
+    };
+  }
+}
+
+/** Strict read of a picked File/Blob: raw bytes -> strict UTF-8 -> strict JSON. */
+export async function readFileStrict(file) {
+  const source = (file && file.name) || "<file>";
+  let bytes;
+  try {
+    bytes = await file.arrayBuffer();
+  } catch (error) {
+    return {
+      text: null,
+      issues: [
+        makeIssue("parse", "E_PARSE", "", `无法读取文件（${source}）：${String(error && error.message ? error.message : error)}`),
+      ],
+    };
+  }
+  return decodeUtf8Strict(bytes, source);
 }
 
 /**

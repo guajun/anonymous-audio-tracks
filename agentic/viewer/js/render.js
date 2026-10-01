@@ -90,6 +90,30 @@ function drawGrid(ctx, model, bpmState, view, top, bottom, width) {
   return grid;
 }
 
+/**
+ * Pixel geometry of one event inside the viewport.
+ *
+ * Sustained events (with duration) are CLIPPED to the viewport edges instead of
+ * being dropped when the onset is off-screen; onset-only events are single
+ * ticks that only count as visible when their onset is inside the window.
+ *
+ * @returns {{visible: boolean, x0: number, x1: number, left: number, right: number, width: number, clipped: boolean}}
+ */
+export function eventPixelRect(onset, duration, view, width) {
+  const hasDuration = Number.isFinite(duration) && duration > 0;
+  const x0 = timeToX(onset, view, width);
+  const x1 = hasDuration ? timeToX(onset + duration, view, width) : x0;
+  const visible = hasDuration
+    ? onset <= view.end && onset + duration >= view.start
+    : onset >= view.start && onset <= view.end;
+  const rawLeft = hasDuration ? Math.min(x0, x1) : x0;
+  const rawRight = hasDuration ? Math.max(x0, x1) : x0;
+  const left = Math.min(Math.max(rawLeft, 0), width);
+  const right = Math.min(Math.max(rawRight, 0), width);
+  const clipped = left !== rawLeft || right !== rawRight;
+  return { visible, x0, x1, left, right, width: Math.max(0, right - left), clipped };
+}
+
 function drawRowWaveform(ctx, envelope, top, height, width) {
   if (!envelope || !envelope.min || envelope.min.length === 0) return;
   const mid = top + height / 2;
@@ -107,16 +131,18 @@ function drawRowWaveform(ctx, envelope, top, height, width) {
 
 function drawRowEvents(ctx, row, view, top, height, width, color, budget, stats) {
   const slice = rowVisibleSlice(row, view.start, view.end);
-  stats.visibleEvents += slice.count;
+  stats.candidateEvents += slice.count;
   if (slice.count === 0) return;
 
-  const pxPerSecond = width / (view.end - view.start);
   if (slice.count > budget) {
-    // LOD: per-pixel density histogram instead of one primitive per event.
+    // LOD: per-pixel density histogram (truly visible events only) instead of
+    // one primitive per event.
     const columns = new Uint32Array(Math.max(1, Math.ceil(width)));
     for (let index = slice.from; index < slice.to; index += 1) {
-      const x = timeToX(row.onset[index], view, width);
-      const column = Math.min(columns.length - 1, Math.max(0, Math.floor(x)));
+      const rect = eventPixelRect(row.onset[index], row.duration[index], view, width);
+      if (!rect.visible) continue;
+      stats.visibleEvents += 1;
+      const column = Math.min(columns.length - 1, Math.max(0, Math.floor(rect.left)));
       columns[column] += 1;
     }
     let maxCount = 1;
@@ -146,14 +172,17 @@ function drawRowEvents(ctx, row, view, top, height, width, color, budget, stats)
   ctx.fillStyle = color;
   for (let index = slice.from; index < slice.to; index += 1) {
     const onset = row.onset[index];
-    const x = timeToX(onset, view, width);
-    if (x < -4 || x > width + 4) continue;
     const duration = row.duration[index];
+    const rect = eventPixelRect(onset, duration, view, width);
+    if (!rect.visible) continue;
+    stats.visibleEvents += 1;
     if (Number.isFinite(duration)) {
-      const w = Math.max(1.5, duration * pxPerSecond);
-      ctx.fillRect(x, baseY - barHeight, w, barHeight);
+      // sustained event: clipped interval, never dropped at the edges
+      const drawWidth = Math.max(1.5, rect.width);
+      ctx.fillRect(rect.left, baseY - barHeight, drawWidth, barHeight);
+      if (rect.clipped) stats.clippedEvents += 1;
     } else {
-      ctx.fillRect(x - 1, baseY - barHeight, 2, barHeight);
+      ctx.fillRect(rect.x0 - 1, baseY - barHeight, 2, barHeight);
     }
     stats.drawnEvents += 1;
   }
@@ -178,9 +207,11 @@ export function renderTracks(ctx, model, view, options) {
   } = options;
 
   const stats = {
+    candidateEvents: 0,
     visibleEvents: 0,
     drawnEvents: 0,
     drawnBars: 0,
+    clippedEvents: 0,
     aggregatedRows: 0,
     rows: [],
     renderMs: 0,
@@ -214,15 +245,17 @@ export function renderTracks(ctx, model, view, options) {
   const perRowBudget = Math.min(rowBudget, Math.max(1, Math.floor(totalBudget / Math.max(1, model.rows.length))));
   model.rows.forEach((row, index) => {
     const y = rowsTop + index * rowHeight;
-    if (options.rowEnvelopes && options.rowEnvelopes.has(index)) {
-      drawRowWaveform(ctx, options.rowEnvelopes.get(index), y, rowHeight, width);
+    if (options.rowEnvelopes && options.rowEnvelopes.has(row.id)) {
+      drawRowWaveform(ctx, options.rowEnvelopes.get(row.id), y, rowHeight, width);
     }
     const before = stats.drawnEvents;
+    const beforeVisible = stats.visibleEvents;
     drawRowEvents(ctx, row, view, y, rowHeight, width, ROW_COLORS[index % ROW_COLORS.length], perRowBudget, stats);
     const rowStats = {
       id: row.id,
       label: row.label,
-      visible: rowVisibleSlice(row, view.start, view.end).count,
+      candidates: rowVisibleSlice(row, view.start, view.end).count,
+      visible: stats.visibleEvents - beforeVisible,
       drawn: stats.drawnEvents - before,
     };
     stats.rows.push(rowStats);

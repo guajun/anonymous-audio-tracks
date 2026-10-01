@@ -13,7 +13,7 @@
 
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
-import { statSync } from "node:fs";
+import { realpathSync, statSync } from "node:fs";
 import { extname, join, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -33,6 +33,14 @@ const MIME_TYPES = {
 };
 
 export function startServer({ port = 8123, root = VIEWER_ROOT } = {}) {
+  // Filesystem-resolved root: symlink/junction escapes must not be servable
+  // even when the lexical path check passes (regression-tested).
+  let rootReal = null;
+  try {
+    rootReal = realpathSync(root);
+  } catch {
+    rootReal = root;
+  }
   const server = createServer(async (request, response) => {
     try {
       if (request.method !== "GET" && request.method !== "HEAD") {
@@ -49,6 +57,17 @@ export function startServer({ port = 8123, root = VIEWER_ROOT } = {}) {
       }
       if (!isFile(target)) {
         response.writeHead(404, { "content-type": "text/plain; charset=utf-8" }).end("not found");
+        return;
+      }
+      let realTarget = null;
+      try {
+        realTarget = realpathSync(target);
+      } catch {
+        realTarget = null;
+      }
+      if (!realTarget || (realTarget !== rootReal && !realTarget.startsWith(rootReal + sep))) {
+        // path resolved outside the advertised root (symlink/junction escape)
+        response.writeHead(403, { "content-type": "text/plain; charset=utf-8" }).end("forbidden outside root");
         return;
       }
       const body = await readFile(target);

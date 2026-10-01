@@ -64,6 +64,47 @@ test("differential vs Python reference on the frozen fixtures", (t) => {
   }
 });
 
+test("differential vs Python reference: prototype keys and astral strings", (t) => {
+  const python = findPython();
+  if (!python) {
+    t.skip("no python interpreter on PATH; differential check skipped");
+    return;
+  }
+  const dir = mkdtempSync(join(tmpdir(), "aat-viewer-diff-proto-"));
+  try {
+    const files = [];
+    const write = (name, text) => {
+      const path = join(dir, name);
+      writeFileSync(path, text, "utf8");
+      files.push(path);
+    };
+    const base = minimalDoc();
+    // raw `__proto__` top-level key (Python rejects via additionalProperties)
+    write("raw-proto.json", `${JSON.stringify(base).slice(0, -1)}, "__proto__": {"unexpected": true}}`);
+    write("raw-constructor.json", `${JSON.stringify(base).slice(0, -1)}, "constructor": {"unexpected": true}}`);
+    write("raw-tostring.json", `${JSON.stringify(base).slice(0, -1)}, "toString": {"unexpected": true}}`);
+    // nested prototype-named key inside an instrument
+    write("nested-tostring.json", JSON.stringify(base).replace('"events":', '"toString": {}, "events":'));
+    // astral label: 100 code points is valid, 129 is not
+    const astralOk = minimalDoc();
+    astralOk.instruments[0].label = "\u{1F3B9}".repeat(100);
+    write("astral-ok.json", JSON.stringify(astralOk));
+    const astralBad = minimalDoc();
+    astralBad.instruments[0].label = "\u{1F3B9}".repeat(129);
+    write("astral-too-long.json", JSON.stringify(astralBad));
+
+    const py = pythonTriples(python, files);
+    for (const file of files) {
+      const text = readFileSync(file, "utf8");
+      const { report } = parseAndValidate(text, schema, { source: file });
+      const jsTriples = triples(report.issues).map((item) => item.join("|")).sort();
+      assert.deepEqual(jsTriples, py.get(basename(file)) || [], basename(file));
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("differential vs Python reference on mutated documents", (t) => {
   const python = findPython();
   if (!python) {

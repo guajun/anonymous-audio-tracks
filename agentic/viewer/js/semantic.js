@@ -7,7 +7,7 @@
 // plus the structural `pattern` code handled in structure.js.
 
 import { MAX_FLOAT, pointerOf } from "./strict-json.js";
-import { cmpText } from "./structure.js";
+import { cmpText, hasOwn, stringLength } from "./structure.js";
 
 export const SEMANTIC_CODES = [
   "E_BOOL_NUMBER",
@@ -37,6 +37,12 @@ function isNumber(value) {
   return typeof value === "number" && Number.isFinite(value);
 }
 
+/** Own-property read: inherited Object.prototype members never count (Python dict parity). */
+function own(node, key) {
+  if (node === null || typeof node !== "object" || !hasOwn(node, key)) return undefined;
+  return node[key];
+}
+
 function numberRepr(value) {
   const text = String(value);
   return text.length <= 64 ? text : `${text.slice(0, 64)}...`;
@@ -49,7 +55,8 @@ function numberRepr(value) {
  */
 export function unsafePathReason(value) {
   if (value === "") return "路径为空";
-  if (value.length > 512) return `路径超长（${value.length} > 512）`;
+  const length = stringLength(value);
+  if (length > 512) return `路径超长（${length} > 512）`;
   for (const ch of value) {
     const code = ch.codePointAt(0);
     if (code < 32 || code === 127) return `包含控制字符 ${JSON.stringify(ch)}`;
@@ -108,7 +115,7 @@ class Semantic {
   }
 
   checkNumber(node, key, parts) {
-    if (node === null || typeof node !== "object" || !(key in node)) return null;
+    if (node === null || typeof node !== "object" || !hasOwn(node, key)) return null;
     const value = node[key];
     if (typeof value === "boolean") {
       this.add("E_BOOL_NUMBER", parts.concat([key]), `${key} 必须是数字，布尔值不得冒充数字`);
@@ -127,7 +134,7 @@ class Semantic {
   }
 
   checkPath(node, key, parts) {
-    if (node === null || typeof node !== "object" || !(key in node)) return;
+    if (node === null || typeof node !== "object" || !hasOwn(node, key)) return;
     const value = node[key];
     if (typeof value !== "string") return;
     const reason = unsafePathReason(value);
@@ -139,8 +146,8 @@ class Semantic {
     const data = this.data;
     if (data === null || typeof data !== "object" || Array.isArray(data)) return;
 
-    const tempo = data.tempo;
-    if (tempo !== null && typeof tempo === "object" && "beat_origin_seconds" in tempo) {
+    const tempo = own(data, "tempo");
+    if (tempo !== null && typeof tempo === "object" && hasOwn(tempo, "beat_origin_seconds")) {
       const value = this.checkNumber(tempo, "beat_origin_seconds", ["tempo"]);
       if (value === null) return;
       if (value < -TIME_TOLERANCE) {
@@ -154,11 +161,11 @@ class Semantic {
       }
     }
 
-    const instruments = data.instruments;
+    const instruments = own(data, "instruments");
     if (!Array.isArray(instruments)) return;
     instruments.forEach((instrument, i) => {
       if (instrument === null || typeof instrument !== "object") return;
-      const events = instrument.events;
+      const events = own(instrument, "events");
       if (!Array.isArray(events)) return;
       const base = ["instruments", i, "events"];
       let previous = null;
@@ -166,7 +173,7 @@ class Semantic {
         if (event === null || typeof event !== "object") return;
         const eventParts = base.concat([j]);
         const onset = this.checkNumber(event, "onset_seconds", eventParts);
-        const eventId = typeof event.id === "string" ? event.id : "";
+        const eventId = typeof own(event, "id") === "string" ? event.id : "";
         if (onset !== null) {
           if (onset < -TIME_TOLERANCE) {
             this.add("E_TIME_RANGE", eventParts.concat(["onset_seconds"]), `onset_seconds 不能为负，得到 ${onset}`);
@@ -204,8 +211,8 @@ class Semantic {
           }
         }
         this.checkConfidence(event, eventParts);
-        if (event.pitch !== null && typeof event.pitch === "object") {
-          const pitch = event.pitch;
+        const pitch = own(event, "pitch");
+        if (pitch !== null && typeof pitch === "object") {
           const pitchParts = eventParts.concat(["pitch"]);
           const midi = this.checkNumber(pitch, "midi", pitchParts);
           if (midi !== null) {
@@ -226,22 +233,22 @@ class Semantic {
     if (data === null || typeof data !== "object" || Array.isArray(data)) return;
     const seenInstruments = new Set();
     const seenEvents = new Set();
-    const instruments = data.instruments;
+    const instruments = own(data, "instruments");
     if (!Array.isArray(instruments)) return;
     instruments.forEach((instrument, i) => {
       if (instrument === null || typeof instrument !== "object") return;
-      const instrumentId = instrument.id;
+      const instrumentId = own(instrument, "id");
       if (typeof instrumentId === "string") {
         if (seenInstruments.has(instrumentId)) {
           this.add("E_ID_UNIQUE", ["instruments", i, "id"], `instrument.id 必须全文档唯一，重复：${JSON.stringify(instrumentId)}`);
         }
         seenInstruments.add(instrumentId);
       }
-      const events = instrument.events;
+      const events = own(instrument, "events");
       if (!Array.isArray(events)) return;
       events.forEach((event, j) => {
         if (event === null || typeof event !== "object") return;
-        const eventId = event.id;
+        const eventId = own(event, "id");
         if (typeof eventId === "string") {
           if (seenEvents.has(eventId)) {
             this.add(
@@ -259,12 +266,12 @@ class Semantic {
   checkTempo() {
     const data = this.data;
     if (data === null || typeof data !== "object" || Array.isArray(data)) return;
-    const tempo = data.tempo;
+    const tempo = own(data, "tempo");
     if (tempo === null || typeof tempo !== "object") return;
     this.checkNumber(tempo, "bpm", ["tempo"]); // boolean / huge number fallback
     const bpm = tempo.bpm;
     const source = tempo.source;
-    const hasOrigin = "beat_origin_seconds" in tempo;
+    const hasOrigin = hasOwn(tempo, "beat_origin_seconds");
     if (bpm === null) {
       if (source !== "unknown") {
         this.add("E_TEMPO", ["tempo", "source"], 'bpm 为 null 时 source 必须是 "unknown"');
@@ -297,23 +304,24 @@ export function validateSemantics(data) {
 
   let duration = null;
   if (data !== null && typeof data === "object" && !Array.isArray(data)) {
-    const audio = data.audio;
+    const audio = own(data, "audio");
     if (audio !== null && typeof audio === "object") {
       duration = ctx.checkNumber(audio, "duration_seconds", ["audio"]);
       ctx.checkPath(audio, "filename", ["audio"]);
     }
-    const tempo = data.tempo;
+    const tempo = own(data, "tempo");
     if (tempo !== null && typeof tempo === "object") {
       ctx.checkConfidence(tempo, ["tempo"]);
     }
-    const instruments = data.instruments;
+    const instruments = own(data, "instruments");
     if (Array.isArray(instruments)) {
       instruments.forEach((instrument, i) => {
         if (instrument === null || typeof instrument !== "object") return;
         const parts = ["instruments", i];
         ctx.checkConfidence(instrument, parts);
-        if (instrument.stem !== null && typeof instrument.stem === "object") {
-          ctx.checkPath(instrument.stem, "filename", parts.concat(["stem"]));
+        const stem = own(instrument, "stem");
+        if (stem !== null && typeof stem === "object") {
+          ctx.checkPath(stem, "filename", parts.concat(["stem"]));
         }
       });
     }

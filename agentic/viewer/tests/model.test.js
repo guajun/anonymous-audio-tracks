@@ -112,6 +112,21 @@ test("beat grid derives from BPM + origin and can be dense-limited", () => {
   assert.deepEqual(none.beats, []);
 });
 
+test("beat grid is bounded for extreme finite metadata (no RangeError / hang)", () => {
+  // review finding: Number.MAX_VALUE BPM used to throw RangeError: Invalid array length
+  for (const value of [Number.MAX_VALUE, Number.MIN_VALUE, 1e300, 1e-300, 0.001, 1000]) {
+    const grid = beatGrid({ valid: true, value }, 0, 0, 300, 512);
+    assert.ok(grid.beats.length <= 512, `beats bounded for bpm=${value}`);
+    assert.ok(grid.interval === null || Number.isFinite(grid.interval), `interval finite for bpm=${value}`);
+    if (grid.unsupported) assert.equal(typeof grid.reason, "string");
+  }
+  // non-finite origin / window must stay controlled too
+  const weird = beatGrid({ valid: true, value: 120 }, Number.MAX_VALUE, 0, 300, 512);
+  assert.ok(weird.beats.length <= 512);
+  const reversed = beatGrid({ valid: true, value: 120 }, 0, 10, 5, 512);
+  assert.deepEqual(reversed.beats, []);
+});
+
 test("rowVisibleSlice culls events outside the window", () => {
   const model = modelOf(minimalDoc());
   const row = model.rows[0];

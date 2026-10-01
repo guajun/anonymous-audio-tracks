@@ -17,29 +17,35 @@
 // Exit code 0 = all checks pass.
 
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { startServer } from "./serve.mjs";
-import { writeDemo, buildDemoWav, demoDoc, DEMO_WAV_NAME } from "./make-demo.mjs";
+import { writeDemo, buildDemoWav, demoDoc, demoEvents, DEMO_WAV_NAME } from "./make-demo.mjs";
 import { writeStress } from "./make-stress.mjs";
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
 export const VIEWER_ROOT = resolve(HERE, "..");
 const SCREENSHOT_DIR = join(VIEWER_ROOT, "screenshots");
 const REPORT_DIR = join(VIEWER_ROOT, "reports");
+const screenshotStates = []; // capture-time evidence for each screenshot
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function parseArgs(argv) {
-  const options = { chrome: null, timeoutMs: 120000, stressEvents: 100000 };
+  const options = { chrome: null, timeoutMs: 120000, stressEvents: 100000, real: { json: null, audio: null, stems: [] } };
   for (let index = 0; index < argv.length; index += 1) {
     if (argv[index] === "--chrome") options.chrome = argv[++index];
     else if (argv[index] === "--timeout-ms") options.timeoutMs = Number(argv[++index]);
     else if (argv[index] === "--stress-events") options.stressEvents = Number(argv[++index]);
+    // real #33 integration inputs — always passed via CLI, never hard-coded
+    else if (argv[index] === "--real-json") options.real.json = argv[++index];
+    else if (argv[index] === "--real-audio") options.real.audio = argv[++index];
+    else if (argv[index] === "--real-stem") options.real.stems.push(argv[++index]);
   }
   return options;
 }
@@ -92,6 +98,7 @@ async function connectCdp(webSocketDebuggerUrl) {
   });
   let nextId = 1;
   const pending = new Map();
+  const listeners = new Map();
   socket.addEventListener("message", (event) => {
     const message = JSON.parse(event.data);
     if (message.id && pending.has(message.id)) {
@@ -99,6 +106,8 @@ async function connectCdp(webSocketDebuggerUrl) {
       pending.delete(message.id);
       if (message.error) entry.reject(new Error(`${entry.method}: ${JSON.stringify(message.error)}`));
       else entry.resolve(message.result);
+    } else if (message.method) {
+      for (const handler of listeners.get(message.method) || []) handler(message.params);
     }
   });
   return {
@@ -108,6 +117,11 @@ async function connectCdp(webSocketDebuggerUrl) {
         pending.set(id, { resolve: resolvePromise, reject: rejectPromise, method });
         socket.send(JSON.stringify({ id, method, params }));
       });
+    },
+    on(method, handler) {
+      const handlers = listeners.get(method) || [];
+      handlers.push(handler);
+      listeners.set(method, handlers);
     },
     close() {
       socket.close();
@@ -147,6 +161,8 @@ async function waitFor(client, description, expression, timeoutMs = 15000, inter
 }
 
 async function setFileInput(client, selector, files) {
+  // Reset first: re-selecting an identical file must still fire `change`.
+  await evaluate(client, `(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (el) el.value = ""; })()`);
   const document = await client.send("DOM.getDocument", { depth: 1 });
   const { nodeId } = await client.send("DOM.querySelector", { nodeId: document.root.nodeId, selector });
   if (!nodeId) throw new Error(`file input not found: ${selector}`);
@@ -168,9 +184,41 @@ async function loadAudioFile(client, path) {
 }
 
 async function screenshot(client, name) {
-  const shot = await client.send("Page.captureScreenshot", { format: "png" });
+  // Headless captures can return the LAST committed frame (observed: one step
+  // behind the DOM/canvas state). Bumping the emulated metrics forces the
+  // compositor to commit a fresh surface; two rAFs then flush the frame before
+  // we capture.
+  const metrics = await evaluate(
+    client,
+    "(() => ({ width: window.innerWidth, height: window.innerHeight, dpr: window.devicePixelRatio }))()",
+  );
+  await client.send("Emulation.setDeviceMetricsOverride", {
+    width: Math.max(1, metrics.width - 1),
+    height: metrics.height,
+    deviceScaleFactor: metrics.dpr,
+    mobile: false,
+  });
+  await sleep(150);
+  await client.send("Emulation.setDeviceMetricsOverride", {
+    width: metrics.width,
+    height: metrics.height,
+    deviceScaleFactor: metrics.dpr,
+    mobile: false,
+  });
+  await evaluate(client, "new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r(true))))");
+  await sleep(80);
+  const shot = await client.send("Page.captureScreenshot", { format: "png", fromSurface: true, captureBeyondViewport: false });
   const target = join(SCREENSHOT_DIR, `${name}.png`);
   await writeFile(target, Buffer.from(shot.data, "base64"));
+  // evidence: what the page state said at capture time
+  const atCapture = await evaluate(
+    client,
+    `(() => {
+      const s = window.__aatViewer ? window.__aatViewer.state() : null;
+      return s && s.doc ? { doc: s.doc.rows.map((r) => r.id).join(','), events: s.doc.totalEvents, view: s.view } : { doc: null };
+    })()`,
+  ).catch(() => ({ doc: "?" }));
+  screenshotStates.push({ name, atCapture });
   return target;
 }
 
@@ -203,8 +251,88 @@ export async function main(argv = process.argv.slice(2)) {
   badPathDoc.audio.filename = "../secret/escape.wav";
   await writeFile(badPathJson, JSON.stringify(badPathDoc));
 
+  // --- synthetic fixtures for lifecycle / stem identity / clip regressions ---
+  const sha256 = (buffer) => createHash("sha256").update(buffer).digest("hex");
+  const stemDir = (name) => {
+    const dir = join(workDir, name);
+    return { dir, file: join(dir, "target.wav") };
+  };
+  const stemA = stemDir("stem-a");
+  const stemB = stemDir("stem-b");
+  const stemC = stemDir("stem-c");
+  const stemShort = stemDir("stem-short");
+  await mkdir(stemA.dir, { recursive: true });
+  await mkdir(stemB.dir, { recursive: true });
+  await mkdir(stemC.dir, { recursive: true });
+  await mkdir(stemShort.dir, { recursive: true });
+  await writeFile(stemA.file, buildDemoWav({ seconds: 12, events: [] }));
+  await writeFile(stemB.file, buildDemoWav({ seconds: 12, events: demoEvents().slice(0, 2) }));
+  await writeFile(stemC.file, buildDemoWav({ seconds: 12, events: demoEvents().slice(2, 6) }));
+  await writeFile(stemShort.file, buildDemoWav({ seconds: 3, events: [] }));
+  const hashA = sha256(readFileSync(stemA.file));
+  const hashB = sha256(readFileSync(stemB.file));
+  const hashShort = sha256(readFileSync(stemShort.file));
+  // three rows, SAME basename target.wav, different full paths + hashes
+  const stemDoc = demoDoc(demo.wavSha256, { emptyEvents: true });
+  stemDoc.instruments = [
+    {
+      id: "a-row",
+      label: "target A",
+      description: "same-basename stem a/target.wav (mock)",
+      source: "mock",
+      confidence: 0.5,
+      stem: { filename: "a/target.wav", sha256: hashA },
+      events: [{ id: "a-ev-1", onset_seconds: 1 }],
+    },
+    {
+      id: "b-row",
+      label: "target B",
+      description: "same-basename stem b/target.wav (mock)",
+      source: "mock",
+      confidence: 0.5,
+      stem: { filename: "b/target.wav", sha256: hashB },
+      events: [{ id: "b-ev-1", onset_seconds: 2 }],
+    },
+    {
+      id: "c-row",
+      label: "target C (short)",
+      description: "declared hash is a 3s file: duration mismatch must refuse it (mock)",
+      source: "mock",
+      confidence: 0.5,
+      stem: { filename: "c/target.wav", sha256: hashShort },
+      events: [],
+    },
+  ];
+  const stemDocJson = join(workDir, "stem-doc.json");
+  await writeFile(stemDocJson, JSON.stringify(stemDoc));
+
+  // sustained event crossing the viewport edge (onset 0, duration 10, audio 12s)
+  const clipDoc = demoDoc(demo.wavSha256, { emptyEvents: true });
+  clipDoc.instruments = [
+    {
+      id: "sus-row",
+      label: "sustained",
+      description: "one long event for clip regression (mock)",
+      source: "mock",
+      confidence: 0.5,
+      events: [{ id: "sus-1", onset_seconds: 0, duration_seconds: 10 }],
+    },
+  ];
+  const clipDocJson = join(workDir, "clip-doc.json");
+  await writeFile(clipDocJson, JSON.stringify(clipDoc));
+
+  // byte-level entry fixtures: BOM and invalid UTF-8 (File.text() would hide both)
+  const bytesBomJson = join(workDir, "bytes-bom.json");
+  await writeFile(bytesBomJson, Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(JSON.stringify(demoDoc(demo.wavSha256)))]));
+  const bytesBadUtf8Json = join(workDir, "bytes-bad-utf8.json");
+  await writeFile(
+    bytesBadUtf8Json,
+    Buffer.concat([Buffer.from('{"schema_version": "agentic-audio-tracks/v1", "label": "'), Buffer.from([0xff]), Buffer.from('"}')]),
+  );
+
   const checks = [];
   const screenshots = [];
+  let realIntegration = null;
   const record = (name, ok, details) => {
     checks.push({ name, ok: Boolean(ok), details: details === undefined ? null : details });
     process.stdout.write(`${ok ? "PASS" : "FAIL"}  ${name}${details === undefined ? "" : ` — ${JSON.stringify(details)}`}\n`);
@@ -255,6 +383,16 @@ export async function main(argv = process.argv.slice(2)) {
     const pageTarget = targets.find((target) => target.type === "page") || null;
     if (!pageTarget) throw new Error("no page target from Chrome");
     client = await connectCdp(pageTarget.webSocketDebuggerUrl);
+    const pageErrors = [];
+    client.on("Runtime.exceptionThrown", (params) => {
+      const details = params.exceptionDetails || {};
+      pageErrors.push(String(details.text || details.description || "exception"));
+    });
+    client.on("Runtime.consoleAPICalled", (params) => {
+      if (params.type === "error") {
+        pageErrors.push(`console.error: ${JSON.stringify((params.args || []).map((arg) => arg.value ?? arg.description))}`);
+      }
+    });
     await client.send("Runtime.enable");
     await client.send("DOM.enable");
     await client.send("Page.enable");
@@ -360,8 +498,8 @@ export async function main(argv = process.argv.slice(2)) {
       })()`,
     );
     record(
-      "per-stem waveform renders in its row when the stem file matches by name",
-      stemCheck.stems === 1 && stemCheck.stemPixels > 100 && /已绘制该行波形/.test(stemCheck.notes),
+      "per-stem waveform renders in its row when the stem file matches by name+hash",
+      stemCheck.stems === 1 && stemCheck.stemPixels > 100 && /已绘制.*行波形/.test(stemCheck.notes),
       { stems: stemCheck.stems, stemPixels: stemCheck.stemPixels },
     );
     screenshots.push(await screenshot(client, "01-demo-loaded"));
@@ -638,6 +776,147 @@ export async function main(argv = process.argv.slice(2)) {
     await client.send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
     await sleep(200);
 
+    // ---- lifecycle / ownership / byte-entry / stem identity / clip -----
+    // stale stems must not survive a document change
+    await loadJsonFile(client, join(VIEWER_ROOT, "fixtures", "demo", "demo-track.json"));
+    await loadAudioFile(client, join(VIEWER_ROOT, "fixtures", "generated", DEMO_WAV_NAME));
+    await setFileInput(client, "#stem-input", [join(VIEWER_ROOT, "fixtures", "generated", DEMO_WAV_NAME)]);
+    await waitFor(client, "demo stem applied", "window.__aatViewer.state().audio.resource.stemsLoaded === 1", 30000);
+    await loadJsonFile(client, stress.jsonPath);
+    const staleStems = await evaluate(
+      client,
+      `(() => ({
+        stems: window.__aatViewer.state().audio.resource.stemsLoaded,
+        stemPeaks: window.__aatViewer.state().audio.stemMapping.length,
+        notes: document.getElementById('notes').textContent,
+      }))()`,
+    );
+    record(
+      "document change clears/re-validates stems by (rowId, filename, hash) — no stale waveform on new rows",
+      staleStems.stems === 0 && staleStems.stemPeaks === 0 && /STEM_DROPPED|已清除/.test(staleStems.notes),
+      staleStems,
+    );
+
+    // invalid JSON after a valid one must never keep showing the stale graph
+    await loadJsonFile(client, join(VIEWER_ROOT, "fixtures", "demo", "demo-track.json"));
+    await waitFor(client, "demo back", "window.__aatViewer.state().doc !== null");
+    await loadJsonFile(client, badJson);
+    const cleared = await evaluate(
+      client,
+      `(() => ({
+        doc: window.__aatViewer.state().doc,
+        gutter: document.querySelectorAll('#gutter-rows .gutter-row').length,
+        status: document.getElementById('status').textContent,
+        rows: (window.__aatViewer.state().lastRender || { rows: [] }).rows.length,
+      }))()`,
+    );
+    record(
+      "invalid JSON after valid clears the view (stale graph is never labelled as the new file)",
+      cleared.doc === null && cleared.gutter === 0 && cleared.rows === 0 && /已清除旧数据/.test(cleared.status),
+      cleared,
+    );
+
+    // overlapping async loads: the LATER selection must win (generation guard)
+    const loadsBefore = await evaluate(client, "window.__aatViewer.state().loads.json");
+    await setFileInput(client, "#json-input", [stress.jsonPath]); // slow (~1s validate)
+    await sleep(60);
+    await setFileInput(client, "#json-input", [join(VIEWER_ROOT, "fixtures", "demo", "demo-track.json")]); // fast
+    await waitFor(client, "both json loads finished", `window.__aatViewer.state().loads.json >= ${loadsBefore + 2}`, 60000);
+    await sleep(1500); // give the slow load time to (not) overwrite
+    const raced = await evaluate(
+      client,
+      `(() => ({ totalEvents: window.__aatViewer.state().doc ? window.__aatViewer.state().doc.totalEvents : null }))()`,
+    );
+    record("overlapping async JSON loads: the latest selection wins (no slow-load overwrite)", raced.totalEvents === 72, raced);
+
+    // byte-level entry: BOM / invalid UTF-8 must be controlled E_PARSE
+    await loadJsonFile(client, bytesBomJson);
+    const bomCheck = await evaluate(
+      client,
+      "(() => ({ issues: document.getElementById('issues').textContent, status: document.getElementById('status').textContent }))()",
+    );
+    record(
+      "raw BOM bytes are rejected at the file entry (E_PARSE), File.text() masking is bypassed",
+      /E_PARSE/.test(bomCheck.issues) && /BOM/.test(bomCheck.issues) && /字节不符合严格 UTF-8/.test(bomCheck.status),
+      { issues: bomCheck.issues.slice(0, 120) },
+    );
+    await loadJsonFile(client, bytesBadUtf8Json);
+    const badUtf8Check = await evaluate(client, "(() => document.getElementById('issues').textContent)()");
+    record(
+      "raw invalid-UTF-8 bytes are rejected at the file entry (E_PARSE, no U+FFFD silent pass)",
+      /E_PARSE/.test(badUtf8Check) && /UTF-8/.test(badUtf8Check),
+      { issues: badUtf8Check.slice(0, 120) },
+    );
+
+    // stem identity: same basename (3× target.wav) disambiguated by SHA-256
+    await loadJsonFile(client, stemDocJson);
+    await loadAudioFile(client, join(VIEWER_ROOT, "fixtures", "generated", DEMO_WAV_NAME));
+    const stemPick = async (path) => {
+      const before = await evaluate(client, "window.__aatViewer.state().loads.stems");
+      await setFileInput(client, "#stem-input", [path]);
+      await waitFor(client, `stem pick ${path}`, `window.__aatViewer.state().loads.stems > ${before}`, 60000);
+      return evaluate(
+        client,
+        `(() => ({
+          mapping: window.__aatViewer.state().audio.stemMapping,
+          stems: window.__aatViewer.state().audio.resource.stemsLoaded,
+          notes: document.getElementById('notes').textContent,
+        }))()`,
+      );
+    };
+    const pickB = await stemPick(stemB.file);
+    record(
+      "same-basename stems (3× target.wav): SHA-256 identity picks the RIGHT row (b-row, not the first)",
+      pickB.stems === 1 && pickB.mapping.length === 1 && pickB.mapping[0].rowId === "b-row" && /STEM_OK/.test(pickB.notes) && /b-row/.test(pickB.notes),
+      pickB,
+    );
+    const pickA = await stemPick(stemA.file);
+    record(
+      "second same-basename stem maps to a-row (per-row stem mapping)",
+      pickA.stems === 2 && pickA.mapping.some((entry) => entry.rowId === "a-row") && pickA.mapping.some((entry) => entry.rowId === "b-row"),
+      pickA,
+    );
+    const pickWrongHash = await stemPick(stemC.file);
+    record(
+      "wrong-hash same-basename stem is refused (no render, no STEM_OK)",
+      pickWrongHash.stems === 2 && /STEM_IDENTITY/.test(pickWrongHash.notes),
+      { stems: pickWrongHash.stems, hasIdentityError: /STEM_IDENTITY/.test(pickWrongHash.notes) },
+    );
+    const pickWrongDuration = await stemPick(stemShort.file);
+    record(
+      "stem with wrong time-axis duration is refused (STEM_DURATION, never auto-shifted)",
+      pickWrongDuration.stems === 2 && /STEM_DURATION/.test(pickWrongDuration.notes),
+      { stems: pickWrongDuration.stems, hasDurationError: /STEM_DURATION/.test(pickWrongDuration.notes) },
+    );
+
+    // sustained events are clipped to the viewport, not dropped at the edges
+    await loadJsonFile(client, clipDocJson);
+    await loadAudioFile(client, join(VIEWER_ROOT, "fixtures", "generated", DEMO_WAV_NAME));
+    const clipCheck = await evaluate(
+      client,
+      `(() => {
+        const api = window.__aatViewer;
+        api.setView(5, 6); const crossing = api.state().lastRender;   // onset 0 + dur 10 crosses the window
+        api.setView(10, 11); const boundary = api.state().lastRender; // ends exactly at view start
+        api.setView(11, 12); const expired = api.state().lastRender;  // fully expired
+        return {
+          crossing: { visible: crossing.visibleEvents, drawn: crossing.drawnEvents, clipped: crossing.clippedEvents },
+          boundary: { visible: boundary.visibleEvents, drawn: boundary.drawnEvents },
+          expired: { visible: expired.visibleEvents, drawn: expired.drawnEvents },
+        };
+      })()`,
+    );
+    record(
+      "sustained event crossing the left edge is clipped and drawn (not dropped); expired events are not visible",
+      clipCheck.crossing.visible === 1 &&
+        clipCheck.crossing.drawn === 1 &&
+        clipCheck.crossing.clipped === 1 &&
+        clipCheck.boundary.visible === 1 &&
+        clipCheck.expired.visible === 0,
+      clipCheck,
+    );
+    screenshots.push(await screenshot(client, "08-sustained-clip"));
+
     // ---- 100k stress ----------------------------------------------------
     await loadJsonFile(client, stress.jsonPath);
     await waitFor(client, "stress doc loaded", "window.__aatViewer.state().doc !== null", 60000);
@@ -665,7 +944,9 @@ export async function main(argv = process.argv.slice(2)) {
     const domLean = stressStats.domNodes < 400;
     const visibleSum = stressStats.render.rows.reduce((sum, row) => sum + row.visible, 0);
     const frames = stressStats.metrics.frameDeltasMs;
+    const frameRenders = stressStats.metrics.frameRenderMs || [];
     const avgFrame = frames.length ? frames.reduce((a, b) => a + b, 0) / frames.length : null;
+    const avgRender = frameRenders.length ? frameRenders.reduce((a, b) => a + b, 0) / frameRenders.length : null;
     record(
       "100k events: viewport culling + LOD keeps DOM lean and visible counts reported",
       stressStats.totalEvents === options.stressEvents && domLean && visibleSum > 0,
@@ -673,22 +954,29 @@ export async function main(argv = process.argv.slice(2)) {
         totalEvents: stressStats.totalEvents,
         domNodes: stressStats.domNodes,
         visibleSum,
+        candidates: stressStats.render.candidateEvents,
         drawn: stressStats.render.drawnEvents,
         aggregatedRows: stressStats.render.aggregatedRows,
         rows: stressStats.render.rows.map((r) => `${r.id}: visible=${r.visible} drawn=${r.drawn}`),
       },
     );
     record(
-      "100k events: measured timings recorded (load/validate/render/frame)",
-      typeof stressStats.metrics.validateMs === "number" && typeof stressStats.metrics.lastRenderMs === "number",
+      "100k events: per-dataset measured timings (frame probe re-renders the full scene each sample)",
+      typeof stressStats.metrics.validateMs === "number" &&
+        typeof stressStats.metrics.lastRenderMs === "number" &&
+        typeof stressStats.metrics.firstRenderMs === "number" &&
+        frameRenders.length === 60,
       {
         validateMs: stressStats.metrics.validateMs,
         decodeMs: stressStats.metrics.decodeMs,
-        firstRenderMs: stressStats.metrics.firstRenderMs,
+        firstRenderMs_currentDataset: stressStats.metrics.firstRenderMs,
         lastRenderMs: stressStats.metrics.lastRenderMs,
-        frameAvgMs: avgFrame,
-        frameMaxMs: frames.length ? Math.max(...frames) : null,
+        frameIntervalAvgMs: avgFrame,
+        frameIntervalMaxMs: frames.length ? Math.max(...frames) : null,
+        frameRenderAvgMs: avgRender,
+        frameRenderMaxMs: frameRenders.length ? Math.max(...frameRenders) : null,
         frameSamples: frames.length,
+        measurement: "each sampled frame performs a full scene re-render (ruler+waveform+all rows); interval and render duration are recorded separately",
       },
     );
     screenshots.push(await screenshot(client, "06-stress-100k"));
@@ -710,6 +998,123 @@ export async function main(argv = process.argv.slice(2)) {
     );
     screenshots.push(await screenshot(client, "07-stress-zoomed"));
 
+    // ---- real #33 output integration (CLI-provided paths only) ----------
+    if (options.real.json) {
+      if (!options.real.audio) throw new Error("--real-json requires --real-audio");
+      await loadJsonFile(client, options.real.json);
+      const realDoc = await evaluate(
+        client,
+        `(() => {
+          const s = window.__aatViewer.state();
+          return s.doc
+            ? {
+                rows: s.doc.rows.map((r) => ({ id: r.id, label: r.label, count: r.count })),
+                totalEvents: s.doc.totalEvents,
+                durationSeconds: s.doc.durationSeconds,
+                tempoBpm: s.doc.tempoBpm,
+                tempoSource: s.doc.tempoSource,
+              }
+            : null;
+        })()`,
+      );
+      record(
+        "real result: 3 instrument rows (drums/bass/synthesizer), 110 raw events, tempo=null/unknown",
+        realDoc !== null &&
+          realDoc.rows.length === 3 &&
+          realDoc.totalEvents === 110 &&
+          realDoc.tempoBpm === null &&
+          realDoc.tempoSource === "unknown" &&
+          realDoc.rows.map((r) => r.label).join(",") === "drums,bass,synthesizer",
+        realDoc,
+      );
+      const realBpm = await evaluate(
+        client,
+        `(() => {
+          const api = window.__aatViewer;
+          const before = api.state().bpm;
+          const placeholder = document.getElementById('bpm-input').placeholder;
+          api.setBpm(100);
+          const grid = api.rowGrid();
+          return { unknown: before.unknown, placeholder, interval: grid.interval, beats: grid.beats.length };
+        })()`,
+      );
+      record(
+        "real result: BPM unknown is surfaced and manual BPM builds the grid only",
+        realBpm.unknown === true && realBpm.placeholder === "unknown" && CLOSE(realBpm.interval, 0.6, 1e-9) && realBpm.beats > 0,
+        realBpm,
+      );
+      await loadAudioFile(client, options.real.audio);
+      const realAudio = await evaluate(
+        client,
+        `(() => {
+          const s = window.__aatViewer.state();
+          return {
+            hashMatch: s.audio.hashHex === s.doc.audioSha256,
+            duration: s.audio.durationSeconds,
+            errors: s.audio.notes.filter((n) => n.level === 'error').map((n) => n.code),
+            decodeMs: s.metrics.decodeMs,
+          };
+        })()`,
+      );
+      record(
+        "real audio: SHA-256 matches the result and the 16s time axis holds (no retime)",
+        realAudio.hashMatch === true && realAudio.errors.length === 0 && CLOSE(realAudio.duration, 16, 0.1),
+        realAudio,
+      );
+      const realSeekZoom = await evaluate(
+        client,
+        `(() => {
+          const api = window.__aatViewer;
+          api.seek(8);
+          const t = api.playheadTime();
+          const width = document.getElementById('canvas-stack').clientWidth;
+          const anchorBefore = api.timeAtPx(width * 0.5);
+          api.zoomAt(0.5, width * 0.5);
+          const anchorAfter = api.timeAtPx(width * 0.5);
+          const view = api.state().view;
+          api.fit();
+          return { t, anchorBefore, anchorAfter, view };
+        })()`,
+      );
+      record(
+        "real result: seek lands on audio seconds and wheel-anchor zoom keeps the anchor fixed",
+        CLOSE(realSeekZoom.t, 8, 0.3) && CLOSE(realSeekZoom.anchorBefore, realSeekZoom.anchorAfter, 1e-6),
+        realSeekZoom,
+      );
+      const realStemMapping = [];
+      for (const stemPath of options.real.stems) {
+        const picked = await stemPick(stemPath);
+        realStemMapping.push(picked.mapping);
+      }
+      const mappedIds = (realStemMapping.at(-1) || []).map((entry) => entry.rowId);
+      const realRows = await evaluate(client, "(() => window.__aatViewer.state().doc.rows.map((r) => r.id))()");
+      record(
+        "real stems (3× same-basename target.wav) map to the 3 rows by SHA-256 identity",
+        options.real.stems.length === 3 &&
+          mappedIds.length === 3 &&
+          new Set(mappedIds).size === 3 &&
+          mappedIds.every((rowId) => realRows.includes(rowId)),
+        { mappedIds, rows: realRows },
+      );
+      const realNotes = await evaluate(client, "(() => document.getElementById('notes').textContent)()");
+      record(
+        "real integration: UI shows raw frozen-schema events + labelled document self-descriptions (no quality metrics)",
+        // self-descriptions must be LABELLED as such; numeric quality stats
+        // (harness spotcheck isolation scores etc.) must never be surfaced
+        realNotes.includes("文档自述") && !/isolation|score|0\.9[0-9]\s*[-–~]/i.test(realNotes),
+        {
+          note: "UI renders the frozen JSON verbatim (110 raw events); document limitations/provenance are labelled 文档自述（非验证结论）; harness spotcheck statistics (float32 decode / 48k-44.1k window) are pending offline correction and are NOT surfaced as truth",
+        },
+      );
+      screenshots.push(await screenshot(client, "10-real-integration"));
+      realIntegration = {
+        rows: realRows,
+        totalEvents: realDoc ? realDoc.totalEvents : null,
+        stemMapping: realStemMapping.at(-1) || [],
+        note: "local-only evidence; public summaries must be sanitised (no paths/audio/hashes in full)",
+      };
+    }
+
     // ---- resource cleanup ----------------------------------------------
     const cleanup = await evaluate(
       client,
@@ -724,6 +1129,33 @@ export async function main(argv = process.argv.slice(2)) {
       "dispose() releases ObjectURLs / AudioContext / Workers",
       cleanup.after.objectUrls === 0 && cleanup.after.workers === 0 && cleanup.after.validateWorkerActive === false && cleanup.after.audioContextState === "closed" && cleanup.after.audioSrc === null,
       cleanup,
+    );
+
+    // ---- dispose during an in-flight load (fresh page) ------------------
+    await client.send("Page.reload", { ignoreCache: true });
+    await waitFor(client, "viewer ready after reload", "window.__aatViewer && window.__aatViewer.ready === true", 20000);
+    await setFileInput(client, "#json-input", [stress.jsonPath]); // slow load (~1s)
+    await sleep(80);
+    await evaluate(client, "window.__aatViewer.dispose()");
+    await sleep(2500); // give the in-flight load time to (not) apply
+    const disposedMid = await evaluate(
+      client,
+      `(() => {
+        const s = window.__aatViewer.state();
+        return { disposed: s.disposed, doc: s.doc, resource: window.__aatViewer.resourceState() };
+      })()`,
+    );
+    record(
+      "dispose() during an in-flight load aborts cleanly (nothing applied afterwards, no leaked resources)",
+      disposedMid.disposed === true && disposedMid.doc === null && disposedMid.resource.objectUrls === 0 && disposedMid.resource.workers === 0,
+      disposedMid,
+    );
+
+    // ---- unhandled page exceptions across the whole session -------------
+    record(
+      "no unhandled page exceptions / console errors during the whole session",
+      pageErrors.length === 0,
+      { errors: pageErrors.slice(0, 10) },
     );
   } finally {
     if (client) client.close();
@@ -748,6 +1180,8 @@ export async function main(argv = process.argv.slice(2)) {
     },
     checks,
     screenshots,
+    screenshot_states: screenshotStates,
+    real_integration: realIntegration,
   };
   await writeFile(join(REPORT_DIR, "browser-check.json"), `${JSON.stringify(report, null, 2)}\n`, "utf8");
   process.stdout.write(

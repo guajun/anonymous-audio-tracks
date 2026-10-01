@@ -68,6 +68,7 @@ export class MediaEngine {
     this.objectUrls = new Set();
     this.notes = [];
     this.closed = false;
+    this.loadToken = 0;
   }
 
   ensureContext() {
@@ -109,30 +110,49 @@ export class MediaEngine {
 
   /**
    * Build a peak pyramid, preferring the worker and falling back inline.
+   * Worker `error`/`messageerror` reject the promise (never hang) and the
+   * caller falls back to the inline build.
    * @returns {Promise<object>} pyramid (see js/peaks.js)
    */
   async buildPeaks(samples, samplesPerBucket, workerUrl) {
     const worker = this.spawnWorker ? this.spawnWorker(workerUrl) : null;
-    if (!worker) {
+    const inline = async () => {
       const { buildPeakPyramid } = await import("./peaks.js");
       return buildPeakPyramid(samples, samplesPerBucket);
-    }
-    return new Promise((resolve, reject) => {
-      const id = `peaks-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-      const onMessage = (event) => {
-        if (event.data && event.data.id === id) {
+    };
+    if (!worker) return inline();
+    try {
+      return await new Promise((resolve, reject) => {
+        const id = `peaks-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+        const onMessage = (event) => {
+          if (event.data && event.data.id === id) {
+            cleanup();
+            if (event.data.error) reject(new Error(event.data.error));
+            else resolve(event.data.pyramid);
+          }
+        };
+        const onError = (event) => {
+          cleanup();
+          reject(new Error(`peaks worker failed: ${event.message || "worker error"}`));
+        };
+        const onMessageError = () => {
+          cleanup();
+          reject(new Error("peaks worker messageerror"));
+        };
+        const cleanup = () => {
           worker.removeEventListener("message", onMessage);
+          worker.removeEventListener("error", onError);
+          worker.removeEventListener("messageerror", onMessageError);
           this.releaseWorker(worker);
-          resolve(event.data.pyramid);
-        }
-      };
-      worker.addEventListener("message", onMessage);
-      worker.addEventListener("error", (event) => {
-        this.releaseWorker(worker);
-        reject(new Error(`peaks worker failed: ${event.message || "unknown"}`));
+        };
+        worker.addEventListener("message", onMessage);
+        worker.addEventListener("error", onError);
+        worker.addEventListener("messageerror", onMessageError);
+        worker.postMessage({ id, samples, samplesPerBucket }, [samples.buffer]);
       });
-      worker.postMessage({ id, samples, samplesPerBucket }, [samples.buffer]);
-    });
+    } catch {
+      return inline();
+    }
   }
 
   /**
@@ -140,9 +160,11 @@ export class MediaEngine {
    * @returns {Promise<{notes: Array, pyramid: object|null, sampleRate: number|null, durationSeconds: number|null, hashHex: string|null}>}
    */
   async loadMain(file, docAudio, options = {}) {
-    this.disposeMain();
+    const token = ++this.loadToken;
     const bytes = await file.arrayBuffer();
+    if (this.loadToken !== token || this.closed) return { aborted: true, notes: [], pyramid: null };
     const hashHex = await sha256Hex(bytes.slice(0));
+    if (this.loadToken !== token || this.closed) return { aborted: true, notes: [], pyramid: null };
     const context = this.ensureContext();
     let buffer = null;
     try {
@@ -158,6 +180,7 @@ export class MediaEngine {
       this.notes = notes;
       return { notes, pyramid: null, sampleRate: null, durationSeconds: null, hashHex };
     }
+    if (this.loadToken !== token || this.closed) return { aborted: true, notes: [], pyramid: null };
     const channelCount = buffer.numberOfChannels;
     const length = buffer.length;
     const mono = new Float32Array(length);
@@ -172,16 +195,18 @@ export class MediaEngine {
       options.samplesPerBucket || 256,
       options.peaksWorkerUrl || new URL("./peaks-worker.js", import.meta.url),
     );
-    const url = this.trackUrl(file);
-    const audio = new Audio();
-    audio.preload = "auto";
-    audio.src = url;
+    if (this.loadToken !== token || this.closed) return { aborted: true, notes: [], pyramid: null };
     const notes = checkAudioMatch({
       docAudio,
       pickedName: file.name,
       hashHex,
       decodedDurationSeconds: buffer.duration,
     });
+    this.disposeMain(); // only replace the previous main when this load wins
+    const url = this.trackUrl(file);
+    const audio = new Audio();
+    audio.preload = "auto";
+    audio.src = url;
     this.main = { file, url, audio, buffer, pyramid, sampleRate: buffer.sampleRate };
     this.notes = notes;
     return {
@@ -195,31 +220,60 @@ export class MediaEngine {
     };
   }
 
-  /** Load one optional stem file matched against the JSON stem entry. */
-  async loadStem(file, stemEntry, options = {}) {
-    const key = stemEntry.filename;
-    const existing = this.stems.get(key);
-    if (existing) {
-      this.releaseUrl(existing.url);
-      this.stems.delete(key);
-    }
+  /**
+   * Load one optional stem file. Same-basename stems are disambiguated by
+   * SHA-256 identity against every candidate row's declared `stem.sha256`
+   * (SAM outputs commonly share `target.wav` as basename). A mismatched or
+   * ambiguous stem is NEVER stored, rendered or announced as success.
+   *
+   * @param {File} file picked by the human
+   * @param {Array<{id: string, stem: {filename: string, sha256: string}}>} candidates rows whose stem basename matches
+   * @param {{durationSeconds?: number}} options document audio duration for the stem time-axis check
+   */
+  async loadStem(file, candidates, options = {}) {
+    const token = ++this.loadToken;
     const bytes = await file.arrayBuffer();
     const hashHex = await sha256Hex(bytes.slice(0));
+    const matched = (candidates || []).filter((row) => row.stem && row.stem.sha256 === hashHex);
+    const notes = [];
+    if (this.loadToken !== token || this.closed) return { applied: false, aborted: true, notes: [], matchedRows: [] };
+    if (matched.length === 0) {
+      notes.push({
+        level: "error",
+        code: "STEM_IDENTITY",
+        text: `stem ${basename(file.name)}：内容 SHA-256（${hashHex}）与任何同名 instrument.stem.sha256 都不匹配（同名多目标按 hash 消歧）；未加载、未绘制、不是成功。`,
+      });
+      return { applied: false, notes, matchedRows: [], hashHex };
+    }
     const context = this.ensureContext();
     let buffer = null;
     try {
       buffer = await context.decodeAudioData(bytes.slice(0));
     } catch (error) {
       return {
+        applied: false,
         notes: [
           {
             level: "error",
             code: "A_DECODE",
-            text: `stem 解码失败（${stemEntry.filename}）：${String(error && error.message ? error.message : error)}`,
+            text: `stem 解码失败（${basename(file.name)}）：${String(error && error.message ? error.message : error)}；未加载、不是成功。`,
           },
         ],
-        pyramid: null,
+        matchedRows: [],
       };
+    }
+    if (this.loadToken !== token || this.closed) return { applied: false, aborted: true, notes: [], matchedRows: [] };
+    if (typeof options.durationSeconds === "number" && Number.isFinite(options.durationSeconds)) {
+      const tolerance = Math.max(DURATION_TOLERANCE_ABS, DURATION_TOLERANCE_REL * options.durationSeconds);
+      const delta = buffer.duration - options.durationSeconds;
+      if (Math.abs(delta) > tolerance) {
+        notes.push({
+          level: "error",
+          code: "STEM_DURATION",
+          text: `stem 时长与文档音频时长不一致：文档 ${options.durationSeconds}s，stem ${buffer.duration.toFixed(3)}s（差 ${delta.toFixed(3)}s）。时间轴不自动对齐/重定时；未加载、不是成功。`,
+        });
+        return { applied: false, notes, matchedRows: [], hashHex };
+      }
     }
     const mono = buffer.getChannelData(0);
     const pyramid = await this.buildPeaks(
@@ -227,17 +281,73 @@ export class MediaEngine {
       options.samplesPerBucket || 256,
       options.peaksWorkerUrl || new URL("./peaks-worker.js", import.meta.url),
     );
-    const notes = [];
-    if (hashHex !== stemEntry.sha256) {
-      notes.push({
-        level: "error",
-        code: "A_HASH",
-        text: `stem 内容 SHA-256 与 JSON 不一致：${stemEntry.filename}（JSON ${stemEntry.sha256}，实际 ${hashHex}）。`,
+    if (this.loadToken !== token || this.closed) return { applied: false, aborted: true, notes: [], matchedRows: [] };
+    const url = this.trackUrl(file);
+    for (const row of matched) {
+      this.releaseStem(row.id);
+      this.stems.set(row.id, {
+        file,
+        url: row.id === matched[0].id ? url : this.trackUrl(file),
+        pyramid,
+        sampleRate: buffer.sampleRate,
+        notes,
+        rowId: row.id,
+        filename: row.stem.filename,
+        sha256: hashHex,
+        durationSeconds: buffer.duration,
       });
     }
-    const url = this.trackUrl(file);
-    this.stems.set(key, { file, url, pyramid, sampleRate: buffer.sampleRate, notes });
-    return { notes, pyramid, sampleRate: buffer.sampleRate, durationSeconds: buffer.duration, hashHex };
+    notes.push({
+      level: "info",
+      code: "STEM_OK",
+      text: `stem ${basename(file.name)}（sha256 ${hashHex.slice(0, 12)}…）按 hash 消歧 → 行 ${matched.map((row) => row.id).join(", ")}：已绘制对应行波形。`,
+    });
+    return {
+      applied: true,
+      notes,
+      matchedRows: matched.map((row) => row.id),
+      pyramid,
+      sampleRate: buffer.sampleRate,
+      durationSeconds: buffer.duration,
+      hashHex,
+    };
+  }
+
+  /** Drop stems whose (rowId, filename, sha256) identity no longer matches the loaded document. */
+  reconcileStems(model) {
+    const dropped = [];
+    const rowsById = new Map((model && model.rows ? model.rows : []).map((row) => [row.id, row]));
+    for (const [rowId, entry] of [...this.stems]) {
+      const row = rowsById.get(rowId);
+      const keep =
+        row &&
+        row.stem &&
+        basename(row.stem.filename) === basename(entry.filename) &&
+        row.stem.sha256 === entry.sha256;
+      if (!keep) {
+        this.releaseStem(rowId);
+        dropped.push(rowId);
+      }
+    }
+    return dropped;
+  }
+
+  /** Identity list of applied stems (rowId + declared filename + content hash). */
+  stemEntries() {
+    return [...this.stems.values()].map((entry) => ({
+      rowId: entry.rowId,
+      filename: entry.filename,
+      sha256: entry.sha256,
+      durationSeconds: entry.durationSeconds,
+    }));
+  }
+
+  releaseStem(rowId) {
+    const entry = this.stems.get(rowId);
+    if (entry) {
+      this.releaseUrl(entry.url);
+      this.stems.delete(rowId);
+    }
   }
 
   get audioElement() {
@@ -287,10 +397,10 @@ export class MediaEngine {
 
   /** Release every resource this engine owns (idempotent). */
   dispose() {
+    this.loadToken += 1; // abort any in-flight load
     this.disposeMain();
-    for (const [key, stem] of this.stems) {
-      this.releaseUrl(stem.url);
-      this.stems.delete(key);
+    for (const rowId of [...this.stems.keys()]) {
+      this.releaseStem(rowId);
     }
     for (const worker of [...this.workers]) {
       this.releaseWorker(worker);

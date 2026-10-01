@@ -142,32 +142,45 @@ export function applyBpm(state, input) {
   };
 }
 
-/** Beat grid overlay: purely derived from BPM + origin; never mutates events. */
+/**
+ * Beat grid overlay: purely derived from BPM + origin; never mutates events.
+ *
+ * Bounded for any finite metadata: the loop runs at most `maxLines` iterations
+ * and extreme values (e.g. BPM = Number.MAX_VALUE) return a readable
+ * `unsupported` state instead of throwing / hanging.
+ */
 export function beatGrid(bpmState, beatOriginSeconds, t0, t1, maxLines = 512) {
+  const empty = { beats: [], interval: null, origin: 0 };
   const bpm = bpmState && bpmState.valid ? bpmState.value : null;
   if (!(typeof bpm === "number" && Number.isFinite(bpm) && bpm > 0) || !(t1 > t0)) {
-    return { beats: [], interval: null, origin: 0 };
+    return empty;
   }
   const interval = 60 / bpm;
+  if (!Number.isFinite(interval) || interval <= 0) {
+    return { ...empty, unsupported: true, reason: "节拍间隔超出可计算范围（BPM 极端），网格不显示" };
+  }
   const origin = Number.isFinite(beatOriginSeconds) ? beatOriginSeconds : 0;
   const firstIndex = Math.ceil((t0 - origin) / interval);
   const lastIndex = Math.floor((t1 - origin) / interval);
+  if (!Number.isFinite(firstIndex) || !Number.isFinite(lastIndex)) {
+    return { ...empty, interval, origin, unsupported: true, reason: "节拍索引超出安全整数范围（BPM/时长极端），网格不显示" };
+  }
   const total = lastIndex - firstIndex + 1;
   if (total <= 0) return { beats: [], interval, origin };
-  if (total > maxLines) {
-    // Density guard: draw only every n-th beat instead of a solid black wall.
-    const step = Math.ceil(total / maxLines);
-    const beats = [];
-    for (let index = firstIndex; index <= lastIndex; index += step) {
-      beats.push(origin + index * interval);
-    }
-    return { beats, interval: interval * step, origin, skipped: step };
+  if (!Number.isFinite(total) || total > 1e9) {
+    return { ...empty, interval, origin, unsupported: true, reason: "节拍数量超出可绘制范围（BPM/时长极端），网格不显示" };
   }
+  const step = total > maxLines ? Math.ceil(total / maxLines) : 1;
   const beats = [];
-  for (let index = firstIndex; index <= lastIndex; index += 1) {
-    beats.push(origin + index * interval);
+  for (let n = 0; n < maxLines; n += 1) {
+    const index = firstIndex + n * step;
+    if (index > lastIndex) break;
+    const time = origin + index * interval;
+    if (!(time <= t1)) break;
+    beats.push(time);
+    if (beats.length >= maxLines) break;
   }
-  return { beats, interval, origin };
+  return { beats, interval: interval * step, origin, ...(step > 1 ? { skipped: step } : {}) };
 }
 
 /** Binary-search the visible event slice of one row (viewport culling). */

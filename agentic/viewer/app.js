@@ -17,6 +17,7 @@ import {
   beatGrid,
 } from "./js/model.js";
 import { parseAndValidate } from "./js/protocol.js";
+import { readFileStrict } from "./js/strict-json.js";
 import {
   clampWindow,
   fitWindow,
@@ -76,8 +77,8 @@ const state = {
   bpmState: null,
   view: { start: 0, end: 1 },
   peaks: null,
-  stemPeaks: new Map(), // row.index -> pyramid
-  stemSampleRates: new Map(),
+  stemPeaks: new Map(), // row.id -> pyramid (stable id, never row index)
+  stemSampleRates: new Map(), // row.id -> sampleRate
   audio: { loaded: false, hashHex: null, durationSeconds: null, sampleRate: null, notes: [] },
   metrics: {
     validateMs: null,
@@ -86,6 +87,7 @@ const state = {
     firstRenderMs: null,
     lastRenderMs: null,
     frameDeltasMs: [],
+    frameRenderMs: [],
   },
   lastRender: null,
   statusText: "等待加载 JSON 结果文件。",
@@ -93,8 +95,24 @@ const state = {
   rafId: null,
   disposed: false,
   schema: null,
-  loads: { json: 0, audio: 0 },
+  loads: { json: 0, audio: 0, stems: 0 },
+  noteSets: { doc: [], audio: [], stems: [] },
+  // generation tokens: a slower earlier load must never overwrite a newer one
+  tokens: { json: 0, audio: 0, stems: 0 },
 };
+
+/** Per-dataset metrics reset: timings must describe the CURRENT dataset only. */
+function resetDatasetMetrics(part) {
+  state.metrics.firstRenderMs = null;
+  state.metrics.lastRenderMs = null;
+  state.metrics.frameDeltasMs = [];
+  state.metrics.frameRenderMs = [];
+  if (part === "json") {
+    state.metrics.validateMs = null;
+    state.metrics.decodeMs = null;
+    state.metrics.peaksMs = null;
+  }
+}
 
 const media = new MediaEngine({
   createWorker: (url) => {
@@ -134,9 +152,17 @@ function renderNotes(notes) {
   for (const note of notes || []) {
     const item = document.createElement("li");
     item.className = note.level || "info";
-    item.textContent = note.text;
+    // codes stay visible so states are traceable (STEM_IDENTITY / A_HASH / ...)
+    item.textContent = `[${note.code || "note"}] ${note.text}`;
     elements.notes.appendChild(item);
   }
+}
+
+// Notes are kept per source so a later audio/stem status never erases the
+// document's own notes (e.g. "stale stems dropped").
+function setNotes(part, notes) {
+  state.noteSets[part] = notes || [];
+  renderNotes([...state.noteSets.doc, ...state.noteSets.audio, ...state.noteSets.stems]);
 }
 
 function renderIssues(issues) {
@@ -230,8 +256,11 @@ function render() {
   }
 
   const rowEnvelopes = new Map();
-  for (const [index, pyramid] of state.stemPeaks) {
-    rowEnvelopes.set(index, envelopeFor(pyramid, state.stemSampleRates.get(index) || 44100, state.view, Math.max(1, Math.round(width))));
+  for (const [rowId, pyramid] of state.stemPeaks) {
+    rowEnvelopes.set(
+      rowId,
+      envelopeFor(pyramid, state.stemSampleRates.get(rowId) || 44100, state.view, Math.max(1, Math.round(width))),
+    );
   }
 
   const stats = renderTracks(trackCtx, state.model, state.view, {
@@ -259,20 +288,35 @@ function render() {
 function updateMetricsText() {
   const m = state.metrics;
   const frames = m.frameDeltasMs;
+  const renders = m.frameRenderMs;
   const frameInfo = frames.length
-    ? `帧间隔 n=${frames.length} avg=${(frames.reduce((a, b) => a + b, 0) / frames.length).toFixed(2)}ms max=${Math.max(
-        ...frames,
-      ).toFixed(2)}ms`
-    : "帧间隔 n=0";
+    ? `帧采样（含整场景重绘）n=${frames.length} 间隔avg=${(frames.reduce((a, b) => a + b, 0) / frames.length).toFixed(
+        2,
+      )}ms/最大=${Math.max(...frames).toFixed(2)}ms 重绘avg=${
+        renders.length ? (renders.reduce((a, b) => a + b, 0) / renders.length).toFixed(2) : "-"
+      }ms/最大=${renders.length ? Math.max(...renders).toFixed(2) : "-"}ms`
+    : "帧采样 n=0（未测）";
   const r = state.lastRender || {};
+  const grid = currentGrid();
   elements.metrics.textContent =
     `validate=${m.validateMs === null ? "-" : m.validateMs.toFixed(1)}ms · decode=${
       m.decodeMs === null ? "-" : m.decodeMs.toFixed(1)
-    }ms · peaks=${m.peaksMs === null ? "-" : m.peaksMs.toFixed(1)}ms · render=${
-      m.lastRenderMs === null ? "-" : m.lastRenderMs.toFixed(2)
-    }ms · visible=${r.visibleEvents || 0} · drawn=${r.drawnEvents || 0} · aggregatedRows=${r.aggregatedRows || 0} · ${frameInfo} · dpr=${
+    }ms · render=${m.lastRenderMs === null ? "-" : m.lastRenderMs.toFixed(2)}ms · visible=${
+      r.visibleEvents || 0
+    } · drawn=${r.drawnEvents || 0} · candidates=${r.candidateEvents || 0} · aggregatedRows=${r.aggregatedRows || 0} · ${frameInfo} · dpr=${
       window.devicePixelRatio || 1
-    }`;
+    }${grid && grid.unsupported ? ` · 网格不支持：${grid.reason}` : ""}`;
+}
+
+function currentGrid() {
+  if (!state.model) return null;
+  return beatGrid(
+    state.bpmState,
+    state.model.tempo.hasBeatOrigin ? state.model.tempo.beatOriginSeconds : 0,
+    state.view.start,
+    state.view.end,
+    64,
+  );
 }
 
 function playheadTime() {
@@ -318,14 +362,21 @@ function seekTo(seconds) {
 }
 
 function startFrameProbe(count = 60) {
+  // Honest measurement: every sampled frame performs a FULL scene re-render
+  // (ruler + waveform + all rows) and records both the rAF interval and the
+  // render duration. Idle scheduling alone is never reported as "fps with
+  // repaint".
   state.metrics.frameDeltasMs = [];
+  state.metrics.frameRenderMs = [];
   let last = performance.now();
   let remaining = count;
   const step = () => {
     if (state.disposed) return;
     const now = performance.now();
     state.metrics.frameDeltasMs.push(now - last);
-    last = now;
+    const stats = render();
+    if (stats) state.metrics.frameRenderMs.push(stats.renderMs);
+    last = performance.now();
     remaining -= 1;
     if (remaining > 0) {
       state.frameProbeId = requestAnimationFrame(step);
@@ -375,56 +426,106 @@ function pause() {
 }
 
 async function validateTextAsync(text, source) {
-  const worker = getValidateWorker();
   const started = performance.now();
+  const worker = getValidateWorker();
   if (worker) {
-    return new Promise((resolve) => {
-      const id = `validate-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-      const onMessage = (event) => {
-        if (event.data && event.data.id === id) {
+    try {
+      const result = await new Promise((resolve, reject) => {
+        const id = `validate-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+        const cleanup = () => {
           worker.removeEventListener("message", onMessage);
-          resolve({ ...event.data, elapsed: performance.now() - started });
-        }
-      };
-      worker.addEventListener("message", onMessage);
-      worker.postMessage({ id, text, schema: state.schema, source });
-    });
+          worker.removeEventListener("error", onError);
+          worker.removeEventListener("messageerror", onMessageError);
+        };
+        const onMessage = (event) => {
+          if (event.data && event.data.id === id) {
+            cleanup();
+            resolve(event.data);
+          }
+        };
+        const onError = (event) => {
+          cleanup();
+          reject(new Error(`validate worker failed: ${event.message || "worker error"}`));
+        };
+        const onMessageError = () => {
+          cleanup();
+          reject(new Error("validate worker messageerror"));
+        };
+        worker.addEventListener("message", onMessage);
+        worker.addEventListener("error", onError);
+        worker.addEventListener("messageerror", onMessageError);
+        worker.postMessage({ id, text, schema: state.schema, source });
+      });
+      return { ...result, elapsed: performance.now() - started };
+    } catch {
+      // worker failed: fall back to inline validation (never hang)
+    }
   }
   const result = parseAndValidate(text, state.schema, { source });
   return { report: result.report, data: result.data, elapsed: performance.now() - started };
 }
 
-async function onJsonFile(event) {
-  const file = event.target.files && event.target.files[0];
-  if (!file) return;
-  try {
-    await loadJsonFile(file);
-  } finally {
-    state.loads.json += 1;
+/** Reset the whole loaded state (doc/model/stems/audio/playback). */
+function clearLoadedState({ keepAudio = false } = {}) {
+  state.doc = null;
+  state.model = null;
+  state.bpmState = null;
+  state.peaks = null;
+  for (const rowId of [...state.stemPeaks.keys()]) state.stemPeaks.delete(rowId);
+  for (const rowId of [...state.stemSampleRates.keys()]) state.stemSampleRates.delete(rowId);
+  media.reconcileStems({ rows: [] });
+  if (!keepAudio) {
+    media.disposeMain();
+    state.audio = { loaded: false, hashHex: null, durationSeconds: null, sampleRate: null, notes: [] };
   }
+  state.playing = false;
+  if (state.rafId) {
+    cancelAnimationFrame(state.rafId);
+    state.rafId = null;
+  }
+  setNotes("doc", []);
+  setNotes("audio", []);
+  setNotes("stems", []);
+  renderGutterRows();
 }
 
 async function loadJsonFile(file) {
+  const token = ++state.tokens.json;
   renderIssues([]);
-  renderNotes([]);
+  setNotes("doc", []);
+  setNotes("stems", []);
   if (file.size > BIG_FILE_BYTES) {
     setStatus(`JSON 文件较大（${(file.size / 1024 / 1024).toFixed(1)}MB）：读取与校验在 Web Worker 中异步进行…`);
   } else {
     setStatus(`读取 ${file.name}…`);
   }
   elements.fileState.textContent = `JSON 文件：${file.name}（${file.size} bytes）`;
-  let text;
-  try {
-    text = await file.text();
-  } catch (error) {
-    setStatus(`读取 JSON 失败：${String(error && error.message ? error.message : error)}`, "error");
+  // Strict byte-level entry: File.text() would silently strip a BOM and replace
+  // invalid UTF-8 with U+FFFD — read raw bytes and apply the frozen decode
+  // policy instead (BOM / bad encoding -> controlled E_PARSE).
+  const { text, issues: decodeIssues } = await readFileStrict(file);
+  if (state.disposed || token !== state.tokens.json) return;
+  if (decodeIssues.length > 0) {
+    clearLoadedState();
+    resetDatasetMetrics("json");
+    setStatus(`JSON 文件字节不符合严格 UTF-8 策略（${decodeIssues.length} 个问题）：已清除旧数据，不绘制错误数据。`, "error");
+    renderIssues(decodeIssues);
+    render();
+    updateMetricsText();
     return;
   }
   const { report, data, elapsed } = await validateTextAsync(text, file.name);
+  // generation guard: a slower earlier load must never overwrite a newer one
+  if (state.disposed || token !== state.tokens.json) return;
   state.metrics.validateMs = elapsed;
   if (!report.ok) {
-    setStatus(`JSON 未通过 agentic-audio-tracks/v1 校验（${report.issues.length} 个问题）：不绘制错误数据。`, "error");
+    // never label a stale graph as the newly selected (invalid) JSON
+    clearLoadedState();
+    resetDatasetMetrics("json");
+    state.metrics.validateMs = elapsed;
+    setStatus(`JSON 未通过 agentic-audio-tracks/v1 校验（${report.issues.length} 个问题）：已清除旧数据，不绘制错误数据。`, "error");
     renderIssues(report.issues);
+    render();
     updateMetricsText();
     return;
   }
@@ -432,6 +533,16 @@ async function loadJsonFile(file) {
   state.model = buildModel(data);
   state.bpmState = createBpmState(state.model);
   state.view = fitWindow(state.model.audio.durationSeconds);
+  resetDatasetMetrics("json");
+  state.metrics.validateMs = elapsed;
+  // document change: re-validate applied stems by (rowId, filename, sha256)
+  const droppedStems = media.reconcileStems(state.model);
+  for (const rowId of [...state.stemPeaks.keys()]) {
+    if (!media.stems.has(rowId)) {
+      state.stemPeaks.delete(rowId);
+      state.stemSampleRates.delete(rowId);
+    }
+  }
   syncBpmUi();
   renderGutterRows();
   const emptyRows = state.model.rows.filter((row) => row.count === 0).length;
@@ -441,22 +552,46 @@ async function loadJsonFile(file) {
       `，音频声明 ${state.model.audio.durationSeconds}s。`,
     "ok",
   );
-  renderNotes(
-    state.model.limitations.map((text2) => ({
+  setNotes("doc", [
+    ...state.model.limitations.map((text2) => ({
       level: "info",
       code: "LIMITATION",
-      text: `限制说明：${text2}`,
+      text: `文档自述限制（非验证结论）：${text2}`,
     })),
-  );
+    ...(droppedStems.length
+      ? [
+          {
+            level: "warning",
+            code: "STEM_DROPPED",
+            text: `文档已更换：旧 stem（行 ${droppedStems.join(", ")}）与新文档身份（id/文件名/hash）不一致，已清除，不保留旧波形。`,
+          },
+        ]
+      : []),
+  ]);
   render();
   // If audio was loaded before the JSON, re-evaluate the match now.
   if (media.main) {
     await recheckAudio();
+    if (state.disposed || token !== state.tokens.json) return;
+  }
+}
+
+async function onJsonFile(event) {
+  const input = event.target;
+  const file = input.files && input.files[0];
+  input.value = ""; // allow re-selecting the SAME file (change fires again)
+  if (!file) return;
+  try {
+    await loadJsonFile(file);
+  } finally {
+    state.loads.json += 1;
   }
 }
 
 async function onAudioFile(event) {
-  const file = event.target.files && event.target.files[0];
+  const input = event.target;
+  const file = input.files && input.files[0];
+  input.value = ""; // allow re-selecting the SAME file
   if (!file) return;
   try {
     await loadAudioFile(file);
@@ -466,11 +601,12 @@ async function onAudioFile(event) {
 }
 
 async function loadAudioFile(file) {
+  const token = ++state.tokens.audio;
   if (!state.model) {
     setStatus("请先加载 JSON 结果文件（需要它的 audio 元数据来校验音频）。", "error");
     return;
   }
-  renderNotes([]);
+  setNotes("audio", []);
   setStatus(`解码音频 ${file.name}（本地，不上传）…`);
   elements.fileState.textContent = `音频文件：${file.name}（${file.size} bytes）`;
   const startedDecode = performance.now();
@@ -481,11 +617,13 @@ async function loadAudioFile(file) {
       peaksWorkerUrl: new URL("./js/peaks-worker.js", import.meta.url),
     });
   } catch (error) {
+    if (state.disposed || token !== state.tokens.audio) return;
     setStatus(`音频加载失败：${String(error && error.message ? error.message : error)}`, "error");
     return;
   }
+  if (state.disposed || token !== state.tokens.audio || result.aborted) return; // superseded by a newer load
+  resetDatasetMetrics("audio");
   state.metrics.decodeMs = performance.now() - startedDecode;
-  state.metrics.peaksMs = null;
   state.peaks = result.pyramid;
   state.audio = {
     loaded: Boolean(result.pyramid),
@@ -501,7 +639,7 @@ async function loadAudioFile(file) {
       : `音频已加载并校验（SHA-256 匹配 JSON）：${result.durationSeconds.toFixed(3)}s @ ${result.sampleRate}Hz。`,
     hasError ? "error" : "ok",
   );
-  renderNotes(result.notes);
+  setNotes("audio", result.notes);
   render();
 }
 
@@ -515,7 +653,7 @@ async function recheckAudio() {
   });
   state.audio = { ...state.audio, notes };
   const hasError = notes.some((note) => note.level === "error");
-  renderNotes(notes);
+  setNotes("audio", notes);
   setStatus(
     hasError
       ? "音频与新加载的 JSON 不一致（见下方说明）；时间轴仍以 JSON 秒为真值，不重定时。"
@@ -526,40 +664,52 @@ async function recheckAudio() {
 }
 
 async function onStemFiles(event) {
-  const files = [...(event.target.files || [])];
+  const input = event.target;
+  const files = [...(input.files || [])];
+  input.value = ""; // allow re-selecting the SAME files
   if (files.length === 0) return;
+  const token = ++state.tokens.stems;
   if (!state.model) {
     setStatus("请先加载 JSON 结果文件。", "error");
     return;
   }
   const notes = [];
   for (const file of files) {
+    if (state.disposed || token !== state.tokens.stems) return;
     const picked = basename(file.name);
-    const row = state.model.rows.find((entry) => entry.stem && basename(entry.stem.filename).toLowerCase() === picked.toLowerCase());
-    if (!row) {
+    // Candidates = rows whose DECLARED stem filename shares the basename
+    // (only matching, never arbitrary reads). Identity is decided by SHA-256:
+    // same-basename stems (e.g. SAM `target.wav`) must never grab the first row.
+    const candidates = state.model.rows.filter(
+      (row) => row.stem && basename(row.stem.filename).toLowerCase() === picked.toLowerCase(),
+    );
+    if (candidates.length === 0) {
       notes.push({
         level: "warning",
         code: "STEM_UNMATCHED",
         text: `stem 文件 ${picked} 未匹配任何 instrument.stem.filename（只按文件名匹配，不做任意读取），已忽略。`,
       });
+      setNotes("stems", notes);
       continue;
     }
-    const result = await media.loadStem(file, row.stem, {
+    const result = await media.loadStem(file, candidates, {
       samplesPerBucket: 256,
       peaksWorkerUrl: new URL("./js/peaks-worker.js", import.meta.url),
+      durationSeconds: state.model.audio.durationSeconds,
     });
-    if (result.pyramid) {
-      state.stemPeaks.set(row.index, result.pyramid);
-      state.stemSampleRates.set(row.index, result.sampleRate);
-    }
+    if (state.disposed || token !== state.tokens.stems) return;
     notes.push(...result.notes);
-    notes.push({
-      level: "info",
-      code: "STEM_OK",
-      text: `stem ${picked} → 行 id=${row.id}（${row.label}）：已绘制该行波形。`,
-    });
+    if (result.applied) {
+      for (const rowId of result.matchedRows) {
+        const entry = media.stems.get(rowId);
+        if (entry && entry.pyramid) {
+          state.stemPeaks.set(rowId, entry.pyramid);
+          state.stemSampleRates.set(rowId, entry.sampleRate);
+        }
+      }
+    }
   }
-  renderNotes(notes);
+  setNotes("stems", notes);
   render();
 }
 
@@ -617,7 +767,11 @@ function bindEvents() {
     onAudioFile(event).catch((error) => setStatus(`音频加载失败：${String(error && error.message ? error.message : error)}`, "error"));
   });
   elements.stemInput.addEventListener("change", (event) => {
-    onStemFiles(event).catch((error) => setStatus(`stem 加载失败：${String(error && error.message ? error.message : error)}`, "error"));
+    onStemFiles(event)
+      .catch((error) => setStatus(`stem 加载失败：${String(error && error.message ? error.message : error)}`, "error"))
+      .finally(() => {
+        state.loads.stems += 1;
+      });
   });
   elements.playButton.addEventListener("click", () => {
     play().catch(() => {});
@@ -730,9 +884,10 @@ function exposeDebugApi() {
       audio: {
         ...state.audio,
         resource: media.resourceState(),
+        stemMapping: media.stemEntries(),
         validateWorkerActive: Boolean(validateWorker),
       },
-      metrics: { ...state.metrics, frameDeltasMs: [...state.metrics.frameDeltasMs] },
+      metrics: { ...state.metrics, frameDeltasMs: [...state.metrics.frameDeltasMs], frameRenderMs: [...state.metrics.frameRenderMs] },
       loads: { ...state.loads },
       lastRender: state.lastRender ? { ...state.lastRender, rows: state.lastRender.rows.map((r) => ({ ...r })) } : null,
     }),
@@ -788,14 +943,14 @@ function exposeDebugApi() {
       track: { width: elements.trackCanvas.width, height: elements.trackCanvas.height },
       dpr: window.devicePixelRatio || 1,
     }),
-    rowGrid: () => {
-      if (!state.model) return null;
-      return beatGrid(state.bpmState, state.model.tempo.hasBeatOrigin ? state.model.tempo.beatOriginSeconds : 0, state.view.start, state.view.end, 64);
-    },
+    rowGrid: () => currentGrid(),
     schemaVersion: () => (state.model ? state.model.schemaVersion : null),
     dispose: async () => {
       if (state.disposed) return;
       state.disposed = true;
+      state.tokens.json += 1;
+      state.tokens.audio += 1;
+      state.tokens.stems += 1;
       if (state.rafId) cancelAnimationFrame(state.rafId);
       if (state.frameProbeId) cancelAnimationFrame(state.frameProbeId);
       state.playing = false;
@@ -806,6 +961,7 @@ function exposeDebugApi() {
       await media.dispose();
       state.peaks = null;
       state.stemPeaks.clear();
+      state.stemSampleRates.clear();
     },
     resourceState: () => ({
       ...media.resourceState(),

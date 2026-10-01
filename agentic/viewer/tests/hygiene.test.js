@@ -78,18 +78,43 @@ test("the only fetch() call loads the local schema via import.meta.url", () => {
   assert.ok(fetches[0].includes("import.meta.url"), "schema fetch must resolve from the module URL, not user input");
 });
 
-test("schema copies are byte-identical to the frozen issue #32 contract", () => {
+test("schema copies match the frozen issue #32 contract on the canonical LF/Git-blob basis", () => {
   const source = JSON.parse(readFileSync(join(VIEWER_ROOT, "schema", "SOURCE.json"), "utf8"));
-  const hash = (file) => createHash("sha256").update(readFileSync(file)).digest("hex");
+  assert.equal(source.hash_basis.includes("canonical LF"), true);
+  // Canonical LF bytes = what git stores in the blob on EVERY checkout, so the
+  // pin is portable (CRLF working copies must not change it).
+  const canonical = (file) => readFileSync(file).toString("latin1").replace(/\r\n/g, "\n");
+  const sha256 = (text) => createHash("sha256").update(Buffer.from(text, "latin1")).digest("hex");
+  const blobSha1 = (text) =>
+    createHash("sha1")
+      .update(Buffer.concat([Buffer.from(`blob ${Buffer.byteLength(text, "latin1")}\0`, "latin1"), Buffer.from(text, "latin1")]))
+      .digest("hex");
   for (const entry of source.files) {
-    const copy = join(VIEWER_ROOT, "schema", entry.file);
-    const upstream = join(UPSTREAM_SCHEMA_DIR, entry.file);
-    assert.equal(hash(copy), entry.sha256, `${entry.file} must match its recorded sha256`);
-    assert.equal(hash(upstream), entry.sha256, `${entry.file} must match the upstream frozen file`);
+    const copy = canonical(join(VIEWER_ROOT, "schema", entry.file));
+    const upstream = canonical(join(UPSTREAM_SCHEMA_DIR, entry.file));
+    assert.equal(sha256(copy), entry.sha256, `${entry.file} copy must match its recorded canonical sha256`);
+    assert.equal(sha256(upstream), entry.sha256, `${entry.file} upstream must match the recorded canonical sha256`);
+    assert.equal(blobSha1(copy), entry.git_blob_sha1, `${entry.file} copy must match its recorded git blob sha1`);
+    assert.equal(blobSha1(upstream), entry.git_blob_sha1, `${entry.file} upstream must match the recorded git blob sha1`);
   }
   assert.equal(source.schema_version, "agentic-audio-tracks/v1");
   assert.ok(statSync(SCHEMA_PATH).size > 1000);
   assert.ok(statSync(SEMANTIC_RULES_PATH).size > 1000);
+});
+
+test("recorded git blob ids equal the committed upstream blobs (fresh-checkout portable)", (t) => {
+  const source = JSON.parse(readFileSync(join(VIEWER_ROOT, "schema", "SOURCE.json"), "utf8"));
+  const listing = spawnSync("git", ["-C", REPO_ROOT, "ls-tree", "HEAD", "agentic/schema/schema/"], { shell: false, encoding: "utf8" });
+  if (listing.error || listing.status !== 0) {
+    t.skip("git unavailable; canonical sha256 checks above still pin the content");
+    return;
+  }
+  for (const entry of source.files) {
+    const line = listing.stdout.split(/\r?\n/).find((row) => row.endsWith(`agentic/schema/schema/${entry.file}`));
+    assert.ok(line, `${entry.file} must be tracked upstream`);
+    const blobId = line.split(/\s+/)[2];
+    assert.equal(blobId, entry.git_blob_sha1, `${entry.file} git blob id must match the pin`);
+  }
 });
 
 test("files stay under the 512 KiB tracked-file limit", () => {

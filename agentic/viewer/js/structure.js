@@ -37,6 +37,22 @@ function isNumber(value) {
   return typeof value === "number" && Number.isFinite(value);
 }
 
+/** Own-property check: never trust inherited Object.prototype members. */
+export function hasOwn(object, key) {
+  return Object.prototype.hasOwnProperty.call(object, key);
+}
+
+/**
+ * String length in Unicode code points (JSON Schema semantics / Python ``len``).
+ * ``"\u{1F3B9}".length`` is 2 in UTF-16 but 1 code point — the frozen schema
+ * counts code points.
+ */
+export function stringLength(value) {
+  let count = 0;
+  for (const _ of value) count += 1;
+  return count;
+}
+
 function isInteger(value) {
   return typeof value === "number" && Number.isInteger(value);
 }
@@ -92,7 +108,11 @@ function resolveRef(ref, root) {
     throw new Error(`only internal #/$defs/ refs are supported, got ${ref}`);
   }
   const name = ref.split("/").pop();
-  return root.$defs[name];
+  const defs = root && typeof root === "object" ? root.$defs : null;
+  if (!defs || typeof defs !== "object" || !hasOwn(defs, name)) {
+    throw new Error(`unresolved $ref: ${ref}`);
+  }
+  return defs[name];
 }
 
 function validateNode(instance, schema, root, parts, out) {
@@ -101,14 +121,14 @@ function validateNode(instance, schema, root, parts, out) {
     throw new Error(`unsupported schema keywords: ${JSON.stringify(unknown)}`);
   }
 
-  if ("$ref" in schema) {
+  if (hasOwn(schema, "$ref")) {
     validateNode(instance, resolveRef(schema.$ref, root), root, parts, out);
     return;
   }
 
   const pointer = pointerOf(parts);
 
-  if ("const" in schema && !jsonEqual(instance, schema.const)) {
+  if (hasOwn(schema, "const") && !jsonEqual(instance, schema.const)) {
     out.push({
       layer: "structure",
       code: "const",
@@ -116,7 +136,7 @@ function validateNode(instance, schema, root, parts, out) {
       message: `必须等于 ${repr(schema.const)}，得到 ${repr(instance)}`,
     });
   }
-  if ("enum" in schema && !schema.enum.some((choice) => jsonEqual(instance, choice))) {
+  if (hasOwn(schema, "enum") && !schema.enum.some((choice) => jsonEqual(instance, choice))) {
     out.push({
       layer: "structure",
       code: "enum",
@@ -140,7 +160,7 @@ function validateNode(instance, schema, root, parts, out) {
 
   if (instance !== null && typeof instance === "object" && !Array.isArray(instance)) {
     const required = schema.required || [];
-    const missing = required.filter((key) => !(key in instance));
+    const missing = required.filter((key) => !hasOwn(instance, key));
     if (missing.length > 0) {
       out.push({
         layer: "structure",
@@ -151,12 +171,12 @@ function validateNode(instance, schema, root, parts, out) {
     }
     const properties = schema.properties || {};
     for (const [key, value] of Object.entries(instance)) {
-      if (key in properties) {
+      if (hasOwn(properties, key)) {
         validateNode(value, properties[key], root, parts.concat([key]), out);
       }
     }
     if (schema.additionalProperties === false) {
-      const extras = Object.keys(instance).filter((key) => !(key in properties));
+      const extras = Object.keys(instance).filter((key) => !hasOwn(properties, key));
       if (extras.length > 0) {
         out.push({
           layer: "structure",
@@ -198,20 +218,23 @@ function validateNode(instance, schema, root, parts, out) {
         });
       }
     }
-    if (schema.minLength !== undefined && instance.length < schema.minLength) {
+    // Length limits count Unicode code points (JSON Schema / Python semantics),
+    // not UTF-16 units: 100 emoji are length 100, not 200.
+    const length = stringLength(instance);
+    if (schema.minLength !== undefined && length < schema.minLength) {
       out.push({
         layer: "structure",
         code: "minLength",
         pointer,
-        message: `长度至少 ${schema.minLength}，得到 ${instance.length}`,
+        message: `长度至少 ${schema.minLength}，得到 ${length}`,
       });
     }
-    if (schema.maxLength !== undefined && instance.length > schema.maxLength) {
+    if (schema.maxLength !== undefined && length > schema.maxLength) {
       out.push({
         layer: "structure",
         code: "maxLength",
         pointer,
-        message: `长度最多 ${schema.maxLength}，得到 ${instance.length}`,
+        message: `长度最多 ${schema.maxLength}，得到 ${length}`,
       });
     }
     return;
