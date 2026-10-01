@@ -1,8 +1,9 @@
 """tests/test_harness_offline.py — harness 侧离线回归（issue #33，0 API 0 GPU）。
 
-覆盖：事件流 trace 提取（工具链/用量/模型）、真实 SAM 分离计数（区分 dry-run 与真跑）、
-prompt 模板实例化、`run_e2e --dry-run`（零 API，只打印 argv）、脱敏与隐私扫描、
-run manifest / latest 指针策略、spotcheck（overlay + 抽查统计）。
+覆盖：事件流 trace 提取（工具链/用量/模型）、SAM 调用分类（成功/失败/dry-run/无结构化载荷）、
+prompt 模板实例化、`run_e2e --dry-run`（零 API）、脱敏与隐私扫描、run manifest / latest 策略、
+spotcheck、唯一 stem 映射、**执行证据门**（含 review 反例回归：空 providers、伪附件文本、
+ok=false 的 wrapper、shell 掩盖失败、空 stages、空 report、超预算失败尝试、终态 provider 失败）。
 """
 from __future__ import annotations
 
@@ -24,35 +25,46 @@ from helpers import build_result, make_clip_fixture, make_stem, write_result
 # ------------------------------------------------------------------ 事件流
 
 
+WRAPPER_OK = ('{"schema": "audio-toolbox.sam/v1", "tool": "audio-toolbox", "ok": true, '
+              '"action": "sam.separate", "exit_code": 0, '
+              '"run_dir": "outputs/e2e/run-1/stems/drums", '
+              '"outputs": ["stems/drums/target.wav", "stems/drums/residual.wav"], '
+              '"report": {"description": "drums"}}')
+WRAPPER_DRY = ('{"schema": "audio-toolbox.sam/v1", "tool": "audio-toolbox", "ok": true, '
+               '"action": "sam.dry-run", "exit_code": 0}')
+ATTACH_OK = ('{"attached": true, "mime": "audio/wav", "bytes": 2822444, '
+             '"sha256": "ab", "queueDepth": 1, "queuedBytes": 2822444}')
+
+
 def _events():
     return [
         {"type": "session", "version": 1},
         {"type": "turn_start"},
         {"type": "message_end", "message": {"role": "assistant", "model": "gemini-3.8-flash",
-                                            "stopReason": "toolUse", "usage": {"input": 100, "output": 20,
-                                                                               "totalTokens": 120,
-                                                                               "cost": {"total": 0.001}},
+                                            "provider": "google", "stopReason": "toolUse",
+                                            "usage": {"input": 100, "output": 20,
+                                                      "totalTokens": 120,
+                                                      "cost": {"total": 0.001}},
                                             "content": [{"type": "toolCall", "name": "audio_attach",
                                                          "arguments": {"path": "e2e-clip-001.wav"}}]}},
         {"type": "tool_execution_start", "toolCallId": "c1", "toolName": "audio_attach",
          "args": {"path": "e2e-clip-001.wav"}},
         {"type": "tool_execution_end", "toolCallId": "c1", "toolName": "audio_attach", "isError": False,
-         "result": {"content": [{"type": "text", "text":
-                                 '{"attached": true, "mime": "audio/wav", "bytes": 2822444, "sha256": "ab"}'}]}},
+         "result": {"content": [{"type": "text", "text": ATTACH_OK}]}},
         {"type": "tool_execution_start", "toolCallId": "c2", "toolName": "bash",
          "args": {"command": "python audio_toolbox.py sam separate --audio x.wav --description drums "
                              "--output-dir outputs/e2e/run-1/stems/drums --timeout 900"}},
         {"type": "tool_execution_end", "toolCallId": "c2", "toolName": "bash", "isError": False,
-         "result": {"content": [{"type": "text", "text": '{"ok": true, "action": "sam separate"}'}]}},
+         "result": {"content": [{"type": "text", "text": WRAPPER_OK}]}},
         {"type": "tool_execution_start", "toolCallId": "c3", "toolName": "bash",
          "args": {"command": "python audio_toolbox.py sam separate --audio x.wav --description melodic "
                              "--dry-run"}},
         {"type": "tool_execution_end", "toolCallId": "c3", "toolName": "bash", "isError": False,
-         "result": {"content": [{"type": "text", "text": '{"ok": true, "action": "plan"}'}]}},
+         "result": {"content": [{"type": "text", "text": WRAPPER_DRY}]}},
         {"type": "message_end", "message": {"role": "assistant", "model": "gemini-3.8-flash",
-                                            "stopReason": "stop", "usage": {"input": 500, "output": 80,
-                                                                            "totalTokens": 580,
-                                                                            "cost": {"total": 0.004}},
+                                            "provider": "google", "stopReason": "stop",
+                                            "usage": {"input": 500, "output": 80, "totalTokens": 580,
+                                                      "cost": {"total": 0.004}},
                                             "content": [{"type": "text", "text": "E2E-DONE ok"}]}},
     ]
 
@@ -61,6 +73,7 @@ class TestTraceExtraction:
     def test_trace_summary(self):
         trace = common.extract_trace(_events())
         assert trace["models"] == ["gemini-3.8-flash"]
+        assert trace["providers"] == ["google"]
         assert trace["tool_calls_by_tool"] == {"audio_attach": 1, "bash": 2}
         assert trace["usage"]["totalTokens"] == 700
         assert trace["usage"]["cost_total"] == pytest.approx(0.005)
@@ -69,36 +82,47 @@ class TestTraceExtraction:
         assert trace["last_assistant_stop"] == "stop"
         assert trace["provider_failures"] == []
 
+    def test_structured_facts_extracted_before_truncation(self):
+        trace = common.extract_trace(_events())
+        attach = trace["tool_calls"][0]
+        assert attach["facts"]["attach_success"] is True
+        assert attach["facts"]["attach_mime"] == "audio/wav"
+        assert attach["facts"]["attach_bytes"] == 2822444
+        sam = trace["tool_calls"][1]
+        assert sam["facts"]["sam_wrapper_schema"] is True
+        assert sam["facts"]["sam_action"] == "sam.separate"
+        assert sam["facts"]["sam_run_dir_name"] == "drums"
+        assert sam["facts"]["sam_output_names"] == ["target.wav", "residual.wav"]
+
     def test_real_separations_exclude_dry_run(self):
         trace = common.extract_trace(_events())
         real = common.count_real_separations(trace)
         assert len(real) == 1
-        assert "--dry-run" not in real[0]["command"]
+        assert real[0]["facts"]["sam_action"] == "sam.separate"
 
-    def test_failed_separations_counted_separately(self):
-        """失败的 SAM 调用不得计入成功（attempted/failed/success 分开）。"""
+    def test_failed_and_unstructured_separations_not_success(self):
+        """ok=false 的 wrapper / 无结构化载荷 / 工具报错都不能算成功。"""
         trace = {"tool_calls": [
+            # review 反例：{ok:false, action:'sam.separate', exit_code:5} 且 isError=False
             {"tool": "bash", "args_summary": "python audio_toolbox.py sam separate --audio a.wav",
-             "result_head": '{"action": "sam.separate"}', "isError": True},
+             "isError": False,
+             "facts": {"sam_wrapper_schema": True, "sam_action": "sam.separate",
+                       "sam_ok": False, "sam_exit_code": 5}},
+            # shell 掩盖：结果里只有 echo 文本，无 wrapper JSON
+            {"tool": "bash",
+             "args_summary": "python audio_toolbox.py sam separate --audio a.wav || true",
+             "isError": False, "facts": {"sam_wrapper_schema": False}},
+            # 工具报错
             {"tool": "bash", "args_summary": "python audio_toolbox.py sam separate --audio a.wav",
-             "result_head": '{"action": "sam.separate"}', "isError": False},
+             "isError": True,
+             "facts": {"sam_wrapper_schema": True, "sam_action": "sam.separate",
+                       "sam_ok": True, "sam_exit_code": 0}},
         ]}
         buckets = common.classify_separations(trace)
-        assert len(buckets["real_success"]) == 1
-        assert len(buckets["real_failed"]) == 1
-        assert len(common.count_real_separations(trace)) == 1
-
-    def test_real_separations_trust_result_action_over_truncated_command(self):
-        """长命令可能被截断；工具结果里的 action 字段是 dry-run / 真跑的权威标记。"""
-        trace = {"tool_calls": [
-            {"tool": "bash", "args_summary": "python audio_toolbox.py sam separate " + "x" * 400,
-             "result_head": '{"action": "sam.dry-run", "ok": true}', "isError": False},
-            {"tool": "bash", "args_summary": "python audio_toolbox.py sam separate " + "y" * 400,
-             "result_head": '{"action": "sam.separate", "ok": true}', "isError": False},
-        ]}
-        real = common.count_real_separations(trace)
-        assert len(real) == 1
-        assert "sam.separate" in real[0]["result_head"]
+        assert buckets["real_success"] == []
+        assert len(buckets["real_failed"]) == 2
+        assert len(buckets["unknown"]) == 1
+        assert common.count_real_separations(trace) == []
 
     def test_provider_failure_detection(self):
         events = [{"type": "message_end", "message": {"role": "assistant", "stopReason": "error",
@@ -148,16 +172,18 @@ class TestDryRun:
 class TestRedaction:
     def test_redactor_and_secret_scan(self):
         # 路径字面量动态拼接：tracked 文件不出现真实个人路径布局（toolbox hygiene 契约）
-        ws_root = "C" + ":" + "\\work\\ws"
-        home_file = "C" + ":" + "\\" + "Users" + "\\someone\\private\\x.wav"
+        ws_root = "C" + ":" + "\\\\work\\\\ws"
+        home_file = "C" + ":" + "\\\\" + "Users" + "\\\\someone\\\\private\\\\x.wav"
         redact = common.make_redactor(Path(ws_root))
-        out = redact(f"{ws_root}\\audio\\inputs\\a.wav and {home_file}")
+        out = redact(f"{ws_root}\\\\audio\\\\inputs\\\\a.wav and {home_file}")
         assert ws_root not in out
         assert "<PATH>" in out
         assert "Users" not in out
-        assert common.find_private("api_key = AIzaSyFakeFakeFakeFakeFake123456")
+        assert common.find_private("api_key = AIza" + "x" * 20)
         assert common.find_private("x" * 300)           # 长 base64 形态
         assert common.find_private(f"Loaded {home_file}")   # 自由文本绝对路径（R1）
+        assert common.find_private("Loaded /tmp/synthetic/private.wav")     # /tmp（R2）
+        assert common.find_private("config at /etc/synthetic/app.conf")     # /etc（R2）
         assert not common.find_private("onset_seconds: 1.5，source=dsp")
         assert not common.find_private("see https://github.com/guajun/x and stems/drums/target.wav")
 
@@ -179,7 +205,9 @@ class TestManifestAndLatest:
         params = {"pi_timeout_s": 2400, "sam_separations_max": 3, "sam_timeout_s": 900}
         rc = run_e2e.finish(ws, "e2e-run-1", clip, trace, stages, validation, started,
                             params, {"available": True}, "ab" * 32, 0,
-                            (lambda s: s), as_json=True, blocked=False)
+                            (lambda s: s), as_json=True, blocked=False,
+                            code_at_run={"git_revision": "abc123", "git_dirty": False,
+                                         "harness_files_sha256": {"harness/common.py": "0" * 64}})
         assert rc == 0
         manifest = json.loads((ws / "outputs" / "e2e" / "e2e-run-1" / "run-manifest.json")
                               .read_text(encoding="utf-8"))
@@ -188,19 +216,30 @@ class TestManifestAndLatest:
         assert manifest["audio_pathway"]["kind"] == "bridge"
         assert "unsupported" in manifest["audio_pathway"]["native"]
         assert manifest["models"]["music_agent"] == "google/gemini-3.8-flash"
-        assert manifest["models"]["impl_worker"] == "openrouter/xiaomi/mimo-v2.6-pro"
         assert manifest["tools"]["sam_toolbox_pin"] == common.TOOLBOX_PIN
         assert manifest["clip"]["sha256"] == clip["sha256"]
         assert manifest["trace"]["sam_separations_real_success"] == 1
         assert manifest["trace"]["sam_separations_real_failed"] == 0
         assert manifest["trace"]["sam_separations_dry_run"] == 1
-        # 代码可归属性（R1）：harness 组件 hash + git revision（run 时未知则保持 unknown）
-        assert manifest["code"]["harness_files_sha256"]
-        assert "unknown" in str(manifest["code"]["git_revision_at_run"])
+        assert manifest["trace"]["sam_separations_attempted"] == 1
+        # 代码可归属性（R2）：启动时点真实快照，不是 unknown
+        assert manifest["code"]["git_revision_at_run"] == "abc123"
+        assert manifest["code"]["git_dirty_at_run"] is False
+        assert manifest["code"]["harness_files_sha256_at_run"]
+        assert manifest["code"]["harness_files_sha256_at_verification"]
         assert all("<" in cmd and ">" in cmd for cmd in manifest["repro"]["commands"])
         assert not common.find_private(json.dumps(manifest, ensure_ascii=False))
-        # latest 指针策略（冻结）：outputs/e2e/LATEST.txt = 最近 run id
-        assert (ws / "outputs" / "e2e" / "LATEST.txt").read_text(encoding="utf-8").strip() == "e2e-run-1"
+
+    def test_legacy_code_block_stays_unknown(self, tmp_path):
+        ws = tmp_path / "ws"
+        ws.mkdir()
+        clip = make_clip_fixture(ws)
+        run_e2e.finish(ws, "e2e-run-legacy", clip, None, [], None, time.time(), {}, {},
+                       "cd" * 32, 1, (lambda s: s), as_json=True, blocked=True)
+        manifest = json.loads((ws / "outputs" / "e2e" / "e2e-run-legacy" / "run-manifest.json")
+                              .read_text(encoding="utf-8"))
+        assert "unknown" in str(manifest["code"]["git_revision_at_run"])   # legacy 不伪造
+        assert manifest["code"]["harness_files_sha256_at_run"] == "unknown（run 时未记录）"
 
     def test_finish_marks_blocked_runs(self, tmp_path):
         ws = tmp_path / "ws"
@@ -238,7 +277,7 @@ class TestSpotcheck:
 
 
 class TestStemMap:
-    """唯一 stem 文件名映射（R1：只做加法，不改原 Agent 产物/不改 schema）。"""
+    """唯一 stem 文件名映射（只做加法，不改原 Agent 产物/不改 schema）。"""
 
     def test_unique_names_hashes_and_originals_untouched(self, tmp_path):
         run_dir = tmp_path / "run"
@@ -255,7 +294,6 @@ class TestStemMap:
         assert (run_dir / entry["unique_rel"]).is_file()
         assert (run_dir / entry["original_rel"]).read_bytes() == original_bytes   # 原件未动
         assert (run_dir / "result.json").read_bytes() == result_before            # result 未动
-        # 幂等：重复执行不冲突、不重复改变
         again = stem_map.build_stem_map(run_dir)
         assert again["entries"] == mapping["entries"]
 
@@ -272,7 +310,10 @@ class TestStemMap:
 
 
 class TestExecutionGate:
-    """真实 pass 必须由观测执行证据门控（R1）：文档自述不算数。"""
+    """真实 pass 必须由观测执行证据门控（R2 严格化）：文档自述 / isError / 空列表都不算数。"""
+
+    OK_STAGES = [{"stage": "model_run", "status": "ok"}, {"stage": "result", "status": "ok"},
+                 {"stage": "validate", "status": "ok"}, {"stage": "spotcheck", "status": "ok"}]
 
     def _env(self, tmp_path):
         ws = tmp_path / "ws"
@@ -285,81 +326,139 @@ class TestExecutionGate:
         (local_dir / "events.jsonl").write_text("{}", encoding="utf-8")
         return ws, clip, run_dir, local_dir
 
+    def _mk_sam_artifacts(self, run_dir, name: str = "drums") -> None:
+        d = run_dir / "stems" / name
+        d.mkdir(parents=True)
+        (d / "target.wav").write_bytes(b"RIFF-fake-bytes")
+        (d / "residual.wav").write_bytes(b"RIFF-fake-bytes")
+        (d / "report.json").write_text(json.dumps({
+            "description": name,
+            "outputs": [str(d / "target.wav"), str(d / "residual.wav")],
+        }), encoding="utf-8")
+
+    def _trace(self, **overrides):
+        trace = common.extract_trace(_events())
+        trace["runner_exit"] = 0
+        trace.update(overrides)
+        return trace
+
+    def _gate(self, run_dir, local_dir, trace=None, stages=None, params=None, prior=None):
+        return run_e2e.execution_gate(
+            trace if trace is not None else self._trace(),
+            params if params is not None else {"sam_separations_max": 3},
+            run_dir, local_dir,
+            stages if stages is not None else self.OK_STAGES,
+            prior=prior)
+
+    def _failed(self, gate, name):
+        return not next(c for c in gate["checks"] if c["name"] == name)["pass"]
+
     def test_pass_with_observed_evidence(self, tmp_path):
         ws, clip, run_dir, local_dir = self._env(tmp_path)
-        (run_dir / "stems" / "drums").mkdir(parents=True)
-        (run_dir / "stems" / "drums" / "report.json").write_text("{}", encoding="utf-8")
-        trace = common.extract_trace(_events())
-        trace["runner_exit"] = 0
-        gate = run_e2e.execution_gate(
-            trace, {"sam_separations_max": 3}, run_dir, local_dir,
-            [{"stage": "model_run", "status": "ok"}, {"stage": "result", "status": "ok"},
-             {"stage": "validate", "status": "ok"}])
+        self._mk_sam_artifacts(run_dir)
+        gate = self._gate(run_dir, local_dir)
         assert gate["ok"], json.dumps(gate, ensure_ascii=False)
         assert gate["kind"] == "observed-execution"
+        assert gate["schema"] == "agentic-e2e-execution-gate/v2"
 
-    def test_missing_model_evidence_fails(self, tmp_path):
+    def test_review_counterexample_matrix_rejected(self, tmp_path):
+        """review 反例整体：providers=[] + 伪附件文本 + ok=false wrapper + 空 stages + 空 report
+        必须整体失败（旧版曾 8/8 全过）。"""
         ws, clip, run_dir, local_dir = self._env(tmp_path)
-        trace = common.extract_trace(_events())
-        trace["models"] = ["some-other-model"]
-        gate = run_e2e.execution_gate(trace, {"sam_separations_max": 3}, run_dir, local_dir, [])
-        assert not gate["ok"]
-        assert not next(c for c in gate["checks"] if c["name"] == "observed_model")["pass"]
-
-    def test_failed_sam_and_missing_artifacts_fail(self, tmp_path):
-        ws, clip, run_dir, local_dir = self._env(tmp_path)
+        d = run_dir / "stems" / "drums"
+        d.mkdir(parents=True)
+        (d / "report.json").write_text("{}", encoding="utf-8")     # 空 report
         trace = {"tool_calls": [
-            {"tool": "bash", "args_summary": "python audio_toolbox.py sam separate --audio a.wav",
-             "result_head": '{"action": "sam.separate"}', "isError": True}],
-            "tool_calls_total": 1, "models": ["gemini-3.8-flash"], "runner_exit": 0}
-        gate = run_e2e.execution_gate(trace, {"sam_separations_max": 3}, run_dir, local_dir,
-                                      [{"stage": "model_run", "status": "ok"},
-                                       {"stage": "result", "status": "ok"},
-                                       {"stage": "validate", "status": "ok"}])
+            {"tool": "audio_attach", "isError": False, "result_head": "mime bytes",
+             "facts": common.call_facts("audio_attach", "", "mime bytes", False)},
+            {"tool": "bash", "isError": False, "args_summary": "python audio_toolbox.py sam separate --a x",
+             "facts": {"sam_wrapper_schema": True, "sam_action": "sam.separate",
+                       "sam_ok": False, "sam_exit_code": 5, "sam_run_dir_name": "drums",
+                       "sam_output_names": []}},
+        ], "tool_calls_total": 2, "models": [], "providers": [], "runner_exit": 0}
+        gate = self._gate(run_dir, local_dir, trace=trace, stages=[])
         assert not gate["ok"]
-        assert not next(c for c in gate["checks"] if c["name"] == "sam_separation_observed")["pass"]
-        assert not next(c for c in gate["checks"] if c["name"] == "sam_artifacts_present")["pass"]
+        for name in ("observed_model", "attachment_observed", "sam_separation_observed",
+                     "sam_artifacts_correlated", "required_stages_present_nonfailed"):
+            assert self._failed(gate, name), name
 
-    def test_budget_violation_fails(self, tmp_path):
+    def test_missing_provider_fails_even_with_model(self, tmp_path):
         ws, clip, run_dir, local_dir = self._env(tmp_path)
-        (run_dir / "stems" / "a").mkdir(parents=True)
-        (run_dir / "stems" / "a" / "report.json").write_text("{}", encoding="utf-8")
-        trace = common.extract_trace(_events())
-        trace["runner_exit"] = 0
-        gate = run_e2e.execution_gate(trace, {"sam_separations_max": 0}, run_dir, local_dir,
-                                      [{"stage": "model_run", "status": "ok"},
-                                       {"stage": "result", "status": "ok"},
-                                       {"stage": "validate", "status": "ok"}])
-        assert not gate["ok"]
-        assert not next(c for c in gate["checks"] if c["name"] == "budget_compliance")["pass"]
+        self._mk_sam_artifacts(run_dir)
+        gate = self._gate(run_dir, local_dir, trace=self._trace(providers=[]))
+        assert self._failed(gate, "observed_model")
+
+    def test_terminal_provider_failure_rejected(self, tmp_path):
+        ws, clip, run_dir, local_dir = self._env(tmp_path)
+        self._mk_sam_artifacts(run_dir)
+        gate = self._gate(run_dir, local_dir,
+                          trace=self._trace(provider_failures=["assistant stopReason=error"]))
+        assert self._failed(gate, "no_terminal_provider_failure")
+
+    def test_shell_masked_wrapper_failure_is_not_success(self, tmp_path):
+        ws, clip, run_dir, local_dir = self._env(tmp_path)
+        self._mk_sam_artifacts(run_dir)
+        trace = self._trace()
+        # 把成功调用替换成 shell 掩盖的失败（isError=False 但 wrapper ok=false）
+        trace["tool_calls"][1]["facts"] = {"sam_wrapper_schema": True, "sam_action": "sam.separate",
+                                           "sam_ok": False, "sam_exit_code": 1,
+                                           "sam_run_dir_name": "drums", "sam_output_names": []}
+        gate = self._gate(run_dir, local_dir, trace=trace)
+        assert self._failed(gate, "sam_separation_observed")
+
+    def test_malformed_or_empty_report_fails_correlation(self, tmp_path):
+        ws, clip, run_dir, local_dir = self._env(tmp_path)
+        d = run_dir / "stems" / "drums"
+        d.mkdir(parents=True)
+        (d / "report.json").write_text("{}", encoding="utf-8")
+        gate = self._gate(run_dir, local_dir)
+        assert self._failed(gate, "sam_artifacts_correlated")
+
+    def test_missing_output_files_fail_correlation(self, tmp_path):
+        ws, clip, run_dir, local_dir = self._env(tmp_path)
+        self._mk_sam_artifacts(run_dir)
+        (run_dir / "stems" / "drums" / "target.wav").unlink()
+        gate = self._gate(run_dir, local_dir)
+        assert self._failed(gate, "sam_artifacts_correlated")
+
+    def test_missing_required_stage_fails(self, tmp_path):
+        ws, clip, run_dir, local_dir = self._env(tmp_path)
+        self._mk_sam_artifacts(run_dir)
+        stages = [s for s in self.OK_STAGES if s["stage"] != "spotcheck"]
+        gate = self._gate(run_dir, local_dir, stages=stages)
+        assert self._failed(gate, "required_stages_present_nonfailed")
+        gate2 = self._gate(run_dir, local_dir, stages=[])
+        assert self._failed(gate2, "required_stages_present_nonfailed")
+
+    def test_over_budget_failed_attempts_fail(self, tmp_path):
+        """attempted（含失败/unknown）计入预算：1 成功 + 2 失败 > 预算 2 → 不合规。"""
+        ws, clip, run_dir, local_dir = self._env(tmp_path)
+        self._mk_sam_artifacts(run_dir)
+        trace = self._trace()
+        trace["tool_calls"].extend([
+            {"tool": "bash", "isError": True, "args_summary": "python audio_toolbox.py sam separate --a y",
+             "facts": {"sam_wrapper_schema": True, "sam_action": "sam.separate",
+                       "sam_ok": False, "sam_exit_code": 1}},
+            {"tool": "bash", "isError": False, "args_summary": "python audio_toolbox.py sam separate --a z",
+             "facts": {"sam_wrapper_schema": False}},
+        ])
+        gate = self._gate(run_dir, local_dir, trace=trace, params={"sam_separations_max": 2})
+        assert self._failed(gate, "budget_compliance")
 
     def test_verify_cannot_laundry_failed_runner(self, tmp_path):
         ws, clip, run_dir, local_dir = self._env(tmp_path)
-        (run_dir / "stems" / "a").mkdir(parents=True)
-        (run_dir / "stems" / "a" / "report.json").write_text("{}", encoding="utf-8")
-        trace = common.extract_trace(_events())
-        trace["runner_exit"] = 5                          # 原 run 是 provider-error 失败
-        gate = run_e2e.execution_gate(
-            trace, {"sam_separations_max": 3}, run_dir, local_dir,
-            [{"stage": "model_run", "status": "ok"}, {"stage": "result", "status": "ok"},
-             {"stage": "validate", "status": "ok"}],
-            prior={"runner_exit": 5})
-        assert not gate["ok"]
-        assert not next(c for c in gate["checks"] if c["name"] == "original_runner_success")["pass"]
+        self._mk_sam_artifacts(run_dir)
+        gate = self._gate(run_dir, local_dir, trace=self._trace(runner_exit=5),
+                          prior={"runner_exit": 5})
+        assert self._failed(gate, "original_runner_success")
 
     def test_verify_preserves_run_timestamp_and_appends_verification(self, tmp_path):
         ws, clip, run_dir, local_dir = self._env(tmp_path)
-        (run_dir / "stems" / "a").mkdir(parents=True)
-        (run_dir / "stems" / "a" / "report.json").write_text("{}", encoding="utf-8")
+        self._mk_sam_artifacts(run_dir)
         write_result(run_dir, build_result(clip))
-        # 与真实流程一致：事件流落盘，verify 从事件流/trace-summary 复原 trace
         (local_dir / "events.jsonl").write_text(
             "\n".join(json.dumps(e, ensure_ascii=False) for e in _events()), encoding="utf-8")
-        trace = common.extract_trace(_events())
-        trace["runner_exit"] = 0
-        run_e2e.finish(ws, "run-1", clip, trace,
-                       [{"stage": "model_run", "status": "ok"}, {"stage": "result", "status": "ok"},
-                        {"stage": "validate", "status": "ok"}],
+        run_e2e.finish(ws, "run-1", clip, self._trace(), self.OK_STAGES,
                        {"ok": True, "checks": []}, time.time(), {"sam_separations_max": 3}, {},
                        "ab" * 32, 0, (lambda s: s), as_json=True, blocked=False)
         before = json.loads((run_dir / "run-manifest.json").read_text(encoding="utf-8"))

@@ -184,6 +184,17 @@ class TestStrictProvenanceR1:
         report = _validate(env, doc)
         assert not _by_name(report, "no_mock_or_native_claims")["pass"]
 
+    def test_provenance_chain_requires_all_four(self, env):
+        """bridge AND llm AND sam AND dsp 四者必须全在（OR 口径已废）。"""
+        steps = [
+            {"tool": "listening", "source": "llm", "note": "假设"},
+            {"tool": "audio-toolbox.sam pin dfbc40a9541f (sam c603de8794cc)", "source": "sam", "note": "分离"},
+            {"tool": "e2e dsp_onset energy-flux", "source": "dsp", "note": "onset"},
+        ]   # 缺 bridge
+        report = _validate(env, build_result(env["clip"], provenance_steps=steps))
+        assert not report["ok"]
+        assert not _by_name(report, "provenance_chain")["pass"]
+
     def test_fixture_level_still_accepts_mock(self, env):
         doc = build_result(env["clip"], kind="mock")
         report = _validate(env, doc, level="fixture")

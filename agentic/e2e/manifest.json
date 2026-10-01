@@ -46,6 +46,7 @@
   },
   "contracts": {
     "result_schema": "agentic-audio-tracks/v1（issue #32 冻结；validate.py 退出码 0/1/2）",
+    "provenance_chain": "real 级要求 steps.source 含 bridge AND llm AND sam AND dsp（四者全在），pin 必须精确 SHA/前缀；mock/native 冒称在任何字段都拒",
     "result_path": "outputs/e2e/<run-id>/result.json（每 run 独立，不覆盖旧 run）",
     "latest_pointer": "outputs/e2e/LATEST.txt（单行 run id；最近一次 run）",
     "filename_bases": {
@@ -55,7 +56,7 @@
     "event_provenance": "DSP 检出事件必须 source='dsp' + method=<检测法>；乐器 source=假设来源（sam/llm）；事件按 (onset,id) 升序；秒时间轴 t=0=clip 开头",
     "audio_pathway": "bridge（audio_attach）；Pi 原生音频=unsupported（issue #30），结果不得标 native",
     "run_manifest": "agentic-e2e-run-manifest/v2：输入 hash、commit/model/tool/代码归属 pin（git revision + harness 组件 hash + Agent DSP 脚本 hash）、参数、耗时/GPU 设备、用量（含 cacheRead/cacheWrite 与对账）、tool trace 摘要（真·分离成功/失败/dry-run 分开计数）、成功/失败 stage、数据校验+执行门、限制、复现命令；verification_runs[] 追加式，不改写原 run 时间戳",
-    "execution_gate": "agentic-e2e-execution-gate/v1：观测 google/gemini-3.8-flash + 成功 audio_attach（MIME+字节）+ 成功真·SAM 分离（非 dry-run/非失败）+ 产物 report.json + 预算合规 + 必要 stage 非失败 + 原 runner 成功；数据校验 ≠ 执行证明",
+    "execution_gate": "agentic-e2e-execution-gate/v2：精确观测 google/gemini-3.8-flash（缺 provider 即 fail）+ 无终态 provider 失败 + 结构化成功 audio_attach（MIME=audio/* 且 bytes>0 且工具未报错）+ 结构化成功真·SAM 分离（wrapper schema=audio-toolbox.sam/v1、action=sam.separate、ok=true、exit_code=0；shell 掩盖失败不算成功）+ 成功调用与产物逐一关联（report 可解析+非空 outputs）+ 尝试数（含失败/unknown）≤预算 + 必要 stage（含 spotcheck）存在且非失败 + 原 runner 成功；数据校验 ≠ 执行证明",
     "stem_map": "agentic-e2e-stem-map/v1：stem-map.json + stems-unique/ 唯一文件名副本（真实 hash/相对路径/采样率/时长）；只做加法，不动原 Agent result/stems、不改 schema、时轴不变",
     "spotcheck": "agentic-e2e-spotcheck/v2：overlay + 能量上升/跨轴能量代理（cross_stem_energy_ratio，proxy_only，非分离度/串音率）/独立检测器差异；逐 stem 用自己的采样率按秒取窗；口径=抽查迹象，非总体准确率"
   },

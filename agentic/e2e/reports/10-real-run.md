@@ -10,7 +10,7 @@
 | 项 | 值 |
 |---|---|
 | run id | `e2e-real-20261001-02`（`outputs/e2e/LATEST.txt` 指向它） |
-| 结果 | **pass**（runner exit 0；数据校验 15 项全绿 + 执行证据门 8 项全绿） |
+| 结果 | **pass**（runner exit 0；数据校验 15 项全绿 + 执行证据门 9 项全绿） |
 | R1 修订 | 读取器/抽查统计 bug 已修并**离线重算**；旧 “isolation≈0.95–1” 数字作废，见 [`reports/20-spotcheck.md`](20-spotcheck.md) §0（原 result/events/stems 未改动） |
 | 输入 | `e2e-clip-001.wav`（16.0 s / 44.1 kHz / 2ch，sha256 `42f968e2…c7f0`，clip 时轴 t=0=源 4.0 s） |
 | 模型 | 全部 assistant 消息 `model=gemini-3.8-flash`（**未传 `--model`**，来自项目设置 + `pi --approve` project trust） |
@@ -100,16 +100,17 @@ write 3 / edit 1），关键顺序（脱敏摘要）：
 | privacy | pass | 无绝对路径/key 形态/长 base64 |
 | stem_files | pass | 3 个 stem 存在且 sha256 一致（相对 run 目录解析） |
 
-**② 执行证据门**（`run_e2e.py` execution gate，观测证据而非文档自述，8/8 pass）：
+**② 执行证据门**（`run_e2e.py` execution gate `agentic-e2e-execution-gate/v2`，观测证据而非文档自述，9/9 pass）：
 
-| 检查 | 结果 | 观测证据 |
+| 检查 | 结果 | 观测证据（结构化载荷/产物关联，不只信工具 isError） |
 |---|---|---|
-| observed_model | pass | 事件流中 assistant `model=['gemini-3.8-flash']` `provider=['google']`（未传 --model） |
-| attachment_observed | pass | `audio_attach` 成功（MIME+字节）2/2 次（各自 audio/wav + 2,822,444 bytes） |
-| sam_separation_observed | pass | 真·SAM 分离**成功 3** 次；dry-run 3、失败 0 **分开计数** |
-| sam_artifacts_present | pass | `stems/*/report.json` ×3（实际产物，非文本自述） |
-| budget_compliance | pass | 真实分离 3 ≤ 预算 3 |
-| required_stages_nonfailed | pass | model_run/result/validate 均 ok |
+| observed_model | pass | 事件流中 assistant `model=['gemini-3.8-flash']` `provider=['google']`（精确匹配；缺 provider 即 fail） |
+| no_terminal_provider_failure | pass | 无 provider error/aborted 终态 |
+| attachment_observed | pass | `audio_attach` **结构化成功** 2/2（载荷 `attached=true`、`mime=audio/wav`、`bytes=2,822,444>0`、工具未报错） |
+| sam_separation_observed | pass | 真·SAM 分离**成功 3** 次（wrapper 载荷 `schema=audio-toolbox.sam/v1`、`action=sam.separate`、`ok=true`、`exit_code=0`）；dry-run 3、失败 0、无结构化载荷 0 **分开计数** |
+| sam_artifacts_correlated | pass | 3 个成功调用逐一关联到 `stems/<name>/report.json`（可解析、含 outputs）且 target/residual 非空（不是任意 report.json） |
+| budget_compliance | pass | 真实分离**尝试** 3（含失败/unknown）≤ 预算 3 |
+| required_stages_present_nonfailed | pass | model_run/result/validate/spotcheck **均存在**且 ok（空 stages 即 fail） |
 | execution_evidence_present | pass | `events.jsonl` 存在，58 次工具调用 |
 | original_runner_success | pass | 原 runner exit=0（`--verify` 不会把失败 run 洗成 pass） |
 
@@ -152,7 +153,7 @@ sha256 + **Agent DSP 脚本 sha256 `f8b97e45…e298a`**（`scripts/detect_events
   notes.md               Agent 过程/假设/参数/抽查表
   scripts/detect_events.py  Agent 自写 DSP（实际运行）
   stems/{drums,bass,synthesizer}/  target.wav + residual.wav + request.json + report.json
-  validation.json        harness 校验报告（数据校验 15 项 + 执行门 8 项）
+  validation.json        harness 校验报告（数据校验 15 项 + 执行门 9 项）
   spotcheck/             overlay.wav + spotcheck.json + overlay.json（harness，R1 修复后重算）
   overlay.wav, spotcheck-stats.json  Agent 自产的同名辅助产物（原样保留）
   stem-map.json          唯一 stem 文件名映射（R1：hash/相对路径/采样率；原件不动）

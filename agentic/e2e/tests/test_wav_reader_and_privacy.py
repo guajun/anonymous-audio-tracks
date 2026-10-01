@@ -166,6 +166,17 @@ class TestPrivacyAbsolutePaths:
         assert "UNC 路径" in common.find_private(unc)
         assert "POSIX 绝对路径" in common.find_private(posix)
 
+    def test_tmp_etc_var_absolute_paths(self, tmp_path=None):
+        # R2 回归：/tmp /etc 等普通文件系统绝对路径不能漏；相对引用/URL 不误伤
+        for text in ("Loaded /tmp/synthetic/private.wav",
+                     "config at /etc/synthetic/app.conf",
+                     "cache /var/synthetic/data.bin"):
+            assert common.find_private(text), text
+        assert common.find_private("deep /opt/synthetic/a/b/c.wav")
+        assert not common.find_private("see https://github.com/guajun/x and ../schema/README.md")
+        assert not common.find_private("stems/drums/target.wav outputs/e2e/x/result.json")
+        assert not common.find_private("cmd: --result <WS>/outputs/e2e/<RUN_ID>/result.json")  # 占位符续接不误伤
+
     def test_escaped_json_absolute_path(self):
         home = "C" + ":" + "\\\\" + "Users" + "\\\\" + "someone" + "\\\\" + "x.wav"
         doc = {"limitations": [f"loaded {home}"]}

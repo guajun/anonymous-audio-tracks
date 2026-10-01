@@ -233,26 +233,8 @@ def write_wav(path: Path, samples: list[float], sample_rate: int, channels: int 
 
 
 def write_wav16(path: Path, samples: list[float], sample_rate: int, channels: int = 1) -> None:
-    """写 16-bit PCM WAV（向后兼容包装）。"""
+    """写 16-bit PCM WAV（唯一实现是 ``write_wav(fmt="pcm16")``；此处只是显式兼容包装）。"""
     write_wav(path, samples, sample_rate, channels=channels, fmt="pcm16")
-
-
-def write_wav16(path: Path, samples: list[float], sample_rate: int, channels: int = 1) -> None:
-    """写 16-bit PCM WAV（用于 fixture / overlay；样本按 [-1,1] 限幅）。"""
-    import array
-
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    ints = array.array("h")
-    for s in samples:
-        v = int(max(-1.0, min(1.0, s)) * 32767)
-        ints.append(v)
-    payload = ints.tobytes()
-    header = b"RIFF" + struct.pack("<I", 36 + len(payload)) + b"WAVE"
-    header += b"fmt " + struct.pack("<IHHIIHH", 16, 1, channels, sample_rate,
-                                    sample_rate * channels * 2, channels * 2, 16)
-    header += b"data" + struct.pack("<I", len(payload))
-    path.write_bytes(header + payload)
 
 
 # ---------------------------------------------------------- 路径安全 / 包含
@@ -357,8 +339,14 @@ _SECRET_PATTERNS = [
 _ABS_PATH_PATTERNS = [
     (re.compile(r"(?<![A-Za-z0-9_])[A-Za-z]:[\\/][^\s\"'<>|]*"), "Windows 绝对路径"),
     (re.compile(r"\\\\[A-Za-z0-9._$-]+[\\/]"), "UNC 路径"),
-    (re.compile(r"(?<![A-Za-z0-9_:/])/(?:home|Users|root|mnt|Volumes|private|export|workspace)/[^\s\"'<>|]*"),
-     "POSIX 绝对路径"),
+    # POSIX：常见一级根（含 /tmp /etc /var 等）或 ≥3 段的绝对路径；
+    # 后顾排除 scheme（http://）、上级引用（../）、双斜杠（//）、占位符续接（<WS>/…）与词内；
+    # 相对引用与 URL 不命中
+    (re.compile(r"(?<![A-Za-z0-9_:.>])/"
+                r"(?:home|Users|root|tmp|etc|var|usr|opt|mnt|media|srv|export|private|workspace|data|storage|proc)/"
+                r"[^\s\"'<>|]*"), "POSIX 绝对路径"),
+    (re.compile(r"(?<![A-Za-z0-9_:/.>])/(?:[^/\s\"'<>|]+/){2,}[^/\s\"'<>|]*"),
+     "POSIX 绝对路径（多段）"),
 ]
 
 
@@ -434,6 +422,75 @@ def summarize_args(tool: str, args) -> str:
     return ",".join(sorted(args.keys()))[:200]
 
 
+WRAPPER_SCHEMA = "audio-toolbox.sam/v1"
+
+
+def parse_first_json(text: str, required_key: str | None = None) -> dict | None:
+    """解析文本中第一个 JSON 对象（可要求含指定键）；解析不到返回 None。
+
+    用于在**截断诊断文本之前**提取结构化成功载荷（wrapper 恰好向 stdout 打印一个 JSON）。"""
+    text = str(text)
+    try:
+        obj = json.loads(text.strip())
+        if isinstance(obj, dict) and (required_key is None or required_key in obj):
+            return obj
+    except (ValueError, TypeError):
+        pass
+    dec = json.JSONDecoder()
+    idx = 0
+    while True:
+        start = text.find("{", idx)
+        if start < 0:
+            return None
+        try:
+            obj, _ = dec.raw_decode(text[start:])
+        except ValueError:
+            obj = None
+        if isinstance(obj, dict) and (required_key is None or required_key in obj):
+            return obj
+        idx = start + 1
+
+
+def call_facts(tool: str, command: str, full_text: str, is_error: bool) -> dict:
+    """结构化成功事实（在截断前解析；不只信工具 isError）。
+
+    * ``audio_attach``：必须是可解析 JSON 载荷且 ``attached`` 真、``mime`` 为 ``audio/*``、
+      ``bytes`` 为 >0 整数、工具未报错 → ``attach_success=True``（纯文本“mime bytes”不算）；
+    * SAM wrapper：必须是含 ``schema="audio-toolbox.sam/v1"`` 的 JSON 载荷，``action`` 精确为
+      ``sam.separate`` / ``sam.dry-run``，``ok=true`` 且 ``exit_code=0`` 且工具未报错才算成功；
+      shell 用 ``;`` / ``echo`` / ``|| true`` 掩盖的 wrapper 失败**不**算成功。"""
+    facts: dict = {}
+    if tool == "audio_attach":
+        payload = parse_first_json(full_text)
+        mime = (payload or {}).get("mime")
+        nbytes = (payload or {}).get("bytes")
+        ok = (not is_error and payload is not None and bool(payload.get("attached"))
+              and isinstance(mime, str) and mime.startswith("audio/")
+              and isinstance(nbytes, int) and not isinstance(nbytes, bool) and nbytes > 0)
+        facts["attach_success"] = ok
+        facts["attach_mime"] = mime if isinstance(mime, str) else None
+        facts["attach_bytes"] = nbytes if isinstance(nbytes, int) and not isinstance(nbytes, bool) else None
+        if payload is None:
+            facts["attach_error"] = "非结构化载荷（结果文本无法解析为 JSON）"
+    elif tool == "bash" and "audio_toolbox.py" in command and "separate" in command:
+        payload = parse_first_json(full_text, required_key="schema")
+        if payload is not None and payload.get("schema") == WRAPPER_SCHEMA:
+            run_dir = payload.get("run_dir")
+            outputs = payload.get("outputs") or []
+            facts.update({
+                "sam_wrapper_schema": True,
+                "sam_action": payload.get("action"),
+                "sam_ok": payload.get("ok"),
+                "sam_exit_code": payload.get("exit_code"),
+                "sam_run_dir_name": str(Path(str(run_dir)).name) if run_dir else None,
+                "sam_output_names": [Path(str(p)).name for p in outputs][:8],
+                "sam_report_present": bool(payload.get("report")),
+            })
+        else:
+            facts["sam_wrapper_schema"] = False
+    return facts
+
+
 def extract_trace(events: list[dict]) -> dict:
     """从事件流抽取 trace 摘要（工具调用链、用量、模型、终态文本）。"""
     calls: list[dict] = []
@@ -463,8 +520,12 @@ def extract_trace(events: list[dict]) -> dict:
                 entry = {"call_id": rec.get("toolCallId"), "tool": str(rec.get("toolName")),
                          "args_summary": "", "result_head": ""}
                 calls.append(entry)
+            full_text = _content_texts((rec.get("result") or {}).get("content"))
             entry["isError"] = bool(rec.get("isError"))
-            entry["result_head"] = _content_texts((rec.get("result") or {}).get("content"))[:300]
+            entry["result_head"] = full_text[:300]
+            # 结构化成功事实：在截断诊断文本之前从完整结果提取（wrapper/attach 载荷）
+            entry["facts"] = call_facts(entry.get("tool", ""), entry.get("args_summary", ""),
+                                        full_text, entry["isError"])
         elif rtype == "turn_start":
             turns += 1
         elif rtype == "message_end":
@@ -518,33 +579,38 @@ def extract_trace(events: list[dict]) -> dict:
 
 
 def classify_separations(trace: dict) -> dict:
-    """把 SAM separate 相关调用分成三类（dry-run / 成功真实分离 / 失败真实分离）。
+    """把 SAM separate 相关调用分成四类：dry_run / real_success / real_failed / unknown。
 
-    判定：命令含 ``audio_toolbox.py ... separate``；``--dry-run`` 或结果 ``sam.dry-run`` → dry_run；
-    否则按工具结果 ``isError`` 分 real_failed / real_success。长命令可能被截断，工具结果里的
-    ``action`` 字段是权威标记。"""
-    buckets: dict[str, list[dict]] = {"dry_run": [], "real_success": [], "real_failed": []}
+    判定**只信截断前解析出的结构化载荷**（``call_facts``）：wrapper 载荷必须含
+    ``schema="audio-toolbox.sam/v1"``、``action`` 精确、``ok=true``、``exit_code=0`` 且工具未报错
+    才算 ``real_success``；shell 掩盖的失败 / ok=false / exit≠0 → ``real_failed``；无结构化载荷 →
+    ``unknown``（不计成功）。`--dry-run` / ``sam.dry-run`` → ``dry_run``。"""
+    buckets: dict[str, list[dict]] = {"dry_run": [], "real_success": [], "real_failed": [], "unknown": []}
     for call in trace.get("tool_calls", []):
         cmd = call.get("args_summary", "")
         head = call.get("result_head", "")
         if "audio_toolbox.py" not in cmd or "separate" not in cmd:
             continue
+        facts = call.get("facts") or {}
         entry = {"command": cmd, "isError": call.get("isError", False),
-                 "result_head": head[:200]}
-        if "--dry-run" in cmd or "sam.dry-run" in head:
+                 "result_head": head[:200], "facts": facts}
+        if "--dry-run" in cmd or facts.get("sam_action") == "sam.dry-run" or "sam.dry-run" in head:
             buckets["dry_run"].append(entry)
-        elif call.get("isError", False):
-            buckets["real_failed"].append(entry)
-        else:
+            continue
+        if facts.get("sam_wrapper_schema") is not True:
+            buckets["unknown"].append(entry)      # 无结构化 wrapper 载荷 → 不算成功
+        elif (facts.get("sam_action") == "sam.separate"
+              and facts.get("sam_ok") is True
+              and facts.get("sam_exit_code") == 0
+              and not call.get("isError", False)):
             buckets["real_success"].append(entry)
+        else:
+            buckets["real_failed"].append(entry)
     return buckets
 
 
 def count_real_separations(trace: dict) -> list[dict]:
-    """**成功**的真实 SAM 分离调用（不含 dry-run、不含失败调用）。
-
-    判定：命令含 ``audio_toolbox.py ... separate``，且既不是 ``--dry-run``，工具结果也不是
-    ``sam.dry-run``，且工具结果 ``isError=False``（attempted/failed 另见 classify_separations）。"""
+    """**成功**的真实 SAM 分离调用（结构化载荷证明成功；不含 dry-run/失败/unknown）。"""
     return classify_separations(trace)["real_success"]
 
 

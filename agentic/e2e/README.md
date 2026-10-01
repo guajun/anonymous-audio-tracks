@@ -67,9 +67,11 @@ python agentic/e2e/harness/spotcheck.py stats --result "<WS>/outputs/e2e/<RUN-ID
 1. `run_e2e.py` 退出码 `0`，且打印 `e2e pass run_id=…`；
 2. `outputs/e2e/<RUN-ID>/result.json` 存在且是 Agent 写的（`local/e2e/<RUN-ID>/events.jsonl` 的
    `write`/`bash` 调用链可证）；`validation.json` 全部 `pass`；
-3. **执行证据门**（`validation.json.execution`）全 pass：观测 `google/gemini-3.8-flash`、成功
-   `audio_attach`（MIME+字节）、**成功**真·SAM 分离（非 dry-run/非失败，与失败/dry-run 分开计数）、
-   产物 report.json 存在、预算合规、必要 stage 非失败、原 runner 成功；
+3. **执行证据门**（`validation.json.execution`，9 项）全 pass：精确观测 `google`+`gemini-3.8-flash`、
+   无终态 provider 失败、**结构化**成功 `audio_attach`（MIME=audio/*、bytes>0、工具未报错）、
+   **结构化**成功真·SAM 分离（wrapper 载荷 `action=sam.separate`/`ok=true`/`exit_code=0`；
+   dry-run/失败/无载荷分开计数）、成功调用与实际产物**逐一关联**（report 可解析+非空 outputs）、
+   分离**尝试**（含失败）≤预算、必要 stage（含 spotcheck）**存在且非失败**、事件流存在、原 runner 成功；
 4. `run-manifest.json` 含输入 hash、模型/工具 pin、代码归属（revision/组件 hash）、GPU/耗时/用量
    （含 cache 口径）、tool trace 摘要、失败 stage（如有）。
 
@@ -109,9 +111,9 @@ python agentic/e2e/harness/spotcheck.py stats --result "<WS>/outputs/e2e/<RUN-ID
 | 结果协议 | `agentic-audio-tracks/v1`（#32 冻结；校验 `python agentic/schema/validate.py <file>`） |
 | 结果路径 | `outputs/e2e/<run-id>/result.json`；latest = `outputs/e2e/LATEST.txt` |
 | run manifest | schema `agentic-e2e-run-manifest/v2`（输入 hash、模型/工具/代码归属 pin、参数、耗时/GPU、用量含 cache 口径、trace 摘要、stages、数据校验+执行门、限制、复现命令；`verification_runs[]` 追加式） |
-| 执行证据门 | schema `agentic-e2e-execution-gate/v1`：观测模型/提供方、成功附件（MIME+字节）、成功真·SAM 分离（与 dry-run/失败分开计数）、预算、必要 stage、原 runner 成功；真实 pass 的必要条件 |
+| 执行证据门 | schema `agentic-e2e-execution-gate/v2`：精确观测 model/provider（缺 provider 即 fail）+ 无终态 provider 失败 + 结构化成功附件（MIME=audio/* 且 bytes>0）+ 结构化成功真·SAM 分离（wrapper `action=sam.separate`/`ok=true`/`exit_code=0`，shell 掩盖失败不算成功）+ 成功调用与产物逐一关联 + 尝试数（含失败/unknown）≤预算 + 必要 stage（含 spotcheck）存在且非失败 + 原 runner 成功；真实 pass 的必要条件 |
 | 唯一 stem 映射 | schema `agentic-e2e-stem-map/v1`：`stem-map.json` + `stems-unique/stem-<instrument-id>-<basename>`（真实 hash/相对路径/采样率；只做加法，不动原 Agent 产物、不改 schema、时轴不变） |
-| 校验层级 | `--level real`（真实来源链 + pin + bridge 通路）/ `--level fixture`（自生成 mock） |
+| 校验层级 | `--level real`（真实来源链 **bridge AND llm AND sam AND dsp** 全在 + 精确 SHA/前缀 pin + bridge 通路）/ `--level fixture`（自生成 mock） |
 | 事件来源标注 | DSP 检出的事件必须 `source="dsp"` + `method=<检测法>`；乐器 `source` = 假设来源（`sam`/`llm`） |
 | 音频通路 | `bridge`（`audio_attach`）；**Pi 原生音频 = unsupported**（#30），结果不得冒充 `native` |
 | 模型 | 音乐 Agent `google/gemini-3.8-flash`（#30 冻结，bridge 硬锁定）；实施 worker `openrouter/xiaomi/mimo-v2.6-pro`（本 issue 执行约定） |

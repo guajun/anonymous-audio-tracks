@@ -175,13 +175,14 @@ def check_real_pins(doc: dict, checker: Checker) -> None:
     # pin 必须精确：固定 SHA 或其已知前缀，不认“提到 sam-audio 即可”
     toolbox_ok = TOOLBOX_PIN in blob or TOOLBOX_PIN[:12] in blob
     sam_ok = SAM_UPSTREAM_COMMIT in blob or SAM_UPSTREAM_COMMIT[:12] in blob
-    chain_ok = ("sam" in sources and "dsp" in sources and ({"llm", "bridge"} & sources))
+    chain_ok = {"bridge", "llm", "sam", "dsp"} <= sources   # 四者必须**全部**在链上
     checker.add("provenance_pins", model_ok and toolbox_ok and sam_ok,
                 f"模型 pin={'有' if model_ok else '缺'} gemini-3.8-flash；"
                 f"工具 pin={'精确 SHA/前缀 ' + TOOLBOX_PIN[:12] if toolbox_ok else '缺（要求 ' + TOOLBOX_PIN[:12] + '…）'}；"
                 f"SAM 上游={'精确 SHA/前缀 ' + SAM_UPSTREAM_COMMIT[:12] if sam_ok else '缺（要求 ' + SAM_UPSTREAM_COMMIT[:12] + '…）'}")
     checker.add("provenance_chain", chain_ok,
-                f"来源链 steps.source 含 llm|bridge + sam + dsp：{sorted(s for s in sources if s)}")
+                f"来源链必须含 bridge AND llm AND sam AND dsp（四者全在）："
+                f"{sorted(s for s in sources if s)}")
     native_claims = [s.get("tool") for s in steps
                      if isinstance(s, dict) and s.get("source") == "native"]
     checker.add("no_native_audio_claim", not native_claims,
