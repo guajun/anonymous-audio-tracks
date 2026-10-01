@@ -36,7 +36,12 @@ import {
   renderWaveformLane,
 } from "./js/render.js";
 import { MediaEngine, basename, checkAudioMatch } from "./js/transport.js";
-import { clampSeekTime, globalSeekState } from "./js/global-seek.js";
+import {
+  GLOBAL_SEEK_PAGE_STEP_SECONDS,
+  GLOBAL_SEEK_STEP_SECONDS,
+  clampSeekTime,
+  globalSeekState,
+} from "./js/global-seek.js";
 
 const RULER_HEIGHT = 26;
 const WAVE_HEIGHT = 84;
@@ -366,17 +371,23 @@ function playheadTime() {
  * zoom/pan can never rescale or move this slider, and a wrong JSON duration
  * can never become the file's real length (the mismatch stays an explicit
  * note from checkAudioMatch).
+ *
+ * @param {number} [currentTimeSeconds] playhead override (the seek TARGET):
+ *   when seeking, the raw slider value must be exactly the requested position
+ *   clamped to the real file end — never a re-read of the media clock.
  */
-function syncGlobalSeek() {
+function syncGlobalSeek(currentTimeSeconds) {
   const slider = elements.globalSeek;
   if (!slider) return;
   const model = globalSeekState({
     realDurationSeconds: media.durationSeconds(),
-    currentTimeSeconds: playheadTime(),
+    currentTimeSeconds: currentTimeSeconds === undefined ? playheadTime() : currentTimeSeconds,
   });
   slider.min = String(model.min);
   slider.max = String(model.max);
-  slider.step = String(model.step);
+  // DOM step must stay "any": a numeric step would sanitize fractional file
+  // lengths (16.037s -> 16.0) and leave sub-step files with no usable position
+  slider.step = model.domStep;
   slider.disabled = model.disabled;
   slider.value = String(model.value);
   slider.setAttribute("aria-valuetext", model.ariaValueText);
@@ -421,9 +432,12 @@ function seekTo(seconds) {
   const clamped = clampSeekTime(seconds, total);
   if (media.audioElement) media.seek(clamped);
   elements.seekInput.value = clamped.toFixed(2);
-  // seeking only moves the playhead: no pan/zoom, no BPM/onset change
-  syncGlobalSeek();
+  // seeking only moves the playhead: no pan/zoom, no BPM/onset change.
+  // The slider raw value becomes the seek TARGET (exactly the clamped
+  // position, so Home/End/right-edge drag land precisely on the real file
+  // end even for fractional durations like 16.037s).
   render();
+  syncGlobalSeek(clamped);
 }
 
 function startFrameProbe(count = 60) {
@@ -858,9 +872,27 @@ function bindEvents() {
   elements.pauseButton.addEventListener("click", pause);
   elements.seekInput.addEventListener("change", () => seekTo(Number(elements.seekInput.value)));
   // global whole-file slider: drag / Home / End / arrows / PageUp / PageDown
-  // (native range keyboard behaviour) -> seek the whole file, never pan/zoom
+  // -> seek the whole file, never pan/zoom
   elements.globalSeek.addEventListener("input", () => seekTo(Number(elements.globalSeek.value)));
   elements.globalSeek.addEventListener("change", () => seekTo(Number(elements.globalSeek.value)));
+  // explicit keyboard handling: the DOM step is "any" (so the range can END
+  // exactly at a fractional file length), so stepping is ours. Home/End jump
+  // to the REAL file bounds (0 / exact audio duration), arrows move 0.1s and
+  // clamp exactly onto the real file end — never onto a step grid.
+  elements.globalSeek.addEventListener("keydown", (event) => {
+    const duration = media.durationSeconds();
+    const current = Number(elements.globalSeek.value);
+    let next = null;
+    if (event.key === "ArrowLeft" || event.key === "ArrowDown") next = current - GLOBAL_SEEK_STEP_SECONDS;
+    else if (event.key === "ArrowRight" || event.key === "ArrowUp") next = current + GLOBAL_SEEK_STEP_SECONDS;
+    else if (event.key === "PageDown") next = current - GLOBAL_SEEK_PAGE_STEP_SECONDS;
+    else if (event.key === "PageUp") next = current + GLOBAL_SEEK_PAGE_STEP_SECONDS;
+    else if (event.key === "Home") next = 0;
+    else if (event.key === "End") next = duration === null ? null : duration;
+    if (next === null || !Number.isFinite(next)) return;
+    event.preventDefault();
+    seekTo(next);
+  });
   elements.fitButton.addEventListener("click", fit);
   elements.resetButton.addEventListener("click", () => {
     fit();
@@ -1007,7 +1039,8 @@ function exposeDebugApi() {
         min: Number(slider.min),
         max: Number(slider.max),
         value,
-        step: Number(slider.step),
+        step: GLOBAL_SEEK_STEP_SECONDS,
+        domStep: slider.step,
         ratio: Number.isFinite(real) && real > 0 ? value / real : 0,
         realDurationSeconds: real,
         labelText: elements.globalSeekTime ? elements.globalSeekTime.textContent : "",

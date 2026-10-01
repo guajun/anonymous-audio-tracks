@@ -14,8 +14,22 @@
 
 import { formatSeconds } from "./render.js";
 
-/** Slider step (seconds): keyboard arrows move the playhead by this much. */
+/**
+ * Keyboard arrow step (seconds): the explicit key handler moves the playhead
+ * by this much. The DOM `step` is deliberately NOT 0.1 — see below.
+ */
 export const GLOBAL_SEEK_STEP_SECONDS = 0.1;
+/** Keyboard PageUp/PageDown step (seconds). */
+export const GLOBAL_SEEK_PAGE_STEP_SECONDS = 1;
+/**
+ * DOM `step` for the range input. It MUST stay "any":
+ * a numeric step makes the browser sanitize the value onto the step grid, so
+ * a file of e.g. 16.037s could never be reached (value snaps to 16.0) and a
+ * file shorter than one step would have no usable position at all. With
+ * "any" the raw value can sit exactly on the REAL file end; arrows/Home/End
+ * are handled explicitly (0.1s step / exact bounds) in app.js.
+ */
+export const GLOBAL_SEEK_DOM_STEP = "any";
 
 function finitePositive(value) {
   return typeof value === "number" && Number.isFinite(value) && value > 0;
@@ -48,7 +62,7 @@ export function clampSeekTime(seconds, realDurationSeconds) {
  *
  * @param {{realDurationSeconds?: number|null, currentTimeSeconds?: number}} input
  * @returns {{disabled: boolean, min: number, max: number, value: number, ratio: number,
- *            step: number, elapsedText: string, durationText: string,
+ *            step: number, domStep: string, elapsedText: string, durationText: string,
  *            label: string, ariaValueText: string}}
  */
 export function globalSeekState({ realDurationSeconds = null, currentTimeSeconds = 0 } = {}) {
@@ -68,6 +82,7 @@ export function globalSeekState({ realDurationSeconds = null, currentTimeSeconds
     value,
     ratio,
     step: GLOBAL_SEEK_STEP_SECONDS,
+    domStep: GLOBAL_SEEK_DOM_STEP,
     elapsedText,
     durationText,
     label: disabled

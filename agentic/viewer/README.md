@@ -100,8 +100,12 @@ node agentic/viewer/tools/make-demo.mjs
  时间轴继续按 JSON 秒显示，但滑条范围只认真实文件（两端就是文件头/尾）。
 - **不跟随视图**：缩放/平移/fit 都不改滑条范围与当前值；seek 也不自动平移/缩放时间窗，
  不改 BPM 与 onset（onset 秒数组永不改变）。播放位置落在当前时间窗之外时 playhead 暂时不可见（不强行跟随）。
-- **操作**：拖动滑条；或聚焦后按 `Home`（=0）/ `End`（=文件结尾）/ `←``→`（步进 0.1s）/ `PageUp``PageDown`；
- 播放时滑条值与“已播/全长”文本按真实音频秒同步。
+- **操作**：拖动滑条；或聚焦后按 `Home`（=文件开头 0）/ `End`（=**实际文件结尾，精确值**）/ `←``→`（步进 0.1s）/ `PageUp``PageDown`（步进 1s）；
+  播放时滑条值与“已播/全长”文本按真实音频秒同步。
+- **精确端点（无步进网格截断）**：滑条 DOM `step="any"`，**原始值 / seek 精确到真实音频末尾**（如 16.037s 文件的
+  右端=16.037s：`End`、拖过右端、箭头超界都精确落在末尾，不会被 0.1 网格截到 16.0）；短于一个箭头步长
+  （如 0.05s）的可解码短文件同样可用（右端=0.05s，不再只剩 0 一个位置）。箭头的 0.1s 步进由显式键处理提供；
+  “已播/全长”文本保留两位小数（仅显示舍入，不影响 seek 与原始值）。
 - **边界与清理**：未加载音频 / 解码失败时滑条停用（无假范围）；换音频文件后范围更新为新文件真实时长；
  滑条值永不超出实际音频末尾；换文件/`dispose()` 时音频、监听器、rAF 一并释放（浏览器回归断言）。
 
@@ -120,12 +124,12 @@ node agentic/viewer/tools/make-demo.mjs
 ## 测试
 
 ```bash
-# 单元测试（158 项：结构/语义负例、原型键/Unicode 对齐、字节级入口、BPM 不改 onset、
+# 单元测试（162 项：结构/语义负例、原型键/Unicode 对齐、字节级入口、BPM 不改 onset、
 # 锚点缩放、持续事件裁剪、bounded ruler/beat grid、worker 回退不假零、加载生命周期、
-# 全局滑条范围=真实音频时长/夹取/禁用/替换（issue #41）、server 逃逸、差分回归、卫生检查…）
+# 全局滑条范围=真实音频时长/夹取/禁用/替换/精确端点（issue #41）、server 逃逸、差分回归、卫生检查…）
 node --test "agentic/viewer/tests/*.test.js"
 
-# 真实浏览器检查（58 项 demo/stress/lifecycle/并发/资源/全局滑条）+ 100k stress 量化 + 截图
+# 真实浏览器检查（65 项 demo/stress/lifecycle/并发/资源/全局滑条）+ 100k stress 量化 + 截图
 node agentic/viewer/tools/make-stress.mjs --events 100000     # 生成 gitignore 的 stress 夹具
 node agentic/viewer/tools/browser-check.mjs                    # 需要本机 Chrome/Edge（Node ≥ 22）
 
@@ -197,6 +201,10 @@ node agentic/viewer/tools/browser-check.mjs \
    否则可能拍到上一帧。
 6. 全局滑条（issue #41）的 max 取已解码 `AudioBuffer.duration`（回退有限的 `HTMLMediaElement.duration`）；
    时长未知/无限的媒体（如流式 `duration=Infinity`）不支持，滑条会明确停用而不是给假范围。
+   非整数时长（如 16.037s）与短于一个箭头步长的短文件均可精确 seek 到真实末尾（DOM `step="any"` + 显式键盘步进）；
+   “已播/全长”文本显示保留两位小数，属显示舍入。
+   精度口径：seek 使用完整双精度；浏览器 DOM range 的 value 字符串上限 15 位有效数字（≈1e-13s），
+   实测 Chrome 的 HTMLMediaElement.currentTime 回读为微秒量级——远小于本契约要求的“不被 0.1 网格截断”。
 
 ## 人类验收指南（按 issue #34 验收项）
 
@@ -215,3 +223,5 @@ node agentic/viewer/tools/browser-check.mjs \
    拖动滑条（或 Home/End/←/→）到 0 / 8 / 16，**时间窗不自动平移/缩放，BPM 与 onset 不变**；
    播放时滑条与“已播/全长”文本跟随；换一个时长不同的文件（如 3s）滑条右端跟着变（mismatch 仍红字）；
    未加载/坏文件时滑条停用。
+   精确端点：用 16.037s 这类**非整数时长**文件验证右端=16.037s（`End`、拖过右端、箭头超界都精确落在真实末尾，
+   不被 0.1 网格截到 16.0）；再用 0.05s 的可解码短文件验证滑条可用且右端=0.05s。

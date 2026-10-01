@@ -14,6 +14,7 @@ import assert from "node:assert/strict";
 
 import { MediaEngine } from "../js/transport.js";
 import {
+  GLOBAL_SEEK_DOM_STEP,
   GLOBAL_SEEK_STEP_SECONDS,
   clampSeekTime,
   globalSeekState,
@@ -53,7 +54,7 @@ class FakeAudioContext {
     if (decodeShouldFail) throw new Error("forced decode failure");
     const text = Buffer.from(bytes).toString("utf8");
     // deterministic durations: "tiny" -> 0.001s, "long" -> 20s, else 8s @ 8kHz
-    const length = text === "tiny" ? 8 : text === "long" ? 20 * 8000 : 8 * 8000;
+    const length = text === "tiny" ? 8 : text === "fractional" ? Math.round(16.037 * 8000) : text === "long" ? 20 * 8000 : 8 * 8000;
     return new FakeAudioBuffer(new Float32Array(length));
   }
   async close() {
@@ -133,6 +134,35 @@ test("elapsed/duration labels and aria-valuetext are readable", () => {
   assert.ok(model.ariaValueText.includes("8.00s") && model.ariaValueText.includes("16.00s"));
 });
 
+test("DOM step stays 'any' so fractional file ends are representable (no step-grid sanitization)", () => {
+  // a numeric DOM step (e.g. 0.1) would sanitize 16.037 -> 16.0 and would
+  // leave a sub-0.1s file with no usable position at all
+  assert.equal(globalSeekState({ realDurationSeconds: 16.037 }).domStep, "any");
+  assert.equal(GLOBAL_SEEK_DOM_STEP, "any");
+});
+
+test("fractional real duration (16.037s): max and clamped value keep the fraction exactly", () => {
+  const atEnd = globalSeekState({ realDurationSeconds: 16.037, currentTimeSeconds: 999 });
+  assert.equal(atEnd.max, 16.037);
+  assert.equal(atEnd.value, 16.037, "the raw value sits exactly on the real file end");
+  assert.equal(atEnd.ratio, 1);
+  const mid = globalSeekState({ realDurationSeconds: 16.037, currentTimeSeconds: 8 });
+  assert.equal(mid.value, 8);
+  assert.equal(mid.max, 16.037);
+  // display text may round to two decimals; the raw value must not
+  assert.equal(mid.durationText, "16.04s");
+  assert.equal(atEnd.value, 16.037);
+});
+
+test("files shorter than one 0.1s keyboard step still have a usable whole range", () => {
+  const model = globalSeekState({ realDurationSeconds: 0.05, currentTimeSeconds: 999 });
+  assert.equal(model.disabled, false, "a 0.05s file is real audio: the slider must stay enabled");
+  assert.equal(model.max, 0.05);
+  assert.equal(model.value, 0.05, "the end of a sub-step file is reachable (not stuck at 0)");
+  assert.equal(clampSeekTime(GLOBAL_SEEK_STEP_SECONDS, 0.05), 0.05, "an arrow step clamps exactly onto the real end");
+  assert.equal(clampSeekTime(-1, 0.05), 0);
+});
+
 test("the slider model is independent of the view window (zoom/pan cannot move it)", () => {
   const view = { start: 0, end: 16 };
   const before = globalSeekState({ realDurationSeconds: 16, currentTimeSeconds: 8 });
@@ -197,5 +227,14 @@ test("MediaEngine.seek() clamps to the real file end, not to any JSON value", as
   assert.equal(engine.audioElement.currentTime, 0);
   engine.seek(4);
   assert.equal(engine.audioElement.currentTime, 4);
+  await engine.dispose();
+});
+
+test("fractional file length survives end-to-end (duration source + seek clamp, no rounding)", async () => {
+  const engine = new MediaEngine({ createWorker: () => null });
+  await engine.loadMain(file("frac/track.wav", "fractional"), { ...docAudio, durationSeconds: 12 });
+  assert.equal(engine.durationSeconds(), 16.037, "decoded 16.037s file keeps its fraction");
+  engine.seek(999);
+  assert.equal(engine.audioElement.currentTime, 16.037, "seek lands exactly on the real file end");
   await engine.dispose();
 });

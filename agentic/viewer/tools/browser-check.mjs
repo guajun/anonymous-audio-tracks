@@ -242,6 +242,13 @@ async function screenshot(client, name) {
 
 const CLOSE = (a, b, tolerance) => Math.abs(a - b) <= tolerance;
 
+// The DOM range input's VALUE string is limited to 15 significant digits by
+// the browser (e.g. 16.036979166666665 -> 16.0369791666667, ~3e-13 s error);
+// max/min/seek keep the full double and the media clock itself is µs-quantized.
+// The endpoint contract is therefore asserted at 1e-9 s — orders of magnitude
+// below the old 0.1-step truncation (0.037 s) and below any audible precision.
+const ENDPOINT_EPS = 1e-9;
+
 // ---- real input helpers for the global seek slider (issue #41) -----------
 
 /** Real CDP key press (native range behaviour: Home/End/arrows step the slider). */
@@ -264,6 +271,28 @@ async function sliderClick(client, ratio) {
   await client.send("Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
   await client.send("Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: "left", clickCount: 1 });
   await client.send("Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: "left", clickCount: 1 });
+}
+
+/** Real mouse drag on the slider PAST the right edge (must reach the real file end). */
+async function sliderDragRightPastEnd(client) {
+  await evaluate(client, `(() => { document.getElementById('global-seek').scrollIntoView({ block: 'center' }); return true; })()`);
+  await sleep(80);
+  const rect = await evaluate(
+    client,
+    `(() => { const r = document.getElementById('global-seek').getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; })()`,
+  );
+  const y = rect.y + rect.height / 2;
+  const startX = rect.x + rect.width * 0.4;
+  await client.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: startX, y });
+  await client.send("Input.dispatchMouseEvent", { type: "mousePressed", x: startX, y, button: "left", buttons: 1, clickCount: 1 });
+  for (const ratio of [0.6, 0.8, 1.0]) {
+    await client.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: rect.x + rect.width * ratio, y, button: "left", buttons: 1 });
+    await sleep(40);
+  }
+  const pastEnd = rect.x + rect.width + 60;
+  await client.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: pastEnd, y, button: "left", buttons: 1 });
+  await sleep(60);
+  await client.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: pastEnd, y, button: "left", buttons: 0, clickCount: 1 });
 }
 
 export async function main(argv = process.argv.slice(2)) {
@@ -1384,6 +1413,113 @@ export async function main(argv = process.argv.slice(2)) {
       "decode failure disables the global slider (no stale range/value from the previous file)",
       disabledAfterBad.seek.disabled === true && disabledAfterBad.resource.mainLoaded === false && disabledAfterBad.resource.rafActive === false,
       disabledAfterBad,
+    );
+
+    // ---- fractional endpoint + sub-step file (PR #43 review contract) --
+    // real decodable files: 16.037s (not on the 0.1 grid) and 0.05s (shorter
+    // than one arrow step). The DOM step is "any" so the raw value can sit
+    // EXACTLY on the real file end; keyboard stepping is explicit (0.1s).
+    const fractionalWav = join(workDir, "fractional-16.037.wav");
+    await writeFile(fractionalWav, buildDemoWav({ seconds: 16.037, events: [] }));
+    const tinyWav = join(workDir, "tiny-0.05.wav");
+    await writeFile(tinyWav, buildDemoWav({ seconds: 0.05, events: [] }));
+    await loadJsonFile(client, join(VIEWER_ROOT, "fixtures", "demo", "demo-track.json"));
+    await loadAudioFile(client, fractionalWav);
+    const fracLoaded = await evaluate(client, "(() => window.__aatViewer.globalSeek())()");
+    record(
+      "fractional file (16.037s): slider max keeps the fraction (no step sanitization to 16.000)",
+      fracLoaded.disabled === false &&
+        fracLoaded.domStep === "any" &&
+        fracLoaded.realDurationSeconds > 16.03 &&
+        fracLoaded.max > 16.03 &&
+        CLOSE(fracLoaded.max, fracLoaded.realDurationSeconds, 1e-9),
+      fracLoaded,
+    );
+    await evaluate(client, `(() => { document.getElementById('global-seek').focus(); return true; })()`);
+    await pressKey(client, { key: "End", code: "End", windowsVirtualKeyCode: 35 });
+    await sleep(120);
+    const fracEnd = await evaluate(
+      client,
+      `(() => { const api = window.__aatViewer; const s = api.globalSeek(); return { value: s.value, max: s.max, real: s.realDurationSeconds, playhead: api.playheadTime() }; })()`,
+    );
+    record(
+      "fractional file: keyboard End lands EXACTLY on the real file end (16.037…, not 16.000)",
+      fracEnd.value > 16.03 &&
+        Math.abs(fracEnd.value - 16) > 0.03 &&
+        CLOSE(fracEnd.value, fracEnd.real, ENDPOINT_EPS) &&
+        CLOSE(fracEnd.value, fracEnd.max, ENDPOINT_EPS) &&
+        CLOSE(fracEnd.playhead, fracEnd.value, 1e-4),
+      fracEnd,
+    );
+    await evaluate(client, "(() => { window.__aatViewer.seek(5); return true; })()");
+    await sliderDragRightPastEnd(client);
+    await sleep(150);
+    const fracDrag = await evaluate(
+      client,
+      `(() => { const api = window.__aatViewer; const s = api.globalSeek(); return { value: s.value, real: s.realDurationSeconds, playhead: api.playheadTime() }; })()`,
+    );
+    record(
+      "fractional file: dragging past the right edge reaches the exact real file end",
+      fracDrag.value > 16.03 &&
+        Math.abs(fracDrag.value - 16) > 0.03 &&
+        CLOSE(fracDrag.value, fracDrag.real, ENDPOINT_EPS) &&
+        CLOSE(fracDrag.playhead, fracDrag.value, 1e-4),
+      fracDrag,
+    );
+    await evaluate(client, "(() => { window.__aatViewer.seek(16.0); return true; })()");
+    await pressKey(client, { key: "ArrowRight", code: "ArrowRight", windowsVirtualKeyCode: 39 });
+    await sleep(120);
+    const fracArrow = await evaluate(
+      client,
+      "(() => { const s = window.__aatViewer.globalSeek(); return { value: s.value, real: s.realDurationSeconds }; })()",
+    );
+    record(
+      "fractional file: an arrow step from 16.0 clamps exactly onto the 16.037s end",
+      fracArrow.value > 16.03 && Math.abs(fracArrow.value - 16) > 0.03 && CLOSE(fracArrow.value, fracArrow.real, ENDPOINT_EPS),
+      fracArrow,
+    );
+    await evaluate(client, "(() => { window.__aatViewer.seek(6); return true; })()");
+    await evaluate(client, "window.__aatViewer.play()");
+    await sleep(700);
+    const fracPlay = await evaluate(
+      client,
+      `(() => { const api = window.__aatViewer; const s = api.globalSeek(); return { value: s.value, playhead: api.playheadTime(), playing: api.state().playing, max: s.max }; })()`,
+    );
+    await evaluate(client, "window.__aatViewer.pause()");
+    record(
+      "fractional file: playback keeps the slider in sync with the audio clock (max stays 16.037…)",
+      fracPlay.playing === true && fracPlay.playhead > 6.2 && CLOSE(fracPlay.value, fracPlay.playhead, 0.05) && fracPlay.max > 16.03,
+      fracPlay,
+    );
+
+    // tiny decodable clip: shorter than one 0.1s arrow step, still fully usable
+    await loadAudioFile(client, tinyWav);
+    const tinyLoaded = await evaluate(client, "(() => window.__aatViewer.globalSeek())()");
+    record(
+      "tiny decodable clip (0.05s): slider enabled, max = the real 0.05s (shorter than one arrow step)",
+      tinyLoaded.disabled === false &&
+        tinyLoaded.realDurationSeconds > 0.04 &&
+        tinyLoaded.realDurationSeconds < 0.06 &&
+        CLOSE(tinyLoaded.max, tinyLoaded.realDurationSeconds, 1e-9),
+      tinyLoaded,
+    );
+    await evaluate(client, `(() => { document.getElementById('global-seek').focus(); return true; })()`);
+    await pressKey(client, { key: "End", code: "End", windowsVirtualKeyCode: 35 });
+    await sleep(120);
+    const tinyEnd = await evaluate(
+      client,
+      "(() => { const api = window.__aatViewer; const s = api.globalSeek(); return { value: s.value, real: s.realDurationSeconds, playhead: api.playheadTime() }; })()",
+    );
+    await pressKey(client, { key: "ArrowLeft", code: "ArrowLeft", windowsVirtualKeyCode: 37 });
+    await sleep(120);
+    const tinyBack = await evaluate(client, "(() => window.__aatViewer.globalSeek().value)()");
+    record(
+      "tiny clip: End reaches the exact end (not stuck at 0) and arrows step within [0, real end]",
+      tinyEnd.value > 0.04 &&
+        CLOSE(tinyEnd.value, tinyEnd.real, ENDPOINT_EPS) &&
+        CLOSE(tinyEnd.playhead, tinyEnd.value, 1e-4) &&
+        tinyBack === 0,
+      { end: tinyEnd, afterArrowLeft: tinyBack },
     );
 
     // ---- real #33 output integration (CLI-provided paths only) ----------
