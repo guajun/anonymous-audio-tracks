@@ -1,9 +1,16 @@
-# agentic/e2e — 真实端到端：用户输入复音音乐 → Agent + SAM → onset JSON（issue #33）
+# agentic/e2e — 真实端到端：用户输入复音音乐 → Agent + SAM → onset JSON（issue #33/#42）
 
 **一句话**：本目录是“扮演用户的 harness + 预算内真实运行 + 冻结校验 + 抽查 + run manifest”。
 真实链路：**用户 harness → Pi（`google/gemini-3.8-flash`）经 `audio_attach` bridge 听到音频字节 →
 Agent 自主读 `sam-audio` skill → 真实 SAM 分离（GPU）→ 自写 DSP onset/BPM → 产出
 `outputs/e2e/<run-id>/result.json`（协议 `agentic-audio-tracks/v1`）→ 冻结校验 → 抽查 → run manifest**。
+
+**两种 profile（issue #42 新增）**：
+
+| profile | 工作流 | prompt | 链证据 |
+|---|---|---|---|
+| `baseline`（#33） | 对原混音各自独立分离（drums/bass/synthesizer 都输入原 clip） | `harness/prompt_template.md` | 无 sidecar（历史形态） |
+| `residual`（#42） | **残差逐层剥离**：原混音 → 复用已认可 drums → 听 R1 → 自主选下一层 → SAM `--audio`=**R1 raw residual** → 听 R2 → 再剥或停 | `harness/prompt_template_residual.md` | `stage-chain.json`（`agentic-e2e-stage-chain/v1`）+ 链核对（每级 input hash == 前级 residual raw hash） |
 
 - **不是**预写输出脚本：harness 不产生任何分离/onset/result 内容，只准备输入、发任务、收集证据。
   result.json 必须由 Agent 的真实工具调用产出（trace 里能看到 bash/audio_attach/write 的调用链）。
@@ -19,7 +26,8 @@ Agent 自主读 `sam-audio` skill → 真实 SAM 分离（GPU）→ 自写 DSP o
 | 内容 | 类型 | 位置 |
 |---|---|---|
 | clip 裁剪/hash/登记、trace 提取、校验、manifest、抽查 | 离线（纯标准库） | `harness/` |
-| 离线自动测试（40 项，0 网络 0 API 0 GPU） | mock / 自生成 fixture | `tests/` |
+| 离线自动测试（127 项 e2e，0 网络 0 API 0 GPU） | mock / 自生成 fixture | `tests/` |
+| 残差剥离链核对 / 监听副本（PCM16/copy） | 离线（纯标准库） | `harness/residual_chain.py` |
 | 自生成复音 fixture + 真值 | **mock**（构造真值） | `fixtures/make_mock_fixture.py` |
 | 真实 Gemini + bridge + SAM GPU 运行 | **真实**（会产生 API 费用与 GPU 负载） | `harness/run_e2e.py`，证据 `reports/` |
 | onset overlay / 抽查统计 | 离线 DSP（对真实 run 产物） | `harness/spotcheck.py` |
@@ -67,11 +75,13 @@ python agentic/e2e/harness/spotcheck.py stats --result "<WS>/outputs/e2e/<RUN-ID
 1. `run_e2e.py` 退出码 `0`，且打印 `e2e pass run_id=…`；
 2. `outputs/e2e/<RUN-ID>/result.json` 存在且是 Agent 写的（`local/e2e/<RUN-ID>/events.jsonl` 的
    `write`/`bash` 调用链可证）；`validation.json` 全部 `pass`；
-3. **执行证据门**（`validation.json.execution`，9 项）全 pass：精确观测 `google`+`gemini-3.8-flash`、
-   无终态 provider 失败、**结构化**成功 `audio_attach`（MIME=audio/*、bytes>0、工具未报错）、
-   **结构化**成功真·SAM 分离（wrapper 载荷 `action=sam.separate`/`ok=true`/`exit_code=0`；
-   dry-run/失败/无载荷分开计数）、成功调用与实际产物**逐一关联**（report 可解析+非空 outputs）、
-   分离**尝试**（含失败）≤预算、必要 stage（含 spotcheck）**存在且非失败**、事件流存在、原 runner 成功；
+3. **执行证据门**（`validation.json.execution`，baseline 9 项 / 残差流 12 项）全 pass：精确观测
+   `google`+`gemini-3.8-flash`、无终态 provider 失败、**结构化**成功 `audio_attach`（MIME=audio/*、
+   bytes>0、工具未报错）、**结构化**成功真·SAM 分离（wrapper 载荷 `action=sam.separate`/`ok=true`/
+   `exit_code=0`；dry-run/失败/无载荷分开计数）、成功调用与实际产物**逐一关联**（report 可解析+
+   非空 outputs）、分离**尝试**（含失败）≤预算、必要 stage（含 spotcheck，残差流再加
+   `residual_chain`）**存在且非失败**、事件流存在、原 runner 成功；残差流追加 3 项（**只加不减**）：
+   sidecar 已记录、链核对全过、trace 观测到对残差监听副本的真实挂载（自主残差听音实证）；
 4. `run-manifest.json` 含输入 hash、模型/工具 pin、代码归属（revision/组件 hash）、GPU/耗时/用量
    （含 cache 口径）、tool trace 摘要、失败 stage（如有）。
 
@@ -83,6 +93,37 @@ python agentic/e2e/harness/spotcheck.py stats --result "<WS>/outputs/e2e/<RUN-ID
 `2` 用法 / `3` 命令失败或无法启动 / `4` 超时（杀进程，blocked）/ `5` provider error /
 `6` 事件流空/乱码/不完整。**blocked 不写成 success**；失败时产物（事件流/stderr/manifest）全保留。
 
+## 2b. 残差逐层剥离 run（issue #42，`--profile residual`）
+
+```sh
+# 真实对照 run：复用基线 drums（target/residual/36 事件）+ 最多 2 次额外 SAM；
+# 每级 input hash 必须 == 前级 residual raw hash（sidecar + 真实 request/trace 三重核对）
+python agentic/e2e/harness/run_e2e.py --workspace "<WS>" --run-id <新 RUN_ID> \
+  --clip-name e2e-clip-001.wav --profile residual --baseline-run <基线 RUN_ID> \
+  --sam-separations 2 --sam-timeout 900 --timeout 2400
+
+# 离线复核（链 + 数据校验 + 执行门；不产生新 API/GPU）
+python agentic/e2e/harness/residual_chain.py verify \
+  --chain "<WS>/outputs/e2e/<RUN_ID>/stage-chain.json" --run-dir "<WS>/outputs/e2e/<RUN_ID>" \
+  --clip-json "<WS>/local/e2e/clip-e2e-clip-001.wav.json" --audio-root "<WS>/audio/inputs" \
+  --baseline-run-dir "<WS>/outputs/e2e/<基线 RUN_ID>" --ws "<WS>" \
+  --events "<WS>/local/e2e/<RUN_ID>/events.jsonl" --budget 2 \
+  --result "<WS>/outputs/e2e/<RUN_ID>/result.json"
+```
+
+**残差流硬性规则（prompt + 链核对双重强制）**：⓪基线必须与当前 clip **同源**（result 与原始
+request 的实测输入 hash/duration 一致；仅时长相同不够，写 prompt 前就拒绝）；①优先复用基线
+ drums（逐字节副本 + 事件原样，基线只读不改）；②每级 SAM `--audio` = 前一级 **raw residual**
+（PCM16 监听代理不得当输入）；③“各自从原混音独立分离”链断裂，不能伪称 sequential；④每级先听
+ residual（监听副本放 `audio/inputs/<run-id>-listen/` **精确命名空间**（不用前缀匹配）、已存在
+文件不覆盖、记录 raw/proxy hash + 转换参数 + 等长）再选下一层/停止，且听音必须发生在下一次
+成功分离**之前**、中间隔模型轮次（同轮并行不能声称“听后自主选择”）；⑤停止理由 ∈
+`near-silence|artifacts-only|no-identifiable-layer|uncertain|budget`，`stop.residual_left` 必须是
+最后一级 residual，残余写 limitations（residual 是模型估计、误差会累积、不承诺更准）。
+
+**采样率口径**：禁止的是**人为** trim/shift/时间量化/监听副本换采样率；算法内部的采样率转换
+（如 clip 44.1 kHz 进 SAM、输出 48 kHz）是既有行为、允许；PCM16 幅度量化 ≠ 时间量化。
+
 ## 3. 输出布局与 latest 策略（冻结）
 
 ```text
@@ -93,6 +134,9 @@ python agentic/e2e/harness/spotcheck.py stats --result "<WS>/outputs/e2e/<RUN-ID
 <WS>/outputs/e2e/<RUN-ID>/stems/<层名>/   SAM 产物（target.wav/residual.wav/request.json/report.json）
 <WS>/outputs/e2e/<RUN-ID>/validation.json 校验报告（数据校验 + 执行证据门）
 <WS>/outputs/e2e/<RUN-ID>/stem-map.json   唯一 stem 文件名映射（hash/相对路径/采样率）
+<WS>/outputs/e2e/<RUN-ID>/stage-chain.json 残差剥离阶段链 sidecar（issue #42；Agent 写）
+<WS>/outputs/e2e/<RUN-ID>/stage-chain-verify.json 链核对报告（harness 写）
+<WS>/audio/inputs/<RUN-ID>-listen/       本 run 派生的监听副本（PCM16/copy；raw/proxy hash 可审计）
 <WS>/outputs/e2e/<RUN-ID>/stems-unique/   唯一文件名副本（stem-<instrument-id>-<basename>）
 <WS>/outputs/e2e/<RUN-ID>/spotcheck/      overlay.wav + spotcheck.json（harness 写）
 <WS>/outputs/e2e/<RUN-ID>/run-manifest.json run manifest（harness 写）
@@ -110,7 +154,9 @@ python agentic/e2e/harness/spotcheck.py stats --result "<WS>/outputs/e2e/<RUN-ID
 |---|---|
 | 结果协议 | `agentic-audio-tracks/v1`（#32 冻结；校验 `python agentic/schema/validate.py <file>`） |
 | 结果路径 | `outputs/e2e/<run-id>/result.json`；latest = `outputs/e2e/LATEST.txt` |
-| run manifest | schema `agentic-e2e-run-manifest/v2`（输入 hash、模型/工具/代码归属 pin、参数、耗时/GPU、用量含 cache 口径、trace 摘要、stages、数据校验+执行门、限制、复现命令；`verification_runs[]` 追加式） |
+| run manifest | schema `agentic-e2e-run-manifest/v3`（= v2 + `flow`/`stage_chain`（issue #42），v2 字段语义不变：输入 hash、模型/工具/代码归属 pin、参数、耗时/GPU、用量含 cache 口径、trace 摘要、stages、数据校验+执行门、限制、复现命令；`verification_runs[]` 追加式） |
+| 残差剥离 stage sidecar | schema `agentic-e2e-stage-chain/v1`（`stage-chain.json`；示例 `fixtures/stage-chain.example.json`）：每级 layer/描述/sam(performed|reused)/input/target/residual/request 的相对路径+hash、listen（audio_attach + proxy raw/proxy hash/转换参数/等长）、reused（基线 run/result hash/基线原件 hash/事件 canonical hash/用户局部反馈）、stop(reason/evidence/residual_left)、limitations；**加法 sidecar，不扩展 #32 冻结 result 协议** |
+| 链核对 | schema `agentic-e2e-stage-chain-verify/v1`（`residual_chain.py verify`，16 项）：sidecar 结构 × 真实文件 hash × `request.json` 实际 input × trace `--audio` 参数链；**每级 input hash == 前级 raw residual hash**，原混音/监听代理偷换 → FAIL；听音顺序（听音在下一次分离前且隔模型轮次）；时间轴（每文件自身采样率，时长 == clip，禁人为 trim/shift/时间量化/换采样率）；监听代理（`<run-id>-listen` 精确命名空间/不覆盖已有文件/PCM16 或 copy/等长）；停止/预算规则 + `stop.residual_left`==最终级 residual；基线与当前 clip 同源 + 基线复用只读完整性（hash + 36 事件 canonical hash `sha256(json.dumps(events, sort_keys=True, separators=(",", ":"), ensure_ascii=False))`） |
 | 执行证据门 | schema `agentic-e2e-execution-gate/v2`：精确观测 model/provider（缺 provider 即 fail）+ 无终态 provider 失败 + 结构化成功附件（MIME=audio/* 且 bytes>0）+ 结构化成功真·SAM 分离（wrapper `action=sam.separate`/`ok=true`/`exit_code=0`，shell 掩盖失败不算成功）+ 成功调用与产物逐一关联 + 尝试数（含失败/unknown）≤预算 + 必要 stage（含 spotcheck）存在且非失败 + 原 runner 成功；真实 pass 的必要条件 |
 | 唯一 stem 映射 | schema `agentic-e2e-stem-map/v1`：`stem-map.json` + `stems-unique/stem-<instrument-id>-<basename>`（真实 hash/相对路径/采样率；只做加法，不动原 Agent 产物、不改 schema、时轴不变） |
 | 校验层级 | `--level real`（真实来源链 **bridge AND llm AND sam AND dsp** 全在 + 精确 SHA/前缀 pin + bridge 通路）/ `--level fixture`（自生成 mock） |
@@ -126,7 +172,7 @@ python agentic/e2e/harness/spotcheck.py stats --result "<WS>/outputs/e2e/<RUN-ID
 uv run --no-project --python 3.12 --with pytest==8.4.2 python -m pytest agentic/e2e/tests -q
 ```
 
-成功判据：`75 passed`。覆盖：WAV 读取按实际编码 tag（**float32 不再当 int32**；PCM16/24/32 +
+成功判据：`136 passed`。覆盖：WAV 读取按实际编码 tag（**float32 不再当 int32**；PCM16/24/32 +
 float32 + EXTENSIBLE fixture；不受支持/损坏格式拒收）、spotcheck 逐 stem 采样率（48k stem 不被
 44.1k mix 时钟索引）与 `--sample 1` 不除零、clip 裁剪元数据/实际 hash/幂等（含小数参数）与
 `E_HASH_CONFLICT`/`E_BRIDGE_SIZE`/`E_CLIP_EMPTY`/非有限数/预算守卫、写前路径守卫（run id /
@@ -136,7 +182,14 @@ clip 名白名单 + realpath 包含）、新 run 拒绝复用旧证据目录、�
 唯一 stem 映射（原件不动）；mock fixture 真值与确定性；DSP helper 方法冒烟（**不代表真实音乐
 准确率**）；**mock-native-bridge 区别**；trace 提取/分离计数；prompt 实例化；
 `run_e2e --dry-run`（零 API）；脱敏/隐私扫描；run manifest 与 `LATEST.txt` 策略；
-spotcheck overlay/统计的结构与“非总体准确率”口径。
+spotcheck overlay/统计的结构与“非总体准确率”口径。**残差剥离（issue #42）**：prompt 强制逐层
+residual/复用 drums/安全停止与预算、链规则（每级 input==前级 raw residual；错误原混音/监听
+代理/trace 偷换输入拒绝，不能误报 sequential；听音顺序=听→模型轮次→分离；residual_left=
+最终级 residual）、基线同源（同长不同源拒）、时间轴（每 stem 自身采样率、等长、禁人为 trim/
+shift/时间量化/换采样率）、停止/预算规则（budget 停止必须真实用尽预算）、监听副本（`<run-id>-listen`
+精确命名空间、不覆盖已有文件、raw/proxy hash、转换参数、等长、PCM16/copy 编码、raw≠out、幂等）、
+基线复用完整性与**基线不可变**、路径/隐私、残差流 gate 只加不减、`--profile residual --dry-run`、
+verify CLI 退出码。
 
 ## 6. 隐私与清理
 
@@ -173,6 +226,9 @@ spotcheck overlay/统计的结构与“非总体准确率”口径。
 - SAM 输出只有“目标/残差”两路，多于两个声源时只能多次分离，串音不可避免；乐器标签是假设。
 - bridge ≠ Pi 原生音频（#30）；音频一次性注入、不落会话；模型对编码细节的感知不保证。
 - BPM 由 onset 间隔估计（倍频折算），低置信度时协议允许 `bpm: null`。
+- **残差不是真值**：target/residual 都是模型估计，逐层剥离误差会**累积**，不承诺比原独立分离
+  更准；用户对 drums 的认可只是**局部定性**反馈，不代表 drums target 完全干净或 residual 是真值；
+  逐层剥离后其余声层来源/边界不确定，报告按“复用/实测/推测”分栏记录。
 - usage/cost 是 Pi 记账近似值，非账单真值；GPU 耗时随负载波动。
 
 ## 9. 证据索引
@@ -181,6 +237,7 @@ spotcheck overlay/统计的结构与“非总体准确率”口径。
 - 抽查记录（漏检/误检/串音）：[`reports/20-spotcheck.md`](reports/20-spotcheck.md)
 - 环境与预算：[`reports/00-environment.md`](reports/00-environment.md)
 - 限制 / blocked 记录：[`reports/30-limits.md`](reports/30-limits.md)
+- 残差逐层剥离对照 run（issue #42）：[`reports/40-residual-flow.md`](reports/40-residual-flow.md)
 - 冻结接口与 pin：[`manifest.json`](manifest.json)
 - 上游：[`../schema/README.md`](../schema/README.md)（#32 协议）、
   [`../workspace-template/README.md`](../workspace-template/README.md)（#31 workspace）、
