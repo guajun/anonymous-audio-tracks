@@ -1,0 +1,322 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:anonymous-audio-tracks:schema:agentic-audio-tracks/v1",
+  "title": "agentic-audio-tracks/v1",
+  "description": "匿名音轨分析结果文档（piano-roll-like）协议 v1。行=乐器来源，列=秒时间轴。JSON 秒是时间真值，BPM 只是辅助网格；本 schema 只做结构校验，跨字段语义规则见 schema/semantic_rules.json 与 CLI 校验器。只使用 Draft 2020-12 便携子集关键字（type/properties/required/additionalProperties/items/$defs/$ref/enum/const/pattern/minimum/exclusiveMinimum/maximum/minLength/maxLength/minItems），可在浏览器任意 Draft 2020-12 校验器中使用。",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "audio",
+    "tempo",
+    "instruments",
+    "provenance",
+    "limitations"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "agentic-audio-tracks/v1",
+      "description": "协议版本，必须精确匹配；不匹配时校验器只报 E_VERSION 并停止，未来版本通过新增版本字符串演进（新增/修改字段=破坏性变更=新版本）。"
+    },
+    "audio": {
+      "$ref": "#/$defs/audio",
+      "description": "被分析音频的元数据。"
+    },
+    "tempo": {
+      "$ref": "#/$defs/tempo",
+      "description": "节拍估计（辅助信息，可完全未知）。"
+    },
+    "instruments": {
+      "type": "array",
+      "description": "乐器/声音来源列表，可为空数组（空结果策略：没找到可信来源，不表示音频无声）。同类乐器允许出现多个条目（label 相同、id 不同）。数组顺序为展示顺序，协议不排序要求。",
+      "items": {
+        "$ref": "#/$defs/instrument"
+      }
+    },
+    "provenance": {
+      "$ref": "#/$defs/provenance",
+      "description": "文档级来源记录：这份 JSON 是谁/什么工具/什么方法产出的。"
+    },
+    "limitations": {
+      "type": "array",
+      "description": "已知限制的透明说明（可为空数组，但推荐至少写一条，例如模型精度不承诺、pitch 非真值等）。",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 1024
+      }
+    }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}(?![\\s\\S])",
+      "description": "稳定 ID：ASCII 字母数字开头，可含 . _ -，1..64 字符，**绝对结尾**（用 (?![\\s\\S]) 而非 $，因 Python/JS 的 $ 可能匹配在末尾换行之前，会放过 'id\\n'）。乐器 id 全文档唯一，event id 全文档唯一（跨乐器也不可重复）。"
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "置信度 [0,1]，0=完全不确定，1=完全确定；不是概率校准值，仅作排序/阈值参考。"
+    },
+    "sourceKind": {
+      "enum": [
+        "human",
+        "dsp",
+        "llm",
+        "sam",
+        "mock",
+        "native",
+        "bridge",
+        "unknown"
+      ],
+      "description": "取值来源：human=人工标注/输入，dsp=传统信号处理，llm=语言/多模态模型推测，sam=SAM Audio 分离结果，mock=自生成示例，native=Pi 原生声音模态，bridge=非原生桥接调用，unknown=未知来源。"
+    },
+    "relpath": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "description": "相对路径（推荐 / 分隔），只用于和本地音频根目录做匹配，不做任意 fetch。结构层只查长度；绝对路径/盘符/UNC/../URL/反斜杠/控制字符/Windows 保留名等安全规则由语义校验器 E_PATH 拒绝。"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}(?![\\s\\S])",
+      "description": "文件内容的 SHA-256（小写十六进制 64 位，绝对结尾，不允许尾随换行/空白）。mock/fixture 可为自生成哈希，但必须注明 provenance.source=mock。"
+    },
+    "audio": {
+      "type": "object",
+      "required": [
+        "filename",
+        "sha256",
+        "duration_seconds",
+        "sample_rate"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "filename": {
+          "$ref": "#/$defs/relpath"
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "duration_seconds": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "音频总时长，单位秒，>0，有限数。所有事件时间边界以它为准。"
+        },
+        "sample_rate": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "采样率，单位 Hz，整数 >=1。"
+        }
+      }
+    },
+    "tempo": {
+      "type": "object",
+      "required": [
+        "bpm",
+        "source",
+        "confidence"
+      ],
+      "additionalProperties": false,
+      "description": "tempo 未知时：bpm=null、source=\"unknown\"、confidence=0，且不得出现 beat_origin_seconds（语义规则 E_TEMPO）。bpm 为数值时 source 不得为 \"unknown\"。",
+      "properties": {
+        "bpm": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "exclusiveMinimum": 0,
+          "maximum": 1000,
+          "description": "每分钟节拍数；可为 null 表示未知（UI 应允许人类补 BPM）。数值范围 (0,1000]，典型 20..400。只是辅助网格，不用于量化事件。"
+        },
+        "source": {
+          "$ref": "#/$defs/sourceKind"
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        },
+        "beat_origin_seconds": {
+          "type": "number",
+          "minimum": 0,
+          "description": "可选节拍网格原点（秒），0 <= 值 <= audio.duration_seconds（语义校验）。仅在 bpm 已知时允许出现。"
+        }
+      }
+    },
+    "instrument": {
+      "type": "object",
+      "required": [
+        "id",
+        "label",
+        "description",
+        "source",
+        "confidence",
+        "events"
+      ],
+      "additionalProperties": false,
+      "description": "一个乐器/声音来源（piano-roll 的一行）。不承诺 MIDI 或音高真值，只表达‘来源 + 秒时间上的活动’。",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "人类可读名称；识别不出时用 \"unknown\"。允许同类乐器多条目（label 可重复，id 不可重复）。"
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "description": "来源描述：这一行是谁产出的、依据什么（例如‘sam stem A，疑似打击乐’）。"
+        },
+        "source": {
+          "$ref": "#/$defs/sourceKind"
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        },
+        "stem": {
+          "$ref": "#/$defs/stem",
+          "description": "可选：该来源的分离轨文件引用（仅路径+哈希，不内嵌音频）。"
+        },
+        "events": {
+          "type": "array",
+          "description": "事件列表（可为空）。必须按 (onset_seconds 升序, id 升序) 排序；允许同时 onset（语义规则 E_TIME_ORDER）。",
+          "items": {
+            "$ref": "#/$defs/event"
+          }
+        }
+      }
+    },
+    "stem": {
+      "type": "object",
+      "required": [
+        "filename",
+        "sha256"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "filename": {
+          "$ref": "#/$defs/relpath"
+        },
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      }
+    },
+    "event": {
+      "type": "object",
+      "required": [
+        "id",
+        "onset_seconds"
+      ],
+      "additionalProperties": false,
+      "description": "一个事件（piano-roll 的一个格子）。只有 onset_seconds 是事实主张；duration/pitch/confidence/method 仅在有证据时填写，禁止填推测值。",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "onset_seconds": {
+          "type": "number",
+          "minimum": 0,
+          "description": "事件开始时间，单位秒（相对音频文件 t=0）。0 <= 值 <= audio.duration_seconds（语义校验，允许恰好落在文件末尾）。不做节拍量化。"
+        },
+        "duration_seconds": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "可选：事件时长（秒），>0 且有限；要求 onset_seconds + duration_seconds <= audio.duration_seconds，允许相等（事件恰好在文件末尾结束）。没有证据就不填。"
+        },
+        "pitch": {
+          "$ref": "#/$defs/pitch",
+          "description": "可选：音高证据。没有音高证据时不得填写；这不是 MIDI 真值，只是来源给出的估计。"
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence",
+          "description": "可选：该事件的置信度。"
+        },
+        "source": {
+          "$ref": "#/$defs/sourceKind",
+          "description": "可选：该事件的取值来源；缺省视为继承所属 instrument.source。"
+        },
+        "method": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]{0,63}(?![\\s\\S])",
+          "description": "可选：产生该事件的方法标识（小写 slug，如 spectral-flux、llm-estimate、human-tap；绝对结尾，不允许尾随换行/空白）。"
+        }
+      }
+    },
+    "pitch": {
+      "type": "object",
+      "required": [
+        "midi",
+        "confidence",
+        "source"
+      ],
+      "additionalProperties": false,
+      "description": "音高证据对象：三个字段必须一起出现（有证据才填）。",
+      "properties": {
+        "midi": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 127,
+          "description": "MIDI 音符号 0..127（仅作近似音高参考，非真值）。"
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        },
+        "source": {
+          "$ref": "#/$defs/sourceKind"
+        }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "required": [
+        "steps"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "steps": {
+          "type": "array",
+          "minItems": 1,
+          "description": "产出这份文档的步骤链，至少 1 步。",
+          "items": {
+            "$ref": "#/$defs/step"
+          }
+        },
+        "notes": {
+          "type": "string",
+          "maxLength": 4096,
+          "description": "可选补充说明（例如模型版本、参数、已知偏差）。"
+        }
+      }
+    },
+    "step": {
+      "type": "object",
+      "required": [
+        "tool",
+        "source"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "tool": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "工具/组件名，如 audio-toolbox.sam、aat-schema-fixtures。"
+        },
+        "source": {
+          "$ref": "#/$defs/sourceKind"
+        },
+        "note": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "description": "可选：该步骤的说明（做了什么、为什么可信/不可信）。"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,76 @@
+{
+  "schema_version": "agentic-audio-tracks/v1",
+  "audio": {
+    "filename": "demo/demo-track.wav",
+    "sha256": "07a03589a4efec6c6b49fe134dd480d3a80e144f7391b1256b64c589ade3629a",
+    "duration_seconds": 12,
+    "sample_rate": 44100
+  },
+  "tempo": {
+    "bpm": 120,
+    "source": "mock",
+    "confidence": 0.5,
+    "beat_origin_seconds": 0
+  },
+  "instruments": [
+    {
+      "id": "drums-kick",
+      "label": "kick",
+      "description": "自生成的底鼓合成脉冲（每小节 1、3 拍）",
+      "source": "mock",
+      "confidence": 0.5,
+      "events": []
+    },
+    {
+      "id": "hats-1",
+      "label": "hi-hat",
+      "description": "自生成的高频 tick（仅 onset，无 duration）",
+      "source": "mock",
+      "confidence": 0.5,
+      "events": []
+    },
+    {
+      "id": "bass-1",
+      "label": "bass",
+      "description": "自生成的低音线条",
+      "source": "mock",
+      "confidence": 0.5,
+      "events": []
+    },
+    {
+      "id": "piano-a",
+      "label": "piano",
+      "description": "自生成的钢琴和弦（同一 label 的第一个 id）",
+      "source": "mock",
+      "confidence": 0.5,
+      "events": []
+    },
+    {
+      "id": "piano-b",
+      "label": "piano",
+      "description": "自生成的钢琴装饰音（与 piano-a 同 label 不同 id，UI 不合并）",
+      "source": "mock",
+      "confidence": 0.5,
+      "stem": {
+        "filename": "demo/demo-track.wav",
+        "sha256": "07a03589a4efec6c6b49fe134dd480d3a80e144f7391b1256b64c589ade3629a"
+      },
+      "events": []
+    }
+  ],
+  "provenance": {
+    "steps": [
+      {
+        "tool": "aat-viewer-make-demo",
+        "source": "mock",
+        "note": "纯合成音频 + 合成事件（确定性生成器）；这是 mock 演示/测试数据，不是研究结果、不代表任何模型能力。"
+      }
+    ],
+    "notes": "mock demo for issue #34; events align with audible tones at the same absolute seconds."
+  },
+  "limitations": [
+    "本文件是自生成 mock（provenance.source=mock），不是研究结果，也不代表任何分析模型的能力。",
+    "pitch/confidence 均为随意填的演示值，不承诺正确性；没有音高证据的真实输出不应填写 pitch。",
+    "音频与事件共享同一合成时间轴（onset 秒=可听脉冲秒），用于验证显示对齐，不是真实音乐分析。"
+  ]
+}

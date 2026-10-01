@@ -1,0 +1,21 @@
+{
+  "schema_version": "agentic-audio-tracks/v1",
+  "hash_basis": "git-blob canonical LF (CRLF normalized to LF before hashing; equals the committed git blob bytes on every checkout)",
+  "note": "byte-identical build copies of the frozen issue #32 contract; tests assert sha256 (canonical LF) + git_blob_sha1 equality with the upstream files in agentic/schema/schema/",
+  "files": [
+    {
+      "file": "agentic-audio-tracks-v1.schema.json",
+      "source": "agentic/schema/schema/agentic-audio-tracks-v1.schema.json",
+      "sha256": "8bb4d5a6007ba3de72859358254fa189b0e1785eaa891feb49eb0242acf32338",
+      "git_blob_sha1": "81202a92bf8be8ff7db5d2a82f274f215804edec",
+      "bytes": 11589
+    },
+    {
+      "file": "semantic_rules.json",
+      "source": "agentic/schema/schema/semantic_rules.json",
+      "sha256": "5bab70dfe52f94ae783dd93845898ef6159b633254d78b350eef7d6958c4b96d",
+      "git_blob_sha1": "f57f87d0872be86cb94c56711eacac51aa3ae69b",
+      "bytes": 7247
+    }
+  ]
+}
