@@ -62,6 +62,33 @@ input[type="file"], input[type="number"] {
 
 input[type="number"] { width: 110px; }
 
+/* 全局整曲 seek 滑条（issue #41）：属于播放器，不属于时间轴——
+   范围固定为真实音频文件 [0, duration]，绝不跟随 view.start/end 缩放/平移。 */
+.global-seek-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.global-seek-row label {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+input[type="range"]#global-seek {
+  width: 100%;
+  max-width: 720px;
+  accent-color: #4c9aff;
+}
+
+input[type="range"]#global-seek:disabled { opacity: 0.45; }
+
+input[type="range"]#global-seek:focus-visible {
+  outline: 2px solid #4c9aff;
+  outline-offset: 2px;
+}
+
 button {
   font: inherit;
   color: var(--text);

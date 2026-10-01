@@ -27,6 +27,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { startServer } from "./serve.mjs";
 import { writeDemo, buildDemoWav, demoDoc, demoEvents, DEMO_WAV_NAME } from "./make-demo.mjs";
 import { writeStress } from "./make-stress.mjs";
+import { GLOBAL_SEEK_STEP_SECONDS } from "../js/global-seek.js";
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
 export const VIEWER_ROOT = resolve(HERE, "..");
@@ -240,6 +241,59 @@ async function screenshot(client, name) {
 }
 
 const CLOSE = (a, b, tolerance) => Math.abs(a - b) <= tolerance;
+
+// The DOM range input's VALUE string is limited to 15 significant digits by
+// the browser (e.g. 16.036979166666665 -> 16.0369791666667, ~3e-13 s error);
+// max/min/seek keep the full double and the media clock itself is µs-quantized.
+// The endpoint contract is therefore asserted at 1e-9 s — orders of magnitude
+// below the old 0.1-step truncation (0.037 s) and below any audible precision.
+const ENDPOINT_EPS = 1e-9;
+
+// ---- real input helpers for the global seek slider (issue #41) -----------
+
+/** Real CDP key press (native range behaviour: Home/End/arrows step the slider). */
+async function pressKey(client, { key, code, windowsVirtualKeyCode }) {
+  await client.send("Input.dispatchKeyEvent", { type: "keyDown", key, code, windowsVirtualKeyCode });
+  await client.send("Input.dispatchKeyEvent", { type: "keyUp", key, code, windowsVirtualKeyCode });
+}
+
+/** Real mouse click on the slider track at `ratio` (0 = file start, 1 = file end). */
+async function sliderClick(client, ratio) {
+  await evaluate(client, `(() => { document.getElementById('global-seek').scrollIntoView({ block: 'center' }); return true; })()`);
+  await sleep(80);
+  const rect = await evaluate(
+    client,
+    `(() => { const r = document.getElementById('global-seek').getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; })()`,
+  );
+  const clamped = Math.min(Math.max(ratio, 0), 1);
+  const x = rect.x + Math.min(Math.max(clamped * rect.width, 1), Math.max(1, rect.width - 1));
+  const y = rect.y + rect.height / 2;
+  await client.send("Input.dispatchMouseEvent", { type: "mouseMoved", x, y });
+  await client.send("Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: "left", clickCount: 1 });
+  await client.send("Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: "left", clickCount: 1 });
+}
+
+/** Real mouse drag on the slider PAST the right edge (must reach the real file end). */
+async function sliderDragRightPastEnd(client) {
+  await evaluate(client, `(() => { document.getElementById('global-seek').scrollIntoView({ block: 'center' }); return true; })()`);
+  await sleep(80);
+  const rect = await evaluate(
+    client,
+    `(() => { const r = document.getElementById('global-seek').getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; })()`,
+  );
+  const y = rect.y + rect.height / 2;
+  const startX = rect.x + rect.width * 0.4;
+  await client.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: startX, y });
+  await client.send("Input.dispatchMouseEvent", { type: "mousePressed", x: startX, y, button: "left", buttons: 1, clickCount: 1 });
+  for (const ratio of [0.6, 0.8, 1.0]) {
+    await client.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: rect.x + rect.width * ratio, y, button: "left", buttons: 1 });
+    await sleep(40);
+  }
+  const pastEnd = rect.x + rect.width + 60;
+  await client.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: pastEnd, y, button: "left", buttons: 1 });
+  await sleep(60);
+  await client.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: pastEnd, y, button: "left", buttons: 0, clickCount: 1 });
+}
 
 export async function main(argv = process.argv.slice(2)) {
   const options = parseArgs(argv);
@@ -472,6 +526,14 @@ export async function main(argv = process.argv.slice(2)) {
     const durationState = await evaluate(client, "window.__aatViewer.state().doc.durationSeconds");
     record("JSON duration is the timeline length", durationState === 12, { durationSeconds: durationState });
 
+    // ---- global whole-file slider before any audio (issue #41) ---------
+    const seekBeforeAudio = await evaluate(client, "(() => window.__aatViewer.globalSeek())()");
+    record(
+      "global slider is disabled until a decodable audio file is loaded (min 0, no fake range)",
+      seekBeforeAudio.disabled === true && seekBeforeAudio.min === 0 && seekBeforeAudio.max === 0 && /停用/.test(seekBeforeAudio.ariaValueText),
+      seekBeforeAudio,
+    );
+
     // ---- audio load, hash + waveform ------------------------------------
     await loadAudioFile(client, join(VIEWER_ROOT, "fixtures", "generated", DEMO_WAV_NAME));
     await waitFor(client, "audio loaded", "window.__aatViewer.state().audio.loaded === true", 30000);
@@ -559,6 +621,11 @@ export async function main(argv = process.argv.slice(2)) {
     screenshots.push(await screenshot(client, "02-bpm-grid-240"));
 
     // ---- wheel zoom anchored at the pointer -----------------------------
+    // scroll the canvas into the viewport first: the CDP wheel event is
+    // dispatched at real viewport coordinates (the added global-seek row
+    // shifts the timeline down, so this keeps the pointer ON the canvas)
+    await evaluate(client, `(() => { document.getElementById('canvas-stack').scrollIntoView({ block: 'center' }); return true; })()`);
+    await sleep(120);
     const stackBox = await evaluate(
       client,
       "(() => { const r = document.getElementById('canvas-stack').getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; })()",
@@ -1178,6 +1245,283 @@ export async function main(argv = process.argv.slice(2)) {
       freshAudioFrames,
     );
 
+    // ---- global whole-file seek slider (issue #41) ---------------------
+    // state here: demo-track.json (12s declared) + demo wav (12s real)
+    const seekLoaded = await evaluate(client, "(() => window.__aatViewer.globalSeek())()");
+    record(
+      "global slider: min=0 / max=REAL loaded audio duration (12s file), enabled",
+      seekLoaded.disabled === false && seekLoaded.min === 0 && CLOSE(seekLoaded.max, 12, 1e-6) && CLOSE(seekLoaded.realDurationSeconds, 12, 1e-6),
+      seekLoaded,
+    );
+
+    // zoom / pan must never rescale or move the slider
+    const zoomInvariant = await evaluate(
+      client,
+      `(() => {
+        const api = window.__aatViewer;
+        api.seek(6);
+        const before = api.globalSeek();
+        api.setView(4, 6);
+        api.zoomAt(0.5, 300);
+        api.panPx(-120);
+        api.panPx(80);
+        const after = api.globalSeek();
+        return { before, after, view: api.state().view };
+      })()`,
+    );
+    record(
+      "zoom/pan never rescales or moves the global slider (range and value stay put)",
+      zoomInvariant.before.min === zoomInvariant.after.min &&
+        zoomInvariant.before.max === zoomInvariant.after.max &&
+        CLOSE(zoomInvariant.after.value, 6, 0.05) &&
+        CLOSE(zoomInvariant.before.value, zoomInvariant.after.value, 0.05),
+      zoomInvariant,
+    );
+
+    // real mouse on the slider track: whole-file seeks leave the view alone
+    const viewFrozen = await evaluate(client, "(() => { window.__aatViewer.setView(3, 5); return window.__aatViewer.state().view; })()");
+    const seekRows = [];
+    for (const target of [
+      { ratio: 0, expected: 0 },
+      { ratio: 0.5, expected: 6 },
+      { ratio: 1, expected: 12 },
+    ]) {
+      await sliderClick(client, target.ratio);
+      await sleep(150);
+      const row = await evaluate(
+        client,
+        `(() => {
+          const api = window.__aatViewer;
+          return { seek: api.globalSeek(), playhead: api.playheadTime(), view: api.state().view };
+        })()`,
+      );
+      seekRows.push({ ...target, ...row });
+    }
+    record(
+      "global slider seeks the WHOLE file (0 / 6 / 12 of 12s) and never pans/zooms the time window",
+      seekRows.every((row) => CLOSE(row.seek.value, row.expected, 0.3) && CLOSE(row.playhead, row.expected, 0.35)) &&
+        seekRows.every((row) => CLOSE(row.view.start, viewFrozen.start, 1e-9) && CLOSE(row.view.end, viewFrozen.end, 1e-9)),
+      seekRows,
+    );
+
+    // keyboard: Home / End / arrows seek the whole file (native range keys)
+    await evaluate(client, `(() => { document.getElementById('global-seek').focus(); return true; })()`);
+    const keyRows = [];
+    const grabSeek = () =>
+      evaluate(client, `(() => { const api = window.__aatViewer; return { seek: api.globalSeek(), playhead: api.playheadTime(), view: api.state().view }; })()`);
+    await pressKey(client, { key: "End", code: "End", windowsVirtualKeyCode: 35 });
+    await sleep(120);
+    keyRows.push({ key: "End", ...(await grabSeek()) });
+    await pressKey(client, { key: "ArrowLeft", code: "ArrowLeft", windowsVirtualKeyCode: 37 });
+    await sleep(120);
+    keyRows.push({ key: "ArrowLeft", ...(await grabSeek()) });
+    await pressKey(client, { key: "Home", code: "Home", windowsVirtualKeyCode: 36 });
+    await sleep(120);
+    keyRows.push({ key: "Home", ...(await grabSeek()) });
+    await pressKey(client, { key: "ArrowRight", code: "ArrowRight", windowsVirtualKeyCode: 39 });
+    await sleep(120);
+    keyRows.push({ key: "ArrowRight", ...(await grabSeek()) });
+    record(
+      "keyboard Home/End/arrows drive the global slider (End=file end, Home=file start), view untouched",
+      CLOSE(keyRows[0].seek.value, 12, 0.05) &&
+        CLOSE(keyRows[1].seek.value, keyRows[0].seek.value - GLOBAL_SEEK_STEP_SECONDS, 0.02) &&
+        CLOSE(keyRows[2].seek.value, 0, 0.05) &&
+        CLOSE(keyRows[3].seek.value, GLOBAL_SEEK_STEP_SECONDS, 0.02) &&
+        keyRows.every((row) => CLOSE(row.view.start, viewFrozen.start, 1e-9) && CLOSE(row.view.end, viewFrozen.end, 1e-9)),
+      keyRows,
+    );
+
+    // playback keeps the slider in sync with the audio clock
+    await evaluate(client, "(() => { window.__aatViewer.seek(2); return true; })()");
+    await evaluate(client, "window.__aatViewer.play()");
+    await sleep(800);
+    const playSync = await evaluate(
+      client,
+      `(() => {
+        const api = window.__aatViewer;
+        const s = api.globalSeek();
+        return { value: s.value, playhead: api.playheadTime(), playing: api.state().playing, labelText: s.labelText, aria: s.ariaValueText };
+      })()`,
+    );
+    await evaluate(client, "window.__aatViewer.pause()");
+    record(
+      "playback updates the global slider value + elapsed/duration label with the audio clock",
+      playSync.playing === true && playSync.playhead > 2.2 && CLOSE(playSync.value, playSync.playhead, 0.15) && /已播/.test(playSync.labelText) && /全长/.test(playSync.aria),
+      playSync,
+    );
+
+    // onsets / BPM must be untouched by any seek
+    const seekInvariants = await evaluate(
+      client,
+      `(() => {
+        const api = window.__aatViewer;
+        const onsetsBefore = JSON.stringify(api.onsetsSnapshot());
+        const bpmBefore = JSON.stringify(api.state().bpm);
+        api.seek(1);
+        api.seek(7);
+        api.seek(11);
+        api.seek(0);
+        return {
+          onsetsUnchanged: onsetsBefore === JSON.stringify(api.onsetsSnapshot()),
+          bpmUnchanged: bpmBefore === JSON.stringify(api.state().bpm),
+        };
+      })()`,
+    );
+    record("global seeks never change onsets or BPM", seekInvariants.onsetsUnchanged && seekInvariants.bpmUnchanged, seekInvariants);
+
+    // different-duration file: the slider follows the REAL file, not the JSON
+    await loadJsonFile(client, join(VIEWER_ROOT, "fixtures", "demo", "demo-track.json"));
+    await loadAudioFile(client, wrongWav); // 3s real file vs 12s JSON claim
+    await waitFor(client, "mismatch notes for wrong duration", "window.__aatViewer.state().audio.notes.length > 0", 30000);
+    const shortFile = await evaluate(
+      client,
+      `(() => {
+        const api = window.__aatViewer;
+        api.seek(999); // must clamp to the REAL 3s file end, never to the JSON's 12s
+        return { seek: api.globalSeek(), playhead: api.playheadTime(), codes: api.state().audio.notes.map((n) => n.code) };
+      })()`,
+    );
+    record(
+      "different-duration file: slider range = REAL 3s file (not the 12s JSON claim), mismatch stays explicit",
+      shortFile.seek.disabled === false &&
+        CLOSE(shortFile.seek.max, 3, 0.05) &&
+        shortFile.seek.value <= shortFile.seek.max + 1e-9 &&
+        CLOSE(shortFile.playhead, 3, 0.1) &&
+        shortFile.codes.includes("A_DURATION"),
+      shortFile,
+    );
+
+    // replacing the file updates the range to the new real duration
+    await loadAudioFile(client, join(VIEWER_ROOT, "fixtures", "generated", DEMO_WAV_NAME));
+    const replaced = await evaluate(client, "(() => window.__aatViewer.globalSeek())()");
+    record(
+      "replacing the audio updates the slider range to the new real duration (3s -> 12s)",
+      replaced.disabled === false && CLOSE(replaced.max, 12, 0.05) && replaced.value <= replaced.max + 1e-9,
+      replaced,
+    );
+
+    // decode failure disables the slider and clears the playable state
+    const notAudioSeek = join(workDir, "not-audio-global-seek.wav");
+    await writeFile(notAudioSeek, "this is not decodable audio\n");
+    await loadAudioFile(client, notAudioSeek);
+    await sleep(300);
+    const disabledAfterBad = await evaluate(
+      client,
+      `(() => ({ seek: window.__aatViewer.globalSeek(), resource: window.__aatViewer.resourceState() }))()`,
+    );
+    record(
+      "decode failure disables the global slider (no stale range/value from the previous file)",
+      disabledAfterBad.seek.disabled === true && disabledAfterBad.resource.mainLoaded === false && disabledAfterBad.resource.rafActive === false,
+      disabledAfterBad,
+    );
+
+    // ---- fractional endpoint + sub-step file (PR #43 review contract) --
+    // real decodable files: 16.037s (not on the 0.1 grid) and 0.05s (shorter
+    // than one arrow step). The DOM step is "any" so the raw value can sit
+    // EXACTLY on the real file end; keyboard stepping is explicit (0.1s).
+    const fractionalWav = join(workDir, "fractional-16.037.wav");
+    await writeFile(fractionalWav, buildDemoWav({ seconds: 16.037, events: [] }));
+    const tinyWav = join(workDir, "tiny-0.05.wav");
+    await writeFile(tinyWav, buildDemoWav({ seconds: 0.05, events: [] }));
+    await loadJsonFile(client, join(VIEWER_ROOT, "fixtures", "demo", "demo-track.json"));
+    await loadAudioFile(client, fractionalWav);
+    const fracLoaded = await evaluate(client, "(() => window.__aatViewer.globalSeek())()");
+    record(
+      "fractional file (16.037s): slider max keeps the fraction (no step sanitization to 16.000)",
+      fracLoaded.disabled === false &&
+        fracLoaded.domStep === "any" &&
+        fracLoaded.realDurationSeconds > 16.03 &&
+        fracLoaded.max > 16.03 &&
+        CLOSE(fracLoaded.max, fracLoaded.realDurationSeconds, 1e-9),
+      fracLoaded,
+    );
+    await evaluate(client, `(() => { document.getElementById('global-seek').focus(); return true; })()`);
+    await pressKey(client, { key: "End", code: "End", windowsVirtualKeyCode: 35 });
+    await sleep(120);
+    const fracEnd = await evaluate(
+      client,
+      `(() => { const api = window.__aatViewer; const s = api.globalSeek(); return { value: s.value, max: s.max, real: s.realDurationSeconds, playhead: api.playheadTime() }; })()`,
+    );
+    record(
+      "fractional file: keyboard End lands EXACTLY on the real file end (16.037…, not 16.000)",
+      fracEnd.value > 16.03 &&
+        Math.abs(fracEnd.value - 16) > 0.03 &&
+        CLOSE(fracEnd.value, fracEnd.real, ENDPOINT_EPS) &&
+        CLOSE(fracEnd.value, fracEnd.max, ENDPOINT_EPS) &&
+        CLOSE(fracEnd.playhead, fracEnd.value, 1e-4),
+      fracEnd,
+    );
+    await evaluate(client, "(() => { window.__aatViewer.seek(5); return true; })()");
+    await sliderDragRightPastEnd(client);
+    await sleep(150);
+    const fracDrag = await evaluate(
+      client,
+      `(() => { const api = window.__aatViewer; const s = api.globalSeek(); return { value: s.value, real: s.realDurationSeconds, playhead: api.playheadTime() }; })()`,
+    );
+    record(
+      "fractional file: dragging past the right edge reaches the exact real file end",
+      fracDrag.value > 16.03 &&
+        Math.abs(fracDrag.value - 16) > 0.03 &&
+        CLOSE(fracDrag.value, fracDrag.real, ENDPOINT_EPS) &&
+        CLOSE(fracDrag.playhead, fracDrag.value, 1e-4),
+      fracDrag,
+    );
+    await evaluate(client, "(() => { window.__aatViewer.seek(16.0); return true; })()");
+    await pressKey(client, { key: "ArrowRight", code: "ArrowRight", windowsVirtualKeyCode: 39 });
+    await sleep(120);
+    const fracArrow = await evaluate(
+      client,
+      "(() => { const s = window.__aatViewer.globalSeek(); return { value: s.value, real: s.realDurationSeconds }; })()",
+    );
+    record(
+      "fractional file: an arrow step from 16.0 clamps exactly onto the 16.037s end",
+      fracArrow.value > 16.03 && Math.abs(fracArrow.value - 16) > 0.03 && CLOSE(fracArrow.value, fracArrow.real, ENDPOINT_EPS),
+      fracArrow,
+    );
+    await evaluate(client, "(() => { window.__aatViewer.seek(6); return true; })()");
+    await evaluate(client, "window.__aatViewer.play()");
+    await sleep(700);
+    const fracPlay = await evaluate(
+      client,
+      `(() => { const api = window.__aatViewer; const s = api.globalSeek(); return { value: s.value, playhead: api.playheadTime(), playing: api.state().playing, max: s.max }; })()`,
+    );
+    await evaluate(client, "window.__aatViewer.pause()");
+    record(
+      "fractional file: playback keeps the slider in sync with the audio clock (max stays 16.037…)",
+      fracPlay.playing === true && fracPlay.playhead > 6.2 && CLOSE(fracPlay.value, fracPlay.playhead, 0.05) && fracPlay.max > 16.03,
+      fracPlay,
+    );
+
+    // tiny decodable clip: shorter than one 0.1s arrow step, still fully usable
+    await loadAudioFile(client, tinyWav);
+    const tinyLoaded = await evaluate(client, "(() => window.__aatViewer.globalSeek())()");
+    record(
+      "tiny decodable clip (0.05s): slider enabled, max = the real 0.05s (shorter than one arrow step)",
+      tinyLoaded.disabled === false &&
+        tinyLoaded.realDurationSeconds > 0.04 &&
+        tinyLoaded.realDurationSeconds < 0.06 &&
+        CLOSE(tinyLoaded.max, tinyLoaded.realDurationSeconds, 1e-9),
+      tinyLoaded,
+    );
+    await evaluate(client, `(() => { document.getElementById('global-seek').focus(); return true; })()`);
+    await pressKey(client, { key: "End", code: "End", windowsVirtualKeyCode: 35 });
+    await sleep(120);
+    const tinyEnd = await evaluate(
+      client,
+      "(() => { const api = window.__aatViewer; const s = api.globalSeek(); return { value: s.value, real: s.realDurationSeconds, playhead: api.playheadTime() }; })()",
+    );
+    await pressKey(client, { key: "ArrowLeft", code: "ArrowLeft", windowsVirtualKeyCode: 37 });
+    await sleep(120);
+    const tinyBack = await evaluate(client, "(() => window.__aatViewer.globalSeek().value)()");
+    record(
+      "tiny clip: End reaches the exact end (not stuck at 0) and arrows step within [0, real end]",
+      tinyEnd.value > 0.04 &&
+        CLOSE(tinyEnd.value, tinyEnd.real, ENDPOINT_EPS) &&
+        CLOSE(tinyEnd.playhead, tinyEnd.value, 1e-4) &&
+        tinyBack === 0,
+      { end: tinyEnd, afterArrowLeft: tinyBack },
+    );
+
     // ---- real #33 output integration (CLI-provided paths only) ----------
     if (options.real.json) {
       if (!options.real.audio) throw new Error("--real-json requires --real-audio");
@@ -1261,6 +1605,119 @@ export async function main(argv = process.argv.slice(2)) {
         CLOSE(realSeekZoom.t, 8, 0.3) && CLOSE(realSeekZoom.anchorBefore, realSeekZoom.anchorAfter, 1e-6),
         realSeekZoom,
       );
+
+      // ---- issue #41: global whole-file slider on the REAL 16s file -----
+      const realSlider = await evaluate(
+        client,
+        `(() => {
+          const api = window.__aatViewer;
+          api.fit();
+          api.seek(8);
+          return api.globalSeek();
+        })()`,
+      );
+      record(
+        "real 16s file: global slider spans the REAL file 0..16 and sits at 8s (50%)",
+        realSlider.disabled === false &&
+          realSlider.min === 0 &&
+          CLOSE(realSlider.max, 16, 0.05) &&
+          CLOSE(realSlider.value, 8, 0.05) &&
+          CLOSE(realSlider.ratio, 0.5, 0.005) &&
+          /全长/.test(realSlider.labelText),
+        realSlider,
+      );
+      const realZoomStable = await evaluate(
+        client,
+        `(() => {
+          const api = window.__aatViewer;
+          api.setView(4, 6);
+          const width = document.getElementById('canvas-stack').clientWidth;
+          api.zoomAt(0.5, width * 0.5);
+          return { seek: api.globalSeek(), view: api.state().view };
+        })()`,
+      );
+      record(
+        "real: zoom into 4..6 leaves the slider range 0..16 and the value at 8 (50%) untouched",
+        CLOSE(realZoomStable.seek.min, 0, 1e-9) &&
+          CLOSE(realZoomStable.seek.max, 16, 0.05) &&
+          CLOSE(realZoomStable.seek.value, 8, 0.05) &&
+          CLOSE(realZoomStable.seek.ratio, 0.5, 0.005) &&
+          realZoomStable.view.start >= 4 - 1e-6 &&
+          realZoomStable.view.end <= 6 + 1e-6,
+        realZoomStable,
+      );
+      // real mouse clicks: whole-file seeks at 0% / 50% / 100% of the 16s file
+      const realOnsetsBpmBefore = await evaluate(
+        client,
+        `(() => ({ onsets: JSON.stringify(window.__aatViewer.onsetsSnapshot()), bpm: JSON.stringify(window.__aatViewer.state().bpm) }))()`,
+      );
+      const realSeekRows = [];
+      for (const target of [
+        { ratio: 0, expected: 0 },
+        { ratio: 0.5, expected: 8 },
+        { ratio: 1, expected: 16 },
+      ]) {
+        await sliderClick(client, target.ratio);
+        await sleep(150);
+        const row = await evaluate(
+          client,
+          `(() => {
+            const api = window.__aatViewer;
+            return { seek: api.globalSeek(), playhead: api.playheadTime(), view: api.state().view };
+          })()`,
+        );
+        realSeekRows.push({ ...target, ...row });
+      }
+      const realOnsetsBpmAfter = await evaluate(
+        client,
+        `(() => ({ onsets: JSON.stringify(window.__aatViewer.onsetsSnapshot()), bpm: JSON.stringify(window.__aatViewer.state().bpm) }))()`,
+      );
+      record(
+        "real: global slider 0 / 8 / 16 seek the whole file and NEVER move the window (onsets/BPM untouched)",
+        realSeekRows.every((row) => CLOSE(row.seek.value, row.expected, 0.3) && CLOSE(row.playhead, row.expected, 0.4)) &&
+          realSeekRows.every(
+            (row) => CLOSE(row.view.start, realZoomStable.view.start, 1e-9) && CLOSE(row.view.end, realZoomStable.view.end, 1e-9),
+          ) &&
+          realOnsetsBpmBefore.onsets === realOnsetsBpmAfter.onsets &&
+          realOnsetsBpmBefore.bpm === realOnsetsBpmAfter.bpm,
+        { rows: realSeekRows, onsetsBpmUnchanged: realOnsetsBpmBefore.onsets === realOnsetsBpmAfter.onsets },
+      );
+      // keyboard on the real file: Home / End jump to the file bounds
+      await evaluate(client, `(() => { document.getElementById('global-seek').focus(); return true; })()`);
+      await pressKey(client, { key: "End", code: "End", windowsVirtualKeyCode: 35 });
+      await sleep(120);
+      const realKeyEnd = await evaluate(client, "(() => window.__aatViewer.globalSeek())()");
+      await pressKey(client, { key: "Home", code: "Home", windowsVirtualKeyCode: 36 });
+      await sleep(120);
+      const realKeyHome = await evaluate(client, "(() => window.__aatViewer.globalSeek())()");
+      await pressKey(client, { key: "ArrowRight", code: "ArrowRight", windowsVirtualKeyCode: 39 });
+      await sleep(120);
+      const realKeyArrow = await evaluate(client, "(() => window.__aatViewer.globalSeek())()");
+      record(
+        "real: keyboard Home/End/arrows seek to the real file bounds (0 / 16 / step)",
+        CLOSE(realKeyEnd.value, 16, 0.05) &&
+          CLOSE(realKeyHome.value, 0, 0.05) &&
+          CLOSE(realKeyArrow.value, GLOBAL_SEEK_STEP_SECONDS, 0.02),
+        { end: realKeyEnd.value, home: realKeyHome.value, arrow: realKeyArrow.value },
+      );
+      // playback + slider sync on the real file
+      await evaluate(client, "(() => { window.__aatViewer.seek(4); return true; })()");
+      await evaluate(client, "window.__aatViewer.play()");
+      await sleep(900);
+      const realPlaySync = await evaluate(
+        client,
+        `(() => {
+          const api = window.__aatViewer;
+          const s = api.globalSeek();
+          return { value: s.value, playhead: api.playheadTime(), playing: api.state().playing, labelText: s.labelText };
+        })()`,
+      );
+      await evaluate(client, "window.__aatViewer.pause()");
+      record(
+        "real: playback advances the global slider with the audio clock (no pan/zoom while playing)",
+        realPlaySync.playing === true && realPlaySync.playhead > 4.2 && CLOSE(realPlaySync.value, realPlaySync.playhead, 0.15),
+        realPlaySync,
+      );
       const realStemMapping = [];
       for (const stemPath of options.real.stems) {
         const picked = await stemPick(stemPath);
@@ -1292,6 +1749,10 @@ export async function main(argv = process.argv.slice(2)) {
       await sleep(250);
       screenshots.push(await screenshot(client, "10b-real-chart"));
       screenshots.push(await screenshotFullPage(client, "10c-real-fullpage"));
+      // issue #41 review evidence: the global slider + the real 3-row chart
+      await evaluate(client, "(() => { window.__aatViewer.fit(); window.__aatViewer.seek(8); return true; })()");
+      await sleep(200);
+      screenshots.push(await screenshotFullPage(client, "11-global-seek-slider-and-real-chart"));
       realIntegration = {
         rows: realRows,
         totalEvents: realDoc ? realDoc.totalEvents : null,

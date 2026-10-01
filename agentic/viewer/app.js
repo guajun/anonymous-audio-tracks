@@ -36,6 +36,12 @@ import {
   renderWaveformLane,
 } from "./js/render.js";
 import { MediaEngine, basename, checkAudioMatch } from "./js/transport.js";
+import {
+  GLOBAL_SEEK_PAGE_STEP_SECONDS,
+  GLOBAL_SEEK_STEP_SECONDS,
+  clampSeekTime,
+  globalSeekState,
+} from "./js/global-seek.js";
 
 const RULER_HEIGHT = 26;
 const WAVE_HEIGHT = 84;
@@ -54,6 +60,8 @@ const elements = {
   playButton: document.getElementById("play-button"),
   pauseButton: document.getElementById("pause-button"),
   seekInput: document.getElementById("seek-input"),
+  globalSeek: document.getElementById("global-seek"),
+  globalSeekTime: document.getElementById("global-seek-time"),
   fitButton: document.getElementById("fit-button"),
   resetButton: document.getElementById("reset-button"),
   zoomInButton: document.getElementById("zoom-in-button"),
@@ -253,6 +261,7 @@ function renderGutterRows() {
 
 function render() {
   if (state.disposed) return null;
+  syncGlobalSeek();
   const width = cssWidth();
   const rulerCtx = setupCanvas(elements.rulerCanvas, RULER_HEIGHT);
   const waveCtx = setupCanvas(elements.waveCanvas, WAVE_HEIGHT);
@@ -353,6 +362,38 @@ function playheadTime() {
   return element ? element.currentTime : null;
 }
 
+/**
+ * Project the global whole-file seek slider (issue #41).
+ *
+ * min=0 / max=the REAL loaded audio duration (MediaEngine: decoded buffer or
+ * HTMLMediaElement), value=the playhead clamped to that range. The zoomed
+ * view window and the JSON-declared duration are deliberately NOT inputs:
+ * zoom/pan can never rescale or move this slider, and a wrong JSON duration
+ * can never become the file's real length (the mismatch stays an explicit
+ * note from checkAudioMatch).
+ *
+ * @param {number} [currentTimeSeconds] playhead override (the seek TARGET):
+ *   when seeking, the raw slider value must be exactly the requested position
+ *   clamped to the real file end — never a re-read of the media clock.
+ */
+function syncGlobalSeek(currentTimeSeconds) {
+  const slider = elements.globalSeek;
+  if (!slider) return;
+  const model = globalSeekState({
+    realDurationSeconds: media.durationSeconds(),
+    currentTimeSeconds: currentTimeSeconds === undefined ? playheadTime() : currentTimeSeconds,
+  });
+  slider.min = String(model.min);
+  slider.max = String(model.max);
+  // DOM step must stay "any": a numeric step would sanitize fractional file
+  // lengths (16.037s -> 16.0) and leave sub-step files with no usable position
+  slider.step = model.domStep;
+  slider.disabled = model.disabled;
+  slider.value = String(model.value);
+  slider.setAttribute("aria-valuetext", model.ariaValueText);
+  if (elements.globalSeekTime) elements.globalSeekTime.textContent = model.label;
+}
+
 function setView(next) {
   const total = state.model ? state.model.audio.durationSeconds : 1;
   state.view = clampWindow(next.start, next.end, total);
@@ -383,11 +424,20 @@ function panPx(deltaPx) {
 }
 
 function seekTo(seconds) {
-  const total = state.model ? state.model.audio.durationSeconds : 0;
-  const clamped = Math.min(Math.max(0, Number.isFinite(seconds) ? seconds : 0), total);
+  // Clamp to the REAL loaded audio length, never to the JSON declaration:
+  // a wrong `audio.duration_seconds` must not cut the file short nor extend
+  // past its end (the mismatch is reported separately as an explicit note).
+  const real = media.durationSeconds();
+  const total = real !== null ? real : state.model ? state.model.audio.durationSeconds : 0;
+  const clamped = clampSeekTime(seconds, total);
   if (media.audioElement) media.seek(clamped);
   elements.seekInput.value = clamped.toFixed(2);
+  // seeking only moves the playhead: no pan/zoom, no BPM/onset change.
+  // The slider raw value becomes the seek TARGET (exactly the clamped
+  // position, so Home/End/right-edge drag land precisely on the real file
+  // end even for fractional durations like 16.037s).
   render();
+  syncGlobalSeek(clamped);
 }
 
 function startFrameProbe(count = 60) {
@@ -523,6 +573,7 @@ function clearLoadedState({ keepAudio = false } = {}) {
   setNotes("audio", []);
   setNotes("stems", []);
   renderGutterRows();
+  syncGlobalSeek(); // dropped/cleared audio disables the global slider
 }
 
 async function loadJsonFile(file) {
@@ -820,6 +871,28 @@ function bindEvents() {
   });
   elements.pauseButton.addEventListener("click", pause);
   elements.seekInput.addEventListener("change", () => seekTo(Number(elements.seekInput.value)));
+  // global whole-file slider: drag / Home / End / arrows / PageUp / PageDown
+  // -> seek the whole file, never pan/zoom
+  elements.globalSeek.addEventListener("input", () => seekTo(Number(elements.globalSeek.value)));
+  elements.globalSeek.addEventListener("change", () => seekTo(Number(elements.globalSeek.value)));
+  // explicit keyboard handling: the DOM step is "any" (so the range can END
+  // exactly at a fractional file length), so stepping is ours. Home/End jump
+  // to the REAL file bounds (0 / exact audio duration), arrows move 0.1s and
+  // clamp exactly onto the real file end — never onto a step grid.
+  elements.globalSeek.addEventListener("keydown", (event) => {
+    const duration = media.durationSeconds();
+    const current = Number(elements.globalSeek.value);
+    let next = null;
+    if (event.key === "ArrowLeft" || event.key === "ArrowDown") next = current - GLOBAL_SEEK_STEP_SECONDS;
+    else if (event.key === "ArrowRight" || event.key === "ArrowUp") next = current + GLOBAL_SEEK_STEP_SECONDS;
+    else if (event.key === "PageDown") next = current - GLOBAL_SEEK_PAGE_STEP_SECONDS;
+    else if (event.key === "PageUp") next = current + GLOBAL_SEEK_PAGE_STEP_SECONDS;
+    else if (event.key === "Home") next = 0;
+    else if (event.key === "End") next = duration === null ? null : duration;
+    if (next === null || !Number.isFinite(next)) return;
+    event.preventDefault();
+    seekTo(next);
+  });
   elements.fitButton.addEventListener("click", fit);
   elements.resetButton.addEventListener("click", () => {
     fit();
@@ -956,6 +1029,25 @@ function exposeDebugApi() {
     play: () => play(),
     pause: () => pause(),
     seek: (seconds) => seekTo(seconds),
+    /** DOM truth of the global whole-file seek slider (issue #41). */
+    globalSeek: () => {
+      const slider = elements.globalSeek;
+      const real = media.durationSeconds();
+      const value = Number(slider.value);
+      return {
+        disabled: slider.disabled,
+        min: Number(slider.min),
+        max: Number(slider.max),
+        value,
+        step: GLOBAL_SEEK_STEP_SECONDS,
+        domStep: slider.step,
+        ratio: Number.isFinite(real) && real > 0 ? value / real : 0,
+        realDurationSeconds: real,
+        labelText: elements.globalSeekTime ? elements.globalSeekTime.textContent : "",
+        ariaValueText: slider.getAttribute("aria-valuetext"),
+        labelFor: slider.getAttribute("aria-label"),
+      };
+    },
     playheadTime: () => playheadTime(),
     startFrameProbe: (count) => startFrameProbe(count),
     waveformPeakMax: () => {
@@ -1011,6 +1103,7 @@ function exposeDebugApi() {
       state.peaks = null;
       state.stemPeaks.clear();
       state.stemSampleRates.clear();
+      syncGlobalSeek(); // no audio left: the global slider is disabled again
     },
     resourceState: () => ({
       ...media.resourceState(),
