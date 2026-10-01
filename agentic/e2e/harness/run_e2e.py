@@ -63,7 +63,7 @@ EXIT_OK, EXIT_ACCEPTANCE, EXIT_USAGE = 0, 1, 2
 EXIT_GUARD = 3
 MANIFEST_SCHEMA = "agentic-e2e-run-manifest/v2"
 HARNESS_FILES = ("common.py", "make_clip.py", "run_e2e.py", "validate_result.py",
-                 "spotcheck.py", "dsp_onset.py", "prompt_template.md")
+                 "spotcheck.py", "dsp_onset.py", "stem_map.py", "prompt_template.md")
 REQUIRED_STAGES = ("model_run", "result", "validate")
 
 
