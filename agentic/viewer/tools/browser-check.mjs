@@ -1159,6 +1159,25 @@ export async function main(argv = process.argv.slice(2)) {
     );
     screenshots.push(await screenshot(client, "07-stress-zoomed"));
 
+    // ---- per-dataset frame arrays: no stale probe samples ----------------
+    // (regression: the stress probe's 59 samples used to survive into the next
+    // dataset's footer because the reset still cleared the pre-rename names)
+    const frameCount = "(() => ({ intervals: window.__aatViewer.state().metrics.frameIntervalStartToStartMs.length, renders: window.__aatViewer.state().metrics.frameFullRenderMs.length }))()";
+    await loadJsonFile(client, join(VIEWER_ROOT, "fixtures", "demo", "demo-track.json"));
+    const freshDocFrames = await evaluate(client, frameCount);
+    record(
+      "frame arrays reset on a NEW document (previous dataset's probe samples are gone)",
+      freshDocFrames.intervals === 0 && freshDocFrames.renders === 0,
+      freshDocFrames,
+    );
+    await loadAudioFile(client, join(VIEWER_ROOT, "fixtures", "generated", DEMO_WAV_NAME));
+    const freshAudioFrames = await evaluate(client, frameCount);
+    record(
+      "frame arrays stay empty on NEW audio until a fresh probe runs",
+      freshAudioFrames.intervals === 0 && freshAudioFrames.renders === 0,
+      freshAudioFrames,
+    );
+
     // ---- real #33 output integration (CLI-provided paths only) ----------
     if (options.real.json) {
       if (!options.real.audio) throw new Error("--real-json requires --real-audio");

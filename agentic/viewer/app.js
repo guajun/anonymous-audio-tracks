@@ -106,8 +106,15 @@ const state = {
 function resetDatasetMetrics(part) {
   state.metrics.firstRenderMs = null;
   state.metrics.lastRenderMs = null;
-  state.metrics.frameDeltasMs = [];
-  state.metrics.frameRenderMs = [];
+  // reset the CURRENT (post-rename) frame arrays — the previous dataset's
+  // samples must never leak into the new dataset's footer
+  state.metrics.frameIntervalStartToStartMs = [];
+  state.metrics.frameFullRenderMs = [];
+  // an in-flight frame probe would keep writing into the fresh arrays: stop it
+  if (state.frameProbeId) {
+    cancelAnimationFrame(state.frameProbeId);
+    state.frameProbeId = null;
+  }
   if (part === "json") {
     state.metrics.validateMs = null;
     state.metrics.decodeMs = null;
