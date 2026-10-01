@@ -55,10 +55,24 @@
     },
     "event_provenance": "DSP 检出事件必须 source='dsp' + method=<检测法>；乐器 source=假设来源（sam/llm）；事件按 (onset,id) 升序；秒时间轴 t=0=clip 开头",
     "audio_pathway": "bridge（audio_attach）；Pi 原生音频=unsupported（issue #30），结果不得标 native",
-    "run_manifest": "agentic-e2e-run-manifest/v2：输入 hash、commit/model/tool/代码归属 pin（git revision + harness 组件 hash + Agent DSP 脚本 hash）、参数、耗时/GPU 设备、用量（含 cacheRead/cacheWrite 与对账）、tool trace 摘要（真·分离成功/失败/dry-run 分开计数）、成功/失败 stage、数据校验+执行门、限制、复现命令；verification_runs[] 追加式，不改写原 run 时间戳",
+    "run_manifest": "agentic-e2e-run-manifest/v3（= v2 + flow/stage_chain（issue #42），v2 字段语义不变）：输入 hash、commit/model/tool/代码归属 pin（git revision + harness 组件 hash + Agent DSP 脚本 hash）、参数、耗时/GPU 设备、用量（含 cacheRead/cacheWrite 与对账）、tool trace 摘要（真·分离成功/失败/dry-run 分开计数）、成功/失败 stage、数据校验+执行门、限制、复现命令；verification_runs[] 追加式，不改写原 run 时间戳",
     "execution_gate": "agentic-e2e-execution-gate/v2：精确观测 google/gemini-3.8-flash（缺 provider 即 fail）+ 无终态 provider 失败 + 结构化成功 audio_attach（MIME=audio/* 且 bytes>0 且工具未报错）+ 结构化成功真·SAM 分离（wrapper schema=audio-toolbox.sam/v1、action=sam.separate、ok=true、exit_code=0；shell 掩盖失败不算成功）+ 成功调用与产物逐一关联（report 可解析+非空 outputs）+ 尝试数（含失败/unknown）≤预算 + 必要 stage（含 spotcheck）存在且非失败 + 原 runner 成功；数据校验 ≠ 执行证明",
     "stem_map": "agentic-e2e-stem-map/v1：stem-map.json + stems-unique/ 唯一文件名副本（真实 hash/相对路径/采样率/时长）；只做加法，不动原 Agent result/stems、不改 schema、时轴不变",
     "spotcheck": "agentic-e2e-spotcheck/v2：overlay + 能量上升/跨轴能量代理（cross_stem_energy_ratio，proxy_only，非分离度/串音率）/独立检测器差异；逐 stem 用自己的采样率按秒取窗；口径=抽查迹象，非总体准确率"
+  },
+  "residual_flow": {
+    "issue": "guajun/anonymous-audio-tracks#42（残差逐层剥离 profile）",
+    "profile": "run_e2e.py --profile residual --baseline-run <BASE_RUN> --sam-separations 2",
+    "prompt": "agentic/e2e/harness/prompt_template_residual.md",
+    "sidecar_schema": "agentic-e2e-stage-chain/v1（stage-chain.json；加法 sidecar，不扩展 #32 冻结 result 协议；示例 fixtures/stage-chain.example.json）",
+    "verify_schema": "agentic-e2e-stage-chain-verify/v1（residual_chain.py verify：sidecar × 真实文件 hash × request.json 实际 input × trace --audio 参数链）",
+    "chain_rule": "每级 input sha256 == 前级 residual 的 raw sha256；原混音 / PCM16 监听代理偷换输入 → FAIL（独立分离不能误报 sequential）",
+    "listen_proxy": "audio/inputs/<run-id>-listen/（pcm16|copy；raw/proxy hash + 转换参数 + 等长同 sr 同声道；SAM 下一层仍用 raw residual）",
+    "stop_reasons": ["near-silence", "artifacts-only", "no-identifiable-layer", "uncertain", "budget"],
+    "stop_policy": "停止须写 reason/evidence/residual_left + limitations（residual 是模型估计、误差会累积、不承诺更准）；budget 停止须真实用尽预算（成功 + 失败/未知尝试 ≥ 预算）",
+    "reused_drums": "基线 run 只读不改；逐字节副本 + 事件 canonical hash（sha256(json.dumps(events, sort_keys=True, separators=(\",\", \":\"), ensure_ascii=False))）+ 用户局部定性反馈记录（不推导 target 干净 / residual 真值）",
+    "budget_residual_run": {"sam_separations_max": 2, "sam_call_timeout_s": 900, "pi_run_timeout_s": 2400, "validator_fix_fixes_max": 2, "note": "复用 drums 不计入预算；对照真实 run 至多 1 次；无参数扫描/不下载权重"},
+    "gate_additions": ["residual_chain_recorded", "residual_chain_verified", "residual_listen_attach_observed"]
   },
   "clip": {
     "name": "e2e-clip-001.wav",

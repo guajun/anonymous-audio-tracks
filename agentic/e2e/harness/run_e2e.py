@@ -58,13 +58,19 @@ from common import (  # noqa: E402
     is_safe_leaf_name, is_safe_run_id, make_redactor, read_json,
     sha256_file, write_json,
 )
+import residual_chain  # noqa: E402
 
 EXIT_OK, EXIT_ACCEPTANCE, EXIT_USAGE = 0, 1, 2
 EXIT_GUARD = 3
-MANIFEST_SCHEMA = "agentic-e2e-run-manifest/v2"
+MANIFEST_SCHEMA = "agentic-e2e-run-manifest/v3"
 HARNESS_FILES = ("common.py", "make_clip.py", "run_e2e.py", "validate_result.py",
-                 "spotcheck.py", "dsp_onset.py", "stem_map.py", "prompt_template.md")
+                 "spotcheck.py", "dsp_onset.py", "stem_map.py", "prompt_template.md",
+                 "residual_chain.py", "prompt_template_residual.md")
 REQUIRED_STAGES = ("model_run", "result", "validate", "spotcheck")
+FLOW_RESIDUAL = "residual-peeling-v1"
+PROMPT_TEMPLATE_RESIDUAL = HERE / "prompt_template_residual.md"
+CHAIN_TOOL = HERE / "residual_chain.py"
+CHAIN_EXAMPLE = E2E_DIR / "fixtures" / "stage-chain.example.json"
 
 
 # --------------------------------------------------------------------- prompt
@@ -92,6 +98,54 @@ def build_prompt(run_id: str, clip: dict, ws: Path, sam_separations: int,
         schema_readme=str(SCHEMA_README),
         semantic_rules=str(SEMANTIC_RULES),
         validate_py=str(VALIDATE_PY),
+    )
+
+
+def build_residual_prompt(run_id: str, clip: dict, ws: Path, baseline_run_id: str,
+                          sam_separations: int, sam_timeout: int, max_fixes: int) -> str:
+    """残差逐层剥离 prompt（issue #42）：复用基线 drums + 每级 input=前级 raw residual。"""
+    ok, why = is_safe_run_id(run_id)
+    if not ok:
+        raise ValueError(f"E_RUN_ID: {why}: {run_id!r}")
+    ok, why = is_safe_leaf_name(str(clip.get("name", "")))
+    if not ok:
+        raise ValueError(f"E_NAME: clip 名不安全（{why}）：{clip.get('name')!r}")
+    ok, why = is_safe_run_id(baseline_run_id)
+    if not ok:
+        raise ValueError(f"E_BASELINE: 基线 run id 不安全（{why}）：{baseline_run_id!r}")
+    if baseline_run_id == run_id:
+        raise ValueError("E_BASELINE: 新 run id 不能等于基线 run id（基线不得被覆盖）")
+    baseline_dir = ws / E2E_OUTPUTS_REL / baseline_run_id
+    facts = residual_chain.drums_baseline_facts(baseline_dir)
+    if not facts or not facts.get("target_sha256") or not facts.get("residual_sha256"):
+        raise ValueError(f"E_BASELINE: 基线 run 无可复用的 drums 事实：{baseline_dir}")
+    template = PROMPT_TEMPLATE_RESIDUAL.read_text(encoding="utf-8")
+    return template.format(
+        run_id=run_id,
+        clip_name=clip["name"],
+        duration_s=clip["duration_s"],
+        sample_rate=clip["sample_rate"],
+        channels=clip["channels"],
+        max_separations=sam_separations,
+        sam_timeout=sam_timeout,
+        max_fixes=max_fixes,
+        dsp_helper=str(E2E_DIR / "harness" / "dsp_onset.py"),
+        schema_readme=str(SCHEMA_README),
+        semantic_rules=str(SEMANTIC_RULES),
+        validate_py=str(VALIDATE_PY),
+        chain_tool=str(CHAIN_TOOL),
+        chain_example=str(CHAIN_EXAMPLE),
+        listen_dir=f"{run_id}-listen",
+        baseline_run_id=facts["baseline_run"],
+        baseline_run_dir=str(baseline_dir),
+        drums_target_rel=str(facts["target_rel"]),
+        drums_target_sha=str(facts["target_sha256"]),
+        drums_residual_rel=str(facts["residual_rel"]),
+        drums_residual_sha=str(facts["residual_sha256"]),
+        drums_events_instrument=str(facts["events_instrument"]),
+        drums_events_count=facts["events_count"],
+        drums_events_sha=str(facts["events_sha256"]),
+        baseline_result_sha=str(facts["baseline_result_sha256"]),
     )
 
 
@@ -285,12 +339,15 @@ def _correlate_reports(run_dir: Path, success_calls: list[dict]) -> tuple[int, l
 
 
 def execution_gate(trace: dict | None, params: dict, run_dir: Path, local_dir: Path,
-                   stages: list[dict], prior: dict | None = None) -> dict:
+                   stages: list[dict], prior: dict | None = None,
+                   chain: dict | None = None, clip_name: str | None = None) -> dict:
     """观测执行证据门：真实 pass 的必要条件（不是文档自述，也不只信工具 isError）。
 
-    每项 {name, pass, detail}；任一失败即整体失败。"""
+    每项 {name, pass, detail}；任一失败即整体失败。残差剥离流（issue #42）在此之上追加
+    链/听音证据检查（只加不减，不放宽既有 9 项）。"""
     checks: list[dict] = []
     trace = trace or {}
+    flow = str(params.get("flow") or "")
 
     def add(name: str, ok: bool, detail: str) -> None:
         checks.append({"name": name, "pass": bool(ok), "detail": detail})
@@ -328,11 +385,12 @@ def execution_gate(trace: dict | None, params: dict, run_dir: Path, local_dir: P
         f"真实分离尝试 {attempted}（含失败/unknown） ≤ 预算 {max_sep}")
 
     stage_map = {s.get("stage"): s.get("status") for s in stages}
-    missing = [name for name in REQUIRED_STAGES if name not in stage_map]
-    bad = [name for name in REQUIRED_STAGES
+    required_stages = list(REQUIRED_STAGES) + (["residual_chain"] if flow == FLOW_RESIDUAL else [])
+    missing = [name for name in required_stages if name not in stage_map]
+    bad = [name for name in required_stages
            if name in stage_map and stage_map[name] not in ("ok", "skip")]
     add("required_stages_present_nonfailed", not missing and not bad,
-        f"必要 stage {list(REQUIRED_STAGES)} 均存在且非失败"
+        f"必要 stage {required_stages} 均存在且非失败"
         if not missing and not bad
         else f"缺失 stage={missing}；失败 stage={[(n, stage_map.get(n)) for n in bad]}")
 
@@ -344,6 +402,25 @@ def execution_gate(trace: dict | None, params: dict, run_dir: Path, local_dir: P
     add("original_runner_success", runner_exit == 0,
         (f"原始 runner exit={runner_exit}（--verify 不得把失败 run 洗成 pass）" if prior is not None
          else f"本次 runner exit={runner_exit}"))
+
+    # ---- 残差剥离流（issue #42）：链/听音证据（只加不减）------------------
+    if flow == FLOW_RESIDUAL:
+        chain = chain or {}
+        chain_checks = chain.get("checks") or []
+        present = any(c.get("name") == "sidecar_present" and c.get("pass") for c in chain_checks)
+        add("residual_chain_recorded", present,
+            "sidecar stage-chain.json 已记录（schema agentic-e2e-stage-chain/v1）" if present
+            else "缺少 stage-chain.json（残差剥离流必须记录阶段链 sidecar）")
+        failed = [c.get("name") for c in chain_checks if not c.get("pass")]
+        add("residual_chain_verified", chain.get("ok") is True,
+            "链核对全过：每级 input==前级 raw residual、request/trace 实证、时间轴/停止/预算/基线复用"
+            if chain.get("ok") is True else f"链核对失败项：{failed or ['sidecar 缺失']}")
+        run_id = run_dir.name
+        attach = residual_chain.residual_attach_calls(trace, clip_name or "", run_id)
+        add("residual_listen_attach_observed", bool(attach),
+            f"trace 观测到对残差监听副本的成功 audio_attach {len(attach)} 次："
+            f"{[a['path'] for a in attach][:3]}" if attach
+            else "未观测到对残差监听副本（非原 clip）的成功 audio_attach（自主残差听音无实证）")
 
     return {"schema": "agentic-e2e-execution-gate/v2",
             "kind": "observed-execution",
@@ -380,7 +457,7 @@ def build_run_manifest(run_id: str, ws: Path, clip: dict, trace: dict | None,
                        stages: list[dict], validation: dict | None, started: float,
                        params: dict, gpu: dict, prompt_sha: str, rc: int,
                        prior: dict | None = None, execution: dict | None = None,
-                       code_at_run: dict | None = None) -> dict:
+                       code_at_run: dict | None = None, chain: dict | None = None) -> dict:
     run_dir = ws / E2E_OUTPUTS_REL / run_id
     local_dir = ws / "local" / "e2e" / run_id
     result_path = run_dir / "result.json"
@@ -428,6 +505,13 @@ def build_run_manifest(run_id: str, ws: Path, clip: dict, trace: dict | None,
         },
         "code": code_provenance(run_dir, (prior or {}).get("code"), at_run=code_at_run),
         "params": params,
+        "flow": {
+            "kind": params.get("flow", "baseline-v1"),
+            "baseline_run": params.get("baseline_run"),
+            "reuse_drums": params.get("reuse_drums"),
+            "note": "residual-peeling-v1 = 残差逐层剥离（issue #42）：每级 input==前级 raw residual；"
+                    "baseline-v1 = 原独立分离（issue #33）",
+        },
         "gpu": gpu,
         "timings": (prior or {}).get("timings") or {
             "wall_s": round(time.time() - started, 3),
@@ -461,7 +545,18 @@ def build_run_manifest(run_id: str, ws: Path, clip: dict, trace: dict | None,
             "stems": sorted(str(p.relative_to(run_dir)).replace("\\", "/")
                             for p in run_dir.glob("stems/**/target.wav")) if run_dir.is_dir() else [],
             "spotcheck_dir": f"outputs/e2e/{run_id}/spotcheck",
+            "stage_chain": (f"outputs/e2e/{run_id}/stage-chain.json"
+                            if (run_dir / "stage-chain.json").is_file() else None),
+            "stage_chain_verify": (f"outputs/e2e/{run_id}/stage-chain-verify.json"
+                                   if (run_dir / "stage-chain-verify.json").is_file() else None),
         },
+        "stage_chain": ({
+            "schema": residual_chain.CHAIN_SCHEMA,
+            "ok": (chain or {}).get("ok"),
+            "checks": [c["name"] + ":" + ("pass" if c["pass"] else "FAIL")
+                       for c in (chain or {}).get("checks", [])],
+            "note": "残差剥离链核对（issue #42）：sidecar 不扩展 #32 冻结 result 协议",
+        } if chain is not None or (run_dir / "stage-chain.json").is_file() else None),
         "validation": {"ok": (validation or {}).get("ok"),
                        "checks": [c["name"] + ":" + ("pass" if c["pass"] else "FAIL")
                                   for c in (validation or {}).get("checks", [])]},
@@ -513,6 +608,10 @@ def parse_args(argv=None):
     p.add_argument("--sam-separations", type=int, default=3, help="真实 SAM 分离次数上限")
     p.add_argument("--sam-timeout", type=int, default=900, help="单次 SAM 调用 --timeout")
     p.add_argument("--max-fixes", type=int, default=2, help="校验修复循环上限")
+    p.add_argument("--profile", default="baseline", choices=("baseline", "residual"),
+                   help="baseline=原独立分离（#33）/ residual=残差逐层剥离（#42）")
+    p.add_argument("--baseline-run", default=None,
+                   help="残差剥离流的基线 run id（复用 drums target/residual/事件；只读不改）")
     p.add_argument("--prompt-file", default=None, help="覆盖默认 prompt 模板实例化结果（followup 用）")
     p.add_argument("--dry-run", action="store_true", help="只打印 argv/环境，不启动、不写任何文件（零 API）")
     p.add_argument("--verify", action="store_true", help="对既有 run 重跑校验/执行门 + 更新 manifest（不改原时间戳）")
@@ -577,11 +676,32 @@ def main(argv=None) -> int:
         "validator_fixes_max": args.max_fixes,
         "model_flag_passed": False,
         "approve": True,
+        "flow": FLOW_RESIDUAL if args.profile == "residual" else "baseline-v1",
+        "baseline_run": args.baseline_run,
+        "reuse_drums": args.profile == "residual",
     }
 
+    if args.profile == "residual":
+        ok, why = is_safe_run_id(args.baseline_run or "")
+        if not ok:
+            print(f"[fail] E_BASELINE: --baseline-run 不安全/缺失（{why}）", file=sys.stderr)
+            return EXIT_USAGE
+        if args.baseline_run == run_id:
+            print("[fail] E_BASELINE: 新 run id 不能等于基线 run id（基线不得被覆盖）", file=sys.stderr)
+            return EXIT_USAGE
+        if not (ws / E2E_OUTPUTS_REL / args.baseline_run / "result.json").is_file():
+            print(f"[fail] E_BASELINE: 基线 run 不存在：outputs/e2e/{args.baseline_run}/result.json",
+                  file=sys.stderr)
+            return EXIT_USAGE
+
     try:
-        prompt = args.prompt_file and Path(args.prompt_file).read_text(encoding="utf-8") or \
-            build_prompt(run_id, clip, ws, args.sam_separations, args.sam_timeout, args.max_fixes)
+        if args.prompt_file:
+            prompt = Path(args.prompt_file).read_text(encoding="utf-8")
+        elif args.profile == "residual":
+            prompt = build_residual_prompt(run_id, clip, ws, args.baseline_run,
+                                           args.sam_separations, args.sam_timeout, args.max_fixes)
+        else:
+            prompt = build_prompt(run_id, clip, ws, args.sam_separations, args.sam_timeout, args.max_fixes)
     except ValueError as exc:
         print(f"[fail] {exc}", file=sys.stderr)
         return EXIT_USAGE
@@ -606,6 +726,8 @@ def main(argv=None) -> int:
             "cwd": redact(str(ws)) if args.redact else str(ws),
             "uses_model_flag": any(a == "--model" or a.startswith("--model") for a in pi_argv),
             "timeout_s": timeout,
+            "flow": params["flow"],
+            "baseline_run": params["baseline_run"],
         }
         print(json.dumps(payload, ensure_ascii=False, indent=2))
         return EXIT_OK
@@ -686,7 +808,16 @@ def main(argv=None) -> int:
         stages.append({"stage": "result", "status": "fail",
                        "detail": "未找到 Agent 产出的 outputs/e2e/<run-id>/result.json（见事件流定位失败阶段）"})
 
-    execution = execution_gate(trace, params, run_dir, local_dir, stages)
+    chain = None
+    if params["flow"] == FLOW_RESIDUAL:
+        chain = chain_verify_run(ws, run_id, clip, args.baseline_run, trace,
+                                 args.sam_separations, result_path=result_path)
+        stages.append({"stage": "residual_chain", "status": "ok" if chain["ok"] else "fail",
+                       "detail": ", ".join(f"{c['name']}={'pass' if c['pass'] else 'FAIL'}"
+                                           for c in chain["checks"])})
+
+    execution = execution_gate(trace, params, run_dir, local_dir, stages,
+                               chain=chain, clip_name=clip.get("name"))
     stages.append({"stage": "execution_gate", "status": "ok" if execution["ok"] else "fail",
                    "detail": ", ".join(f"{c['name']}={'pass' if c['pass'] else 'FAIL'}"
                                         for c in execution["checks"])})
@@ -706,7 +837,28 @@ def main(argv=None) -> int:
         acc_rc = EXIT_ACCEPTANCE
     return finish(ws, run_id, clip, trace, stages, validation, started, params, gpu,
                   prompt_sha, acc_rc, redact, args.json, blocked=(rc in (4, 5, 6)),
-                  execution=execution, code_at_run=launch_code)
+                  execution=execution, code_at_run=launch_code, chain=chain)
+
+
+def chain_verify_run(ws: Path, run_id: str, clip: dict, baseline_run_id: str | None,
+                     trace: dict | None, budget: int | None,
+                     result_path: Path | None = None) -> dict:
+    """残差剥离链核对（issue #42）：sidecar × 真实 request/文件 hash × trace；只读不改基线。"""
+    run_dir = ws / E2E_OUTPUTS_REL / run_id
+    chain_path = run_dir / "stage-chain.json"
+    doc = None
+    if chain_path.is_file():
+        try:
+            doc = read_json(chain_path)
+        except Exception:  # noqa: BLE001
+            doc = None
+    roots = {"audio": ws / AUDIO_ROOT_REL, "run": run_dir,
+             "baseline": (ws / E2E_OUTPUTS_REL / baseline_run_id) if baseline_run_id else None}
+    report = residual_chain.verify_chain(
+        doc, run_dir=run_dir, clip=clip, roots=roots, run_id=run_id, trace=trace, ws=ws,
+        budget=budget, result_path=result_path if (result_path and result_path.is_file()) else None)
+    write_json(run_dir / "stage-chain-verify.json", report)
+    return report
 
 
 def validate_existing(ws: Path, run_id: str, clip: dict, run_dir: Path) -> dict:
@@ -762,8 +914,19 @@ def verify_run(ws: Path, run_id: str, clip: dict, redact, as_json: bool) -> int:
         trace.setdefault("runner_exit", prior.get("runner_exit"))
 
     validation = validate_existing(ws, run_id, clip, run_dir)
-    execution = execution_gate(trace, (prior or {}).get("params", {}), run_dir, local_dir,
-                               (prior or {}).get("stages", []), prior=prior if prior else None)
+    params = (prior or {}).get("params", {}) or {}
+    stages = list((prior or {}).get("stages", []) or [])
+    chain = None
+    if params.get("flow") == FLOW_RESIDUAL:
+        chain = chain_verify_run(ws, run_id, clip, params.get("baseline_run"), trace,
+                                 params.get("sam_separations_max"),
+                                 result_path=run_dir / "result.json")
+        stages = [s for s in stages if s.get("stage") != "residual_chain"]
+        stages.append({"stage": "residual_chain", "status": "ok" if chain["ok"] else "fail",
+                       "detail": ", ".join(f"{c['name']}={'pass' if c['pass'] else 'FAIL'}"
+                                           for c in chain["checks"])})
+    execution = execution_gate(trace, params, run_dir, local_dir, stages, prior=prior if prior else None,
+                               chain=chain, clip_name=clip.get("name"))
     validation["execution"] = execution
     validation["ok"] = bool(validation["ok"] and execution["ok"])
     write_json(run_dir / "validation.json", validation)
@@ -771,15 +934,16 @@ def verify_run(ws: Path, run_id: str, clip: dict, redact, as_json: bool) -> int:
     manifest = None
     if prior is not None:
         manifest = build_run_manifest(
-            run_id, ws, clip, trace, prior.get("stages", []), validation, time.time(),
+            run_id, ws, clip, trace, stages, validation, time.time(),
             prior.get("params", {}), prior.get("gpu", {}),
             (prior.get("repro") or {}).get("prompt_sha256", ""), prior.get("runner_exit", 0),
-            prior=prior, execution=execution)
+            prior=prior, execution=execution, chain=chain)
         manifest["verification_runs"] = list(prior.get("verification_runs", [])) + [{
             "at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "kind": "offline-reverify",
             "data_validation_ok": validation.get("ok"),
             "execution_gate_ok": execution.get("ok"),
+            "residual_chain_ok": (chain or {}).get("ok"),
             "note": "离线复核（无新 API/GPU）；原 run 时间戳/usage/stages 保持原样",
         }]
         write_json(prior_path, manifest)
@@ -804,12 +968,14 @@ def verify_run(ws: Path, run_id: str, clip: dict, redact, as_json: bool) -> int:
 def finish(ws: Path, run_id: str, clip: dict, trace: dict | None, stages: list[dict],
            validation: dict | None, started: float, params: dict, gpu: dict,
            prompt_sha: str, rc: int, redact, as_json: bool, blocked: bool,
-           execution: dict | None = None, code_at_run: dict | None = None) -> int:
+           execution: dict | None = None, code_at_run: dict | None = None,
+           chain: dict | None = None) -> int:
     run_dir = ws / E2E_OUTPUTS_REL / run_id
     prior = read_json(run_dir / "run-manifest.json") if (run_dir / "run-manifest.json").is_file() else None
     manifest = build_run_manifest(run_id, ws, clip, trace, stages, validation,
                                   started, params, gpu, prompt_sha, rc,
-                                  prior=prior, execution=execution, code_at_run=code_at_run)
+                                  prior=prior, execution=execution, code_at_run=code_at_run,
+                                  chain=chain)
     write_json(run_dir / "run-manifest.json", manifest)
     # latest 指针策略（冻结）：outputs/e2e/LATEST.txt = 最近一次 run id
     latest = ws / E2E_OUTPUTS_REL / LATEST_NAME

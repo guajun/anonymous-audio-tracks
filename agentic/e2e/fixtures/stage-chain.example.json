@@ -1,0 +1,92 @@
+{
+  "schema": "agentic-e2e-stage-chain/v1",
+  "note": "示例模板（hash 全是占位符，非真实数据）：残差逐层剥离 sidecar，issue #42。harness 会按真实 request.json/文件 hash/trace 校验：每一级 input sha256 必须 == 前一级 residual 的 raw sha256。",
+  "run_id": "e2e-real-<UTC 时间戳>-rflow",
+  "clip": {
+    "filename": "e2e-clip-001.wav",
+    "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "duration_s": 16.0,
+    "sample_rate": 44100,
+    "timeline": "t=0 = clip 开头；所有级与原 clip 同一零点/秒轴，不裁剪/不平移/不量化"
+  },
+  "stages": [
+    {
+      "index": 0,
+      "layer": "drums",
+      "description": "drums（复用基线已认可步骤；用户局部定性反馈）",
+      "sam": { "performed": false, "reused": true, "description": "drums" },
+      "input": { "kind": "mix", "root": "audio", "rel": "e2e-clip-001.wav", "sha256": "0000000000000000000000000000000000000000000000000000000000000000" },
+      "target": { "root": "run", "rel": "stems/drums-reused/target.wav", "sha256": "1111111111111111111111111111111111111111111111111111111111111111", "sample_rate": 48000, "duration_s": 16.0 },
+      "residual": { "root": "run", "rel": "stems/drums-reused/residual.wav", "sha256": "2222222222222222222222222222222222222222222222222222222222222222", "sample_rate": 48000, "duration_s": 16.0 },
+      "request": { "root": "baseline", "rel": "stems/drums/request.json", "sha256": "3333333333333333333333333333333333333333333333333333333333333333" },
+      "reused": {
+        "baseline_run": "e2e-real-20261001-02",
+        "baseline_result_sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+        "baseline_target": { "root": "baseline", "rel": "stems/drums/target.wav", "sha256": "1111111111111111111111111111111111111111111111111111111111111111" },
+        "baseline_residual": { "root": "baseline", "rel": "stems/drums/residual.wav", "sha256": "2222222222222222222222222222222222222222222222222222222222222222" },
+        "events_instrument": "inst-drums",
+        "events_count": 36,
+        "events_sha256": "5555555555555555555555555555555555555555555555555555555555555555",
+        "user_feedback": "issue #42 局部定性反馈：drums 是准的（不推导 target 干净 / residual 真值）"
+      },
+      "listen": {
+        "method": "audio_attach",
+        "path": "<run-id>-listen/r1-listen.wav",
+        "proxy": {
+          "raw_root": "run",
+          "raw_rel": "stems/drums-reused/residual.wav",
+          "raw_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+          "proxy_rel": "<run-id>-listen/r1-listen.wav",
+          "proxy_sha256": "6666666666666666666666666666666666666666666666666666666666666666",
+          "codec": "pcm16",
+          "convert": "float32->pcm16（帧数/声道/采样率不变）",
+          "sample_rate": 48000,
+          "channels": 1,
+          "frames": 768000,
+          "duration_s": 16.0
+        },
+        "note": "听 R1 → 选择下一层"
+      },
+      "next_choice": "听 R1：剩下低音线条与铺底；下一层描述按听到的内容写"
+    },
+    {
+      "index": 1,
+      "layer": "<下一层，名称由你>",
+      "description": "<基于 R1 听感的假设>",
+      "sam": { "performed": true, "reused": false, "description": "<给 SAM 的文本描述>" },
+      "input": { "kind": "residual", "root": "run", "rel": "stems/drums-reused/residual.wav", "sha256": "2222222222222222222222222222222222222222222222222222222222222222" },
+      "target": { "root": "run", "rel": "stems/<层名>/target.wav", "sha256": "7777777777777777777777777777777777777777777777777777777777777777", "sample_rate": 48000, "duration_s": 16.0 },
+      "residual": { "root": "run", "rel": "stems/<层名>/residual.wav", "sha256": "8888888888888888888888888888888888888888888888888888888888888888", "sample_rate": 48000, "duration_s": 16.0 },
+      "request": { "root": "run", "rel": "stems/<层名>/request.json", "sha256": "9999999999999999999999999999999999999999999999999999999999999999" },
+      "listen": {
+        "method": "audio_attach",
+        "path": "<run-id>-listen/r2-listen.wav",
+        "proxy": {
+          "raw_root": "run",
+          "raw_rel": "stems/<层名>/residual.wav",
+          "raw_sha256": "8888888888888888888888888888888888888888888888888888888888888888",
+          "proxy_rel": "<run-id>-listen/r2-listen.wav",
+          "proxy_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "codec": "pcm16",
+          "convert": "float32->pcm16（帧数/声道/采样率不变）",
+          "sample_rate": 48000,
+          "channels": 1,
+          "frames": 768000,
+          "duration_s": 16.0
+        },
+        "note": "听 R2 → 决定再剥或停"
+      }
+    }
+  ],
+  "stop": {
+    "reason": "budget",
+    "evidence": "R2 听感仍有可辨认声层，但真实 SAM 预算已用尽（2/2）",
+    "residual_left": { "root": "run", "rel": "stems/<层名>/residual.wav", "sha256": "8888888888888888888888888888888888888888888888888888888888888888", "sample_rate": 48000, "duration_s": 16.0 },
+    "limitations": "残余未剥离（含未知声层）；residual 是模型估计，误差会累积"
+  },
+  "limitations": [
+    "residual/target 都是模型估计，逐层误差会累积，不是精确真值，也不承诺比原独立分离更准",
+    "drums 复用基于用户局部定性反馈，不代表 drums target 完全干净或 residual 是真值",
+    "tempo 未可靠估计"
+  ]
+}

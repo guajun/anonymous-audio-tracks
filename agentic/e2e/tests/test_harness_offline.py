@@ -211,7 +211,9 @@ class TestManifestAndLatest:
         assert rc == 0
         manifest = json.loads((ws / "outputs" / "e2e" / "e2e-run-1" / "run-manifest.json")
                               .read_text(encoding="utf-8"))
-        assert manifest["schema"] == "agentic-e2e-run-manifest/v2"
+        assert manifest["schema"] == "agentic-e2e-run-manifest/v3"   # v3 = v2 + flow/stage_chain（issue #42）
+        assert manifest["flow"]["kind"] == "baseline-v1"
+        assert manifest["stage_chain"] is None                       # 非残差流无 sidecar
         assert manifest["kind"] == "real"
         assert manifest["audio_pathway"]["kind"] == "bridge"
         assert "unsupported" in manifest["audio_pathway"]["native"]
