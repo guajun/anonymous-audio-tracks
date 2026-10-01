@@ -183,6 +183,23 @@ async function loadAudioFile(client, path) {
   await waitFor(client, `audio load of ${path}`, `window.__aatViewer.state().loads.audio > ${before}`, 60000);
 }
 
+async function screenshotFullPage(client, name) {
+  // full page (all rows + onsets + stem waveforms below the fold)
+  await client.send("Page.bringToFront");
+  await evaluate(client, "new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r(true))))");
+  const layout = await client.send("Page.getLayoutMetrics");
+  const size = layout.contentSize || layout.cssContentSize;
+  const shot = await client.send("Page.captureScreenshot", {
+    format: "png",
+    captureBeyondViewport: true,
+    clip: { x: 0, y: 0, width: Math.ceil(size.width), height: Math.ceil(size.height), scale: 1 },
+  });
+  const target = join(SCREENSHOT_DIR, `${name}.png`);
+  await writeFile(target, Buffer.from(shot.data, "base64"));
+  screenshotStates.push({ name, atCapture: { fullPage: { width: size.width, height: size.height } } });
+  return target;
+}
+
 async function screenshot(client, name) {
   // Headless captures can return the LAST committed frame (observed: one step
   // behind the DOM/canvas state). Bumping the emulated metrics forces the
@@ -917,6 +934,150 @@ export async function main(argv = process.argv.slice(2)) {
     );
     screenshots.push(await screenshot(client, "08-sustained-clip"));
 
+    // ---- cross-document / cross-kind async ownership --------------------
+    // (a) pending audio of doc A must never commit after doc B is accepted
+    await loadJsonFile(client, stress.jsonPath);
+    const audioBeforeA = await evaluate(client, "window.__aatViewer.state().loads.audio");
+    await setFileInput(client, "#audio-input", [stress.wavPath]); // slow decode (~0.4s+)
+    await sleep(60);
+    await loadJsonFile(client, join(VIEWER_ROOT, "fixtures", "demo", "demo-track.json")); // doc changes mid-decode
+    await waitFor(client, "audio attempt settled", `window.__aatViewer.state().loads.audio > ${audioBeforeA}`, 60000);
+    await sleep(1500);
+    const staleAudio = await evaluate(
+      client,
+      `(() => ({
+        hashHex: window.__aatViewer.state().audio.hashHex,
+        docHash: window.__aatViewer.state().doc.audioSha256,
+        duration: window.__aatViewer.state().audio.durationSeconds,
+        mainLoaded: window.__aatViewer.resourceState().mainLoaded,
+        status: document.getElementById('status').textContent,
+      }))()`,
+    );
+    record(
+      "pending audio of the OLD document is aborted on doc change (no stale commit / no false 'matches JSON')",
+      // the pending stress.wav (300s, other hash) must NOT be committed; only a
+      // previously committed + revalidated audio may be present
+      staleAudio.mainLoaded === true &&
+        staleAudio.hashHex === staleAudio.docHash &&
+        staleAudio.duration !== 300 &&
+        !(staleAudio.hashHex || "").startsWith("36e6571a"),
+      staleAudio,
+    );
+
+    // (b) concurrent main + stem selections must BOTH complete (separate tokens)
+    const concBefore = await evaluate(client, "(() => ({ a: window.__aatViewer.state().loads.audio, s: window.__aatViewer.state().loads.stems }))()");
+    await setFileInput(client, "#audio-input", [join(VIEWER_ROOT, "fixtures", "generated", DEMO_WAV_NAME)]);
+    await setFileInput(client, "#stem-input", [join(VIEWER_ROOT, "fixtures", "generated", DEMO_WAV_NAME)]);
+    await waitFor(
+      client,
+      "both concurrent loads settled",
+      `window.__aatViewer.state().loads.audio > ${concBefore.a} && window.__aatViewer.state().loads.stems > ${concBefore.s}`,
+      60000,
+    );
+    await sleep(600);
+    const concurrent = await evaluate(
+      client,
+      `(() => ({ loaded: window.__aatViewer.state().audio.loaded, stems: window.__aatViewer.resourceState().stemsLoaded }))()`,
+    );
+    record(
+      "concurrent main-audio + stem selections both complete (stem no longer cancels the main decode)",
+      concurrent.loaded === true && concurrent.stems === 1,
+      concurrent,
+    );
+
+    // (c) invalid audio after a valid one never keeps the prior file playable
+    const notAudio = join(workDir, "not-audio.wav");
+    await writeFile(notAudio, "this is not decodable audio\n");
+    await loadAudioFile(client, notAudio);
+    await sleep(300);
+    const badAudio = await evaluate(
+      client,
+      `(() => ({
+        loaded: window.__aatViewer.state().audio.loaded,
+        mainLoaded: window.__aatViewer.resourceState().mainLoaded,
+        audioSrc: window.__aatViewer.resourceState().audioSrc,
+        status: document.getElementById('status').textContent,
+      }))()`,
+    );
+    record(
+      "invalid audio after valid clears the playable state (prior file never plays under the new name)",
+      badAudio.loaded === false && badAudio.mainLoaded === false && badAudio.audioSrc === null && /解码失败/.test(badAudio.status),
+      badAudio,
+    );
+
+    // ---- peaks worker failure fallback (no fake flat waveform) ----------
+    await evaluate(
+      client,
+      `(() => {
+        const RealWorker = window.Worker;
+        window.__realWorker = RealWorker;
+        window.Worker = class {
+          constructor() { this.listeners = {}; }
+          addEventListener(type, handler) { (this.listeners[type] = this.listeners[type] || []).push(handler); }
+          removeEventListener(type, handler) { this.listeners[type] = (this.listeners[type] || []).filter((h) => h !== handler); }
+          postMessage(message, transfer = []) {
+            // REAL transfer semantics: detach the caller's buffers, then fail
+            const channel = new MessageChannel();
+            try { channel.port2.postMessage(message, transfer); } catch (error) { /* detached */ }
+            channel.port1.close(); channel.port2.close();
+            setTimeout(() => { for (const h of this.listeners.error || []) h({ message: 'forced worker failure' }); }, 5);
+          }
+          terminate() {}
+        };
+        return true;
+      })()`,
+    );
+    await loadAudioFile(client, join(VIEWER_ROOT, "fixtures", "generated", DEMO_WAV_NAME));
+    await sleep(400);
+    const fallbackPeaks = await evaluate(
+      client,
+      `(() => ({ peakMax: window.__aatViewer.waveformPeakMax(), loaded: window.__aatViewer.state().audio.loaded }))()`,
+    );
+    await evaluate(client, "(() => { window.Worker = window.__realWorker; return true; })()");
+    record(
+      "peaks worker transfer+failure falls back to the ORIGINAL samples (not an all-zero flat waveform)",
+      fallbackPeaks.loaded === true && typeof fallbackPeaks.peakMax === "number" && fallbackPeaks.peakMax > 0.2,
+      fallbackPeaks,
+    );
+
+    // ---- huge (but valid) duration stays responsive (bounded ruler) -----
+    const hugeDoc = join(workDir, "huge-duration.json");
+    const huge = demoDoc(demo.wavSha256, { emptyEvents: true });
+    huge.audio.duration_seconds = Number.MAX_VALUE;
+    huge.instruments = [
+      {
+        id: "huge-row",
+        label: "huge range",
+        description: "schema-valid Number.MAX_VALUE duration (bounded ruler/grid regression)",
+        source: "mock",
+        confidence: 0.5,
+        events: [
+          { id: "huge-ev-1", onset_seconds: 0 },
+          { id: "huge-ev-2", onset_seconds: 1e300 },
+        ],
+      },
+    ];
+    await writeFile(hugeDoc, JSON.stringify(huge));
+    const hugeStart = Date.now();
+    await loadJsonFile(client, hugeDoc);
+    await waitFor(client, "huge doc loaded", "window.__aatViewer.state().doc !== null", 15000);
+    const hugeState = await evaluate(
+      client,
+      `(() => {
+        const s = window.__aatViewer.state();
+        return { duration: s.doc.durationSeconds, rendered: s.lastRender !== null, metrics: document.getElementById('metrics').textContent };
+      })()`,
+    );
+    const hugeElapsed = Date.now() - hugeStart;
+    record(
+      "Number.MAX_VALUE duration: page stays responsive (bounded ruler), grid reports readable unsupported",
+      hugeState.duration === Number.MAX_VALUE &&
+        hugeState.rendered === true &&
+        /网格不支持/.test(hugeState.metrics) &&
+        hugeElapsed < 10000,
+      { elapsedMs: hugeElapsed, duration: hugeState.duration, metrics: hugeState.metrics.slice(0, 160) },
+    );
+
     // ---- 100k stress ----------------------------------------------------
     await loadJsonFile(client, stress.jsonPath);
     await waitFor(client, "stress doc loaded", "window.__aatViewer.state().doc !== null", 60000);
@@ -943,8 +1104,8 @@ export async function main(argv = process.argv.slice(2)) {
     );
     const domLean = stressStats.domNodes < 400;
     const visibleSum = stressStats.render.rows.reduce((sum, row) => sum + row.visible, 0);
-    const frames = stressStats.metrics.frameDeltasMs;
-    const frameRenders = stressStats.metrics.frameRenderMs || [];
+    const frames = stressStats.metrics.frameIntervalStartToStartMs;
+    const frameRenders = stressStats.metrics.frameFullRenderMs || [];
     const avgFrame = frames.length ? frames.reduce((a, b) => a + b, 0) / frames.length : null;
     const avgRender = frameRenders.length ? frameRenders.reduce((a, b) => a + b, 0) / frameRenders.length : null;
     record(
@@ -971,12 +1132,12 @@ export async function main(argv = process.argv.slice(2)) {
         decodeMs: stressStats.metrics.decodeMs,
         firstRenderMs_currentDataset: stressStats.metrics.firstRenderMs,
         lastRenderMs: stressStats.metrics.lastRenderMs,
-        frameIntervalAvgMs: avgFrame,
-        frameIntervalMaxMs: frames.length ? Math.max(...frames) : null,
-        frameRenderAvgMs: avgRender,
-        frameRenderMaxMs: frameRenders.length ? Math.max(...frameRenders) : null,
+        frameIntervalStartToStartAvgMs: avgFrame,
+        frameIntervalStartToStartMaxMs: frames.length ? Math.max(...frames) : null,
+        frameFullRenderAvgMs: avgRender,
+        frameFullRenderMaxMs: frameRenders.length ? Math.max(...frameRenders) : null,
         frameSamples: frames.length,
-        measurement: "each sampled frame performs a full scene re-render (ruler+waveform+all rows); interval and render duration are recorded separately",
+        measurement: "each sampled frame performs a FULL scene re-render (ruler+waveform+envelopes+rows+metrics); interval = frame-start to frame-start (includes the previous frame's render work)",
       },
     );
     screenshots.push(await screenshot(client, "06-stress-100k"));
@@ -1107,6 +1268,11 @@ export async function main(argv = process.argv.slice(2)) {
         },
       );
       screenshots.push(await screenshot(client, "10-real-integration"));
+      // chart region + full page: rows with onsets and per-row stem waveforms
+      await evaluate(client, "(() => { document.getElementById('timeline-section').scrollIntoView({ block: 'start' }); return true; })()");
+      await sleep(250);
+      screenshots.push(await screenshot(client, "10b-real-chart"));
+      screenshots.push(await screenshotFullPage(client, "10c-real-fullpage"));
       realIntegration = {
         rows: realRows,
         totalEvents: realDoc ? realDoc.totalEvents : null,
@@ -1149,6 +1315,32 @@ export async function main(argv = process.argv.slice(2)) {
       "dispose() during an in-flight load aborts cleanly (nothing applied afterwards, no leaked resources)",
       disposedMid.disposed === true && disposedMid.doc === null && disposedMid.resource.objectUrls === 0 && disposedMid.resource.workers === 0,
       disposedMid,
+    );
+
+    // ---- dispose during in-flight peaks build (fresh page) --------------
+    await client.send("Page.reload", { ignoreCache: true });
+    await waitFor(client, "viewer ready for peaks dispose", "window.__aatViewer && window.__aatViewer.ready === true", 20000);
+    await loadJsonFile(client, join(VIEWER_ROOT, "fixtures", "demo", "demo-track.json"));
+    const peaksLoadsBefore = await evaluate(client, "window.__aatViewer.state().loads.audio");
+    await setFileInput(client, "#audio-input", [stress.wavPath]); // slow decode + peaks build
+    await sleep(120);
+    await evaluate(client, "window.__aatViewer.dispose()");
+    await sleep(3000);
+    const disposedPeaks = await evaluate(
+      client,
+      `(() => ({
+        disposed: window.__aatViewer.state().disposed,
+        loadsAudio: window.__aatViewer.state().loads.audio,
+        resource: window.__aatViewer.resourceState(),
+      }))()`,
+    );
+    record(
+      "dispose() during an in-flight peaks build settles cleanly (await resolves, no leaked worker/URL)",
+      disposedPeaks.disposed === true &&
+        disposedPeaks.loadsAudio > peaksLoadsBefore &&
+        disposedPeaks.resource.objectUrls === 0 &&
+        disposedPeaks.resource.workers === 0,
+      disposedPeaks,
     );
 
     // ---- unhandled page exceptions across the whole session -------------

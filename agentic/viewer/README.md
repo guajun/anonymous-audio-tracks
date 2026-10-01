@@ -102,11 +102,12 @@ node agentic/viewer/tools/make-demo.mjs
 ## 测试
 
 ```bash
-# 单元测试（131 项：结构/语义负例、原型键/Unicode 对齐、字节级入口、BPM 不改 onset、
-# 锚点缩放、持续事件裁剪、bounded beat grid、server 逃逸、差分回归、卫生检查…）
+# 单元测试（147 项：结构/语义负例、原型键/Unicode 对齐、字节级入口、BPM 不改 onset、
+# 锚点缩放、持续事件裁剪、bounded ruler/beat grid、worker 回退不假零、加载生命周期、
+# server 逃逸、差分回归、卫生检查…）
 node --test "agentic/viewer/tests/*.test.js"
 
-# 真实浏览器检查（40 项 demo/stress/lifecycle）+ 100k stress 量化 + 截图
+# 真实浏览器检查（46 项 demo/stress/lifecycle/并发/资源）+ 100k stress 量化 + 截图
 node agentic/viewer/tools/make-stress.mjs --events 100000     # 生成 gitignore 的 stress 夹具
 node agentic/viewer/tools/browser-check.mjs                    # 需要本机 Chrome/Edge（Node ≥ 22）
 
@@ -119,7 +120,8 @@ node agentic/viewer/tools/browser-check.mjs \
 
 - 浏览器检查输出：`agentic/viewer/reports/browser-check.json`（含环境/测量方法/逐项结果/截图时状态快照），
   截图 `agentic/viewer/screenshots/*.png`（01 demo、02 BPM 网格、03 锚点缩放、04 恶意 label、05 错误态、
-  06/07 100k stress、08 持续事件裁剪、10 真实集成）。**这些均本地 gitignore，不入 GitHub。**
+  06/07 100k stress、08 持续事件裁剪、10 真实集成、**10b 图表区（3 行 onsets+各 stem 波形）**、10c 全页）。
+  **这些均本地 gitignore，不入 GitHub。**
 - 差分测试会调用 `python agentic/schema/validate.py --json`，把本目录 JS 校验器与 #32 冻结 Python 参考的
   `(layer, code, pointer)` 集合逐文件对比；无 Python 时显式 skip（不会假报成功）。
 - 所有测试只用相对路径，换 checkout 可直接跑；不提交私有路径/key/音频/权重/完整会话。
@@ -127,7 +129,8 @@ node agentic/viewer/tools/browser-check.mjs \
 ## 性能：测量方法与实测（不空喊）
 
 **方法**：Chrome DevTools Protocol 驱动真实 Chrome（headless），计时取页面内 `performance.now()`；
-帧采样**每帧执行整场景重绘**（标尺+波形+全部行）后记录 rAF 间隔与重绘耗时——不测“空转调度”就声称含重绘的 fps；
+帧采样**每帧执行整场景重绘**（标尺+波形+stem 包络+全部行+指标条）后记录 **frame-start → frame-start 间隔**
+（包含上一帧的绘制工作，不是空转调度间隙）与**整场景重绘总耗时**（`render()` 调用全程，不是只算 track 层）；
 每个数据集（JSON/音频）加载时指标**重置**，`firstRenderMs` 只属于当前数据集。可见/候选/绘制事件数由渲染层直接上报。
 测量条件见 `reports/browser-check.json` 的 `environment`（实测：Chrome 150.0.7871.101 / Windows / 16 核 / deviceMemory 32 / DPR 1）。
 
@@ -135,14 +138,17 @@ node agentic/viewer/tools/browser-check.mjs \
 
 | 指标 | 实测（每帧含整场景重绘） |
 | --- | --- |
-| JSON 解析+结构+语义校验（Worker） | ~0.93–1.27 s（一次性） |
-| 音频解码（300s WAV） | ~0.41–0.70 s |
-| 当前数据集首帧渲染 / 单帧渲染 | ~5.4 ms / ~2.6–2.9 ms |
-| 60 帧 rAF 间隔 avg / max | 13.3 ms / 15.4 ms（含每帧整场景重绘） |
-| 60 帧重绘耗时 avg / max | 2.7 ms / 3.3 ms |
+| JSON 解析+结构+语义校验（Worker） | ~0.94–1.27 s（一次性） |
+| 音频解码（300s WAV） | ~0.44–0.70 s |
+| 当前数据集首帧渲染 / track 层单帧 | ~2.7 ms / ~2.4–2.6 ms |
+| 帧 start-to-start 间隔 avg / max（含绘制） | 16.6 ms / 18.4 ms（≈60Hz 预算内） |
+| 整场景重绘总耗时 avg / max | 2.7 ms / 3.2 ms |
 | 整曲视图候选/可见事件 | 100000 / 100000 → **按像素密度聚合**（aggregatedRows=8，不画 10 万图元） |
 | 放大 2s 窗口 | 可见/绘制 725（二分查找 culling + 边缘裁剪） |
 | DOM 节点总数 | **103**（每乐器行 1 个标签节点；**没有每事件/每采样 DOM**） |
+
+极端有限元数据（如合法的 `duration_seconds = Number.MAX_VALUE`）下 ruler/beat grid 均**有界**：
+页面保持响应（实测加载+首绘 ~140ms），网格给出可读“不支持”状态而非挂起。
 
 ## 安全 / 隐私
 
@@ -155,6 +161,8 @@ node agentic/viewer/tools/browser-check.mjs \
   且不渲染、不报成功，绝不自动对齐/重定时。
 - 本地服务只暴露 `agentic/viewer/`，**realpath 容器检查**（junction/symlink 逃逸也被拒，回归测试含合成 junction）。
 - 音频走 ObjectURL + AudioContext：换文件/`dispose()` 即 revoke/close/terminate（浏览器测试断言全部归零，含加载中 dispose）。
+- **并发/生命周期**：音频与 stem 各自独立的加载 token（互不取消）；换文档作废未完成的旧加载（不假匹配）；
+  worker 失败用**原样本**回退（不假造平波形）；解码失败清除旧可播放状态；待决 worker promise 在 dispose 时结算。
 - 生成的 wav/stress JSON/截图/报告/真实产物全部 gitignore，不进 Git；公开只出脱敏摘要。
 
 ## 限制与 pending（不假称全验收）

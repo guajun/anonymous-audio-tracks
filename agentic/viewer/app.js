@@ -30,6 +30,7 @@ import {
   DEFAULT_ROW_BUDGET,
   DEFAULT_TOTAL_BUDGET,
   envelopeFor,
+  formatSeconds,
   renderRuler,
   renderTracks,
   renderWaveformLane,
@@ -86,8 +87,8 @@ const state = {
     peaksMs: null,
     firstRenderMs: null,
     lastRenderMs: null,
-    frameDeltasMs: [],
-    frameRenderMs: [],
+    frameIntervalStartToStartMs: [],
+    frameFullRenderMs: [],
   },
   lastRender: null,
   statusText: "等待加载 JSON 结果文件。",
@@ -114,6 +115,13 @@ function resetDatasetMetrics(part) {
   }
 }
 
+/** Document ownership: pending audio/stem loads of the OLD document must never commit. */
+function invalidatePendingMedia() {
+  state.tokens.audio += 1;
+  state.tokens.stems += 1;
+  media.invalidatePending();
+}
+
 const media = new MediaEngine({
   createWorker: (url) => {
     try {
@@ -125,6 +133,19 @@ const media = new MediaEngine({
 });
 
 let validateWorker = null;
+const validatePending = new Set(); // outstanding worker awaits, settled on dispose
+
+function terminateValidateWorker() {
+  if (validateWorker) {
+    for (const entry of [...validatePending]) {
+      validatePending.delete(entry);
+      entry.reject(new Error("viewer disposed，校验任务作废"));
+    }
+    validateWorker.terminate();
+    validateWorker = null;
+  }
+}
+
 function getValidateWorker() {
   if (validateWorker) return validateWorker;
   try {
@@ -278,21 +299,22 @@ function render() {
   state.lastRender = stats;
   state.metrics.lastRenderMs = stats.renderMs;
   if (state.metrics.firstRenderMs === null) state.metrics.firstRenderMs = stats.renderMs;
-  elements.viewWindow.textContent = `视图 ${state.view.start.toFixed(3)}s – ${state.view.end.toFixed(3)}s（总 ${(
-    state.model.audio.durationSeconds || 0
-  ).toFixed(3)}s）`;
+  elements.viewWindow.textContent = `视图 ${formatSeconds(state.view.start, 0.001)} – ${formatSeconds(
+    state.view.end,
+    0.001,
+  )}（总 ${formatSeconds(state.model.audio.durationSeconds || 0, 0.001)}）`;
   updateMetricsText();
   return stats;
 }
 
 function updateMetricsText() {
   const m = state.metrics;
-  const frames = m.frameDeltasMs;
-  const renders = m.frameRenderMs;
+  const frames = m.frameIntervalStartToStartMs;
+  const renders = m.frameFullRenderMs;
   const frameInfo = frames.length
-    ? `帧采样（含整场景重绘）n=${frames.length} 间隔avg=${(frames.reduce((a, b) => a + b, 0) / frames.length).toFixed(
-        2,
-      )}ms/最大=${Math.max(...frames).toFixed(2)}ms 重绘avg=${
+    ? `帧采样（每帧整场景重绘）n=${frames.length} start-to-start间隔avg=${(
+        frames.reduce((a, b) => a + b, 0) / frames.length
+      ).toFixed(2)}ms/最大=${Math.max(...frames).toFixed(2)}ms 整场景重绘耗时avg=${
         renders.length ? (renders.reduce((a, b) => a + b, 0) / renders.length).toFixed(2) : "-"
       }ms/最大=${renders.length ? Math.max(...renders).toFixed(2) : "-"}ms`
     : "帧采样 n=0（未测）";
@@ -366,17 +388,20 @@ function startFrameProbe(count = 60) {
   // (ruler + waveform + all rows) and records both the rAF interval and the
   // render duration. Idle scheduling alone is never reported as "fps with
   // repaint".
-  state.metrics.frameDeltasMs = [];
-  state.metrics.frameRenderMs = [];
-  let last = performance.now();
+  state.metrics.frameIntervalStartToStartMs = [];
+  state.metrics.frameFullRenderMs = [];
+  let lastStart = null;
   let remaining = count;
   const step = () => {
     if (state.disposed) return;
-    const now = performance.now();
-    state.metrics.frameDeltasMs.push(now - last);
-    const stats = render();
-    if (stats) state.metrics.frameRenderMs.push(stats.renderMs);
-    last = performance.now();
+    // start-to-start frame interval (includes the previous frame's render work)
+    const frameStart = performance.now();
+    if (lastStart !== null) state.metrics.frameIntervalStartToStartMs.push(frameStart - lastStart);
+    lastStart = frameStart;
+    // full scene render wrapper: ruler + waveform + envelopes + rows + metrics
+    const renderStart = performance.now();
+    render();
+    state.metrics.frameFullRenderMs.push(performance.now() - renderStart);
     remaining -= 1;
     if (remaining > 0) {
       state.frameProbeId = requestAnimationFrame(step);
@@ -432,10 +457,13 @@ async function validateTextAsync(text, source) {
     try {
       const result = await new Promise((resolve, reject) => {
         const id = `validate-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+        const entry = { reject };
+        validatePending.add(entry);
         const cleanup = () => {
           worker.removeEventListener("message", onMessage);
           worker.removeEventListener("error", onError);
           worker.removeEventListener("messageerror", onMessageError);
+          validatePending.delete(entry);
         };
         const onMessage = (event) => {
           if (event.data && event.data.id === id) {
@@ -474,6 +502,7 @@ function clearLoadedState({ keepAudio = false } = {}) {
   for (const rowId of [...state.stemPeaks.keys()]) state.stemPeaks.delete(rowId);
   for (const rowId of [...state.stemSampleRates.keys()]) state.stemSampleRates.delete(rowId);
   media.reconcileStems({ rows: [] });
+  invalidatePendingMedia();
   if (!keepAudio) {
     media.disposeMain();
     state.audio = { loaded: false, hashHex: null, durationSeconds: null, sampleRate: null, notes: [] };
@@ -529,6 +558,8 @@ async function loadJsonFile(file) {
     updateMetricsText();
     return;
   }
+  // new document owns the app state: abort pending audio/stem loads of the old one
+  invalidatePendingMedia();
   state.doc = data;
   state.model = buildModel(data);
   state.bpmState = createBpmState(state.model);
@@ -633,12 +664,16 @@ async function loadAudioFile(file) {
     notes: result.notes,
   };
   const hasError = result.notes.some((note) => note.level === "error");
-  setStatus(
-    hasError
-      ? "音频已加载，但与 JSON 存在不一致（见下方说明）；时间轴仍以 JSON 秒为真值，不重定时。"
-      : `音频已加载并校验（SHA-256 匹配 JSON）：${result.durationSeconds.toFixed(3)}s @ ${result.sampleRate}Hz。`,
-    hasError ? "error" : "ok",
-  );
+  if (result.failed) {
+    setStatus("音频解码失败（已清除之前的可播放状态，绝不把旧文件当成新选择的文件播放）：见下方说明。", "error");
+  } else {
+    setStatus(
+      hasError
+        ? "音频已加载，但与 JSON 存在不一致（见下方说明）；时间轴仍以 JSON 秒为真值，不重定时。"
+        : `音频已加载并校验（SHA-256 匹配 JSON）：${result.durationSeconds.toFixed(3)}s @ ${result.sampleRate}Hz。`,
+      hasError ? "error" : "ok",
+    );
+  }
   setNotes("audio", result.notes);
   render();
 }
@@ -887,7 +922,11 @@ function exposeDebugApi() {
         stemMapping: media.stemEntries(),
         validateWorkerActive: Boolean(validateWorker),
       },
-      metrics: { ...state.metrics, frameDeltasMs: [...state.metrics.frameDeltasMs], frameRenderMs: [...state.metrics.frameRenderMs] },
+      metrics: {
+        ...state.metrics,
+        frameIntervalStartToStartMs: [...state.metrics.frameIntervalStartToStartMs],
+        frameFullRenderMs: [...state.metrics.frameFullRenderMs],
+      },
       loads: { ...state.loads },
       lastRender: state.lastRender ? { ...state.lastRender, rows: state.lastRender.rows.map((r) => ({ ...r })) } : null,
     }),
@@ -912,6 +951,12 @@ function exposeDebugApi() {
     seek: (seconds) => seekTo(seconds),
     playheadTime: () => playheadTime(),
     startFrameProbe: (count) => startFrameProbe(count),
+    waveformPeakMax: () => {
+      if (!state.peaks || !state.peaks.levels.length) return null;
+      let max = -Infinity;
+      for (const value of state.peaks.levels[0].max) if (value > max) max = value;
+      return max;
+    },
     pixelOf: (timeSeconds) => timeToX(timeSeconds, state.view, cssWidth()),
     timeAtPx: (xPx) => xToTime(xPx, state.view, cssWidth()),
     eventScreenPositions: (limit = 50) => {
@@ -954,10 +999,7 @@ function exposeDebugApi() {
       if (state.rafId) cancelAnimationFrame(state.rafId);
       if (state.frameProbeId) cancelAnimationFrame(state.frameProbeId);
       state.playing = false;
-      if (validateWorker) {
-        validateWorker.terminate();
-        validateWorker = null;
-      }
+      terminateValidateWorker(); // settles outstanding awaits instead of leaving them pending
       await media.dispose();
       state.peaks = null;
       state.stemPeaks.clear();

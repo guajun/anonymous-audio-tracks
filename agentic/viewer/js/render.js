@@ -30,22 +30,36 @@ const TIME_STEPS = [
   0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 1200,
 ];
 
-export function niceTimeStep(window, widthPx) {
+/** Hard cap on ruler tick iterations for ANY finite accepted metadata. */
+export const MAX_RULER_TICKS = 200;
+
+export function niceTimeStep(window, widthPx, maxTicks = MAX_RULER_TICKS) {
   const span = window.end - window.start;
-  const target = Math.max(1, Math.floor(widthPx / 110)); // ~110px per label
+  if (!Number.isFinite(span) || span <= 0) return TIME_STEPS[TIME_STEPS.length - 1];
+  const target = Math.max(1, Math.min(maxTicks, Math.floor(widthPx / 110))); // ~110px per label
   const raw = span / target;
+  if (!Number.isFinite(raw) || raw <= 0) return TIME_STEPS[TIME_STEPS.length - 1];
   for (const step of TIME_STEPS) {
     if (step >= raw) return step;
   }
-  return TIME_STEPS[TIME_STEPS.length - 1];
+  // Huge (but finite) span: scale the step up to a nice value so the tick
+  // count stays bounded (e.g. audio.duration_seconds = Number.MAX_VALUE).
+  const magnitude = 10 ** Math.ceil(Math.log10(raw));
+  for (const factor of [1, 2, 5, 10]) {
+    const candidate = factor * magnitude;
+    if (candidate >= raw) return candidate;
+  }
+  return magnitude * 10;
 }
 
-function formatSeconds(value, step) {
+export function formatSeconds(value, step = 1) {
+  if (!Number.isFinite(value)) return "—";
+  if (Math.abs(value) >= 1e12) return `${value.toExponential(2)}s`;
   if (step >= 1) return `${value.toFixed(value % 1 === 0 ? 0 : 1)}s`;
   return `${value.toFixed(step >= 0.1 ? 2 : 3)}s`;
 }
 
-/** Draw the top time ruler (seconds of the audio file). */
+/** Draw the top time ruler (seconds of the audio file). Bounded for any finite range. */
 export function renderRuler(ctx, view, options) {
   const { width, height } = options;
   ctx.save();
@@ -58,7 +72,9 @@ export function renderRuler(ctx, view, options) {
   ctx.font = "11px system-ui, sans-serif";
   ctx.textBaseline = "top";
   ctx.lineWidth = 1;
-  for (let time = first; time <= view.end + 1e-9; time += step) {
+  // Iteration cap is belt-and-braces: the step is chosen so ticks <= MAX_RULER_TICKS.
+  let ticks = 0;
+  for (let time = first; time <= view.end && ticks < MAX_RULER_TICKS; time += step, ticks += 1) {
     const x = Math.round(timeToX(time, view, width)) + 0.5;
     ctx.beginPath();
     ctx.moveTo(x, height - 8);
@@ -67,6 +83,7 @@ export function renderRuler(ctx, view, options) {
     if (x >= 0 && x <= width - 2) {
       ctx.fillText(formatSeconds(time, step), x + 3, 3);
     }
+    if (step <= 0) break; // paranoia: never loop forever
   }
   ctx.restore();
 }

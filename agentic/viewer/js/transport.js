@@ -68,7 +68,29 @@ export class MediaEngine {
     this.objectUrls = new Set();
     this.notes = [];
     this.closed = false;
-    this.loadToken = 0;
+    // per-kind load tokens: a stem selection must NOT cancel a main decode
+    // (and vice versa); each kind is latest-wins within itself.
+    this.mainToken = 0;
+    this.stemToken = 0;
+    this.pendingCalls = new Set(); // outstanding worker promises, settled on invalidate/dispose
+  }
+
+  /**
+   * Document ownership: called when the loaded document changes/clears.
+   * Aborts IN-FLIGHT loads (they must not commit stale data/notes against the
+   * new document) but keeps already-committed media for explicit revalidation.
+   */
+  invalidatePending() {
+    this.mainToken += 1;
+    this.stemToken += 1;
+    this.settlePendingCalls(new Error("load invalidated：文档已更换，本次加载作废"));
+  }
+
+  settlePendingCalls(error) {
+    for (const entry of [...this.pendingCalls]) {
+      this.pendingCalls.delete(entry);
+      entry.reject(error);
+    }
   }
 
   ensureContext() {
@@ -110,20 +132,31 @@ export class MediaEngine {
 
   /**
    * Build a peak pyramid, preferring the worker and falling back inline.
+   *
+   * The samples are CLONED to the worker (never transferred): a transfer
+   * detaches the caller's buffer, which used to make the error-fallback build
+   * an all-zero pyramid from a detached array. If the input is unusable the
+   * fallback throws a controlled error instead of fabricating a flat waveform.
    * Worker `error`/`messageerror` reject the promise (never hang) and the
    * caller falls back to the inline build.
    * @returns {Promise<object>} pyramid (see js/peaks.js)
    */
   async buildPeaks(samples, samplesPerBucket, workerUrl) {
-    const worker = this.spawnWorker ? this.spawnWorker(workerUrl) : null;
     const inline = async () => {
+      if (!samples || samples.length === 0 || (samples.buffer && samples.buffer.byteLength === 0)) {
+        // detached or empty input: never fabricate a fake flat waveform
+        throw new Error("peaks 输入样本不可用（buffer 已 detach 或为空）");
+      }
       const { buildPeakPyramid } = await import("./peaks.js");
       return buildPeakPyramid(samples, samplesPerBucket);
     };
+    const worker = this.spawnWorker ? this.spawnWorker(workerUrl) : null;
     if (!worker) return inline();
     try {
       return await new Promise((resolve, reject) => {
         const id = `peaks-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+        const entry = { reject };
+        this.pendingCalls.add(entry);
         const onMessage = (event) => {
           if (event.data && event.data.id === id) {
             cleanup();
@@ -143,12 +176,14 @@ export class MediaEngine {
           worker.removeEventListener("message", onMessage);
           worker.removeEventListener("error", onError);
           worker.removeEventListener("messageerror", onMessageError);
+          this.pendingCalls.delete(entry);
           this.releaseWorker(worker);
         };
         worker.addEventListener("message", onMessage);
         worker.addEventListener("error", onError);
         worker.addEventListener("messageerror", onMessageError);
-        worker.postMessage({ id, samples, samplesPerBucket }, [samples.buffer]);
+        // structured clone (copy), NOT transfer: `samples` stays usable for the fallback
+        worker.postMessage({ id, samples, samplesPerBucket });
       });
     } catch {
       return inline();
@@ -160,11 +195,11 @@ export class MediaEngine {
    * @returns {Promise<{notes: Array, pyramid: object|null, sampleRate: number|null, durationSeconds: number|null, hashHex: string|null}>}
    */
   async loadMain(file, docAudio, options = {}) {
-    const token = ++this.loadToken;
+    const token = ++this.mainToken;
     const bytes = await file.arrayBuffer();
-    if (this.loadToken !== token || this.closed) return { aborted: true, notes: [], pyramid: null };
+    if (this.mainToken !== token || this.closed) return { aborted: true, notes: [], pyramid: null };
     const hashHex = await sha256Hex(bytes.slice(0));
-    if (this.loadToken !== token || this.closed) return { aborted: true, notes: [], pyramid: null };
+    if (this.mainToken !== token || this.closed) return { aborted: true, notes: [], pyramid: null };
     const context = this.ensureContext();
     let buffer = null;
     try {
@@ -177,10 +212,15 @@ export class MediaEngine {
           text: `音频解码失败：${String(error && error.message ? error.message : error)}（请选择浏览器可解码的音频文件）。`,
         },
       ];
-      this.notes = notes;
-      return { notes, pyramid: null, sampleRate: null, durationSeconds: null, hashHex };
+      // latest load failed: never keep the PREVIOUS audio playable under the
+      // newly selected filename — clear it and label the failure explicitly.
+      if (this.mainToken === token) {
+        this.disposeMain();
+        this.notes = notes;
+      }
+      return { notes, pyramid: null, sampleRate: null, durationSeconds: null, hashHex, failed: true };
     }
-    if (this.loadToken !== token || this.closed) return { aborted: true, notes: [], pyramid: null };
+    if (this.mainToken !== token || this.closed) return { aborted: true, notes: [], pyramid: null };
     const channelCount = buffer.numberOfChannels;
     const length = buffer.length;
     const mono = new Float32Array(length);
@@ -195,7 +235,7 @@ export class MediaEngine {
       options.samplesPerBucket || 256,
       options.peaksWorkerUrl || new URL("./peaks-worker.js", import.meta.url),
     );
-    if (this.loadToken !== token || this.closed) return { aborted: true, notes: [], pyramid: null };
+    if (this.mainToken !== token || this.closed) return { aborted: true, notes: [], pyramid: null };
     const notes = checkAudioMatch({
       docAudio,
       pickedName: file.name,
@@ -231,12 +271,12 @@ export class MediaEngine {
    * @param {{durationSeconds?: number}} options document audio duration for the stem time-axis check
    */
   async loadStem(file, candidates, options = {}) {
-    const token = ++this.loadToken;
+    const token = ++this.stemToken;
     const bytes = await file.arrayBuffer();
     const hashHex = await sha256Hex(bytes.slice(0));
     const matched = (candidates || []).filter((row) => row.stem && row.stem.sha256 === hashHex);
     const notes = [];
-    if (this.loadToken !== token || this.closed) return { applied: false, aborted: true, notes: [], matchedRows: [] };
+    if (this.stemToken !== token || this.closed) return { applied: false, aborted: true, notes: [], matchedRows: [] };
     if (matched.length === 0) {
       notes.push({
         level: "error",
@@ -262,7 +302,7 @@ export class MediaEngine {
         matchedRows: [],
       };
     }
-    if (this.loadToken !== token || this.closed) return { applied: false, aborted: true, notes: [], matchedRows: [] };
+    if (this.stemToken !== token || this.closed) return { applied: false, aborted: true, notes: [], matchedRows: [] };
     if (typeof options.durationSeconds === "number" && Number.isFinite(options.durationSeconds)) {
       const tolerance = Math.max(DURATION_TOLERANCE_ABS, DURATION_TOLERANCE_REL * options.durationSeconds);
       const delta = buffer.duration - options.durationSeconds;
@@ -281,7 +321,7 @@ export class MediaEngine {
       options.samplesPerBucket || 256,
       options.peaksWorkerUrl || new URL("./peaks-worker.js", import.meta.url),
     );
-    if (this.loadToken !== token || this.closed) return { applied: false, aborted: true, notes: [], matchedRows: [] };
+    if (this.stemToken !== token || this.closed) return { applied: false, aborted: true, notes: [], matchedRows: [] };
     const url = this.trackUrl(file);
     for (const row of matched) {
       this.releaseStem(row.id);
@@ -397,7 +437,10 @@ export class MediaEngine {
 
   /** Release every resource this engine owns (idempotent). */
   dispose() {
-    this.loadToken += 1; // abort any in-flight load
+    // abort every in-flight load (per kind) and settle outstanding promises
+    this.mainToken += 1;
+    this.stemToken += 1;
+    this.settlePendingCalls(new Error("MediaEngine 已 dispose，加载作废"));
     this.disposeMain();
     for (const rowId of [...this.stems.keys()]) {
       this.releaseStem(rowId);
