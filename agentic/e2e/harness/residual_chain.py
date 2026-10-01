@@ -156,13 +156,16 @@ def read_frames(path: Path) -> tuple[list[float], int, int]:
 
 
 def check_listen_rel(rel: str, run_id: str) -> tuple[bool, str]:
-    """监听副本路径规则：安全相对路径 + 首段必须是本 run 派生目录（``<run_id>-listen``）。"""
+    """监听副本路径规则：安全相对路径 + 首段必须是**精确的**本 run 命名空间 ``<run_id>-listen``。
+
+    不用 ``startswith``（`run-10-listen` 不得混入 `run-1` 的命名空间）。"""
     ok, why = is_safe_rel_path(str(rel))
     if not ok:
         return False, f"路径不安全（{why}）：{rel!r}"
     first = _norm(str(rel)).split("/")[0]
-    if not first.startswith(str(run_id)):
-        return False, f"不在本 run 派生目录内（首段应以 run id 开头）：{rel!r}"
+    expected = f"{run_id}-listen"
+    if first != expected:
+        return False, f"必须位于本 run 精确命名空间 {expected!r} 内（实际首段 {first!r}）"
     return True, "ok"
 
 
@@ -243,6 +246,51 @@ def drums_baseline_facts(baseline_run_dir: Path) -> dict | None:
     return facts
 
 
+def check_baseline_clip(baseline_run_dir: Path, clip: dict, request_rel: str | None = None) -> str | None:
+    """基线必须与当前 clip **同源**（评审加固）：只时长相同不够。
+
+    核对：基线 ``result.audio.sha256/duration_seconds`` == 当前 clip；基线原始 ``request.json``
+    的实际输入音频 hash == 当前 clip hash。通过返回 None，否则返回拒绝原因。
+    """
+    base = Path(baseline_run_dir)
+    result_path = base / "result.json"
+    if not result_path.is_file():
+        return "基线 result.json 不存在"
+    try:
+        result = read_json(result_path)
+    except Exception as exc:  # noqa: BLE001
+        return f"基线 result.json 无法解析（{exc.__class__.__name__}）"
+    audio = result.get("audio") or {}
+    clip_sha = str(clip.get("sha256") or "")
+    if str(audio.get("sha256") or "") != clip_sha:
+        return (f"基线输入音频 hash 与当前 clip 不同源（基线 {str(audio.get('sha256'))[:12]}… != "
+                f"clip {clip_sha[:12]}…）——拒绝复用另一段音频的 drums/residual/事件")
+    try:
+        base_dur = float(audio.get("duration_seconds"))
+    except (TypeError, ValueError):
+        return "基线 result.audio.duration_seconds 缺失/非法"
+    if abs(base_dur - float(clip.get("duration_s") or 0.0)) > 1e-6:
+        return f"基线输入音频时长 {base_dur}s != 当前 clip {clip.get('duration_s')}s"
+    if request_rel is None:
+        facts = drums_baseline_facts(base)
+        if not facts or not facts.get("target_rel"):
+            return "基线无可复用 drums，无法定位原始 request"
+        request_rel = str(Path(str(facts["target_rel"])).parent / "request.json")
+    req_path = base / str(request_rel)
+    if not req_path.is_file():
+        return f"基线原始 request.json 不存在：{request_rel}"
+    try:
+        req = read_json(req_path)
+    except Exception as exc:  # noqa: BLE001
+        return f"基线原始 request.json 无法解析（{exc.__class__.__name__}）"
+    apath = Path(str(req.get("audio") or ""))
+    if not str(req.get("audio") or "") or not apath.is_file():
+        return "基线原始 request 的输入音频不可读（无法证明与当前 clip 同源）"
+    if sha256_file(apath) != clip_sha:
+        return "基线原始 request 实际输入音频 hash != 当前 clip hash（不同源，拒绝复用）"
+    return None
+
+
 # ----------------------------------------------------------- 监听副本（代理）
 
 
@@ -251,9 +299,12 @@ def make_listen_proxy(raw: Path, out: Path, audio_root: Path, run_id: str,
                       raw_rel: str | None = None) -> dict:
     """raw residual → 监听副本（**只做 codec 转换**）。
 
-    同采样率 / 同声道 / 同帧数（禁止 trim/shift/重采样/量化）。返回可直接写入 sidecar
-    ``listen.proxy`` 的扁平记录：``{raw_root, raw_rel, raw_sha256, proxy_rel, proxy_sha256,
-    codec, convert, sample_rate, channels, frames, duration_s}``。
+    同采样率 / 同声道 / 同帧数；**禁止人为 trim/shift/时间量化/换采样率**（算法内部的采样率
+    转换如 clip 44.1 kHz → SAM 48 kHz 是既有行为，不在禁止之列；PCM16 幅度量化 ≠ 时间量化）。
+    写前守卫：``raw == out`` 拒；已存在不同内容的文件拒（不覆盖既有听音/证据）；逐字节相同 →
+    幂等放行。返回可直接写入 sidecar ``listen.proxy`` 的扁平记录：``{raw_root, raw_rel,
+    raw_sha256, proxy_rel, proxy_sha256, codec, convert, sample_rate, channels, frames,
+    duration_s}``。
     """
     ok, why = is_safe_run_id(run_id)
     if not ok:
@@ -268,27 +319,34 @@ def make_listen_proxy(raw: Path, out: Path, audio_root: Path, run_id: str,
     ok, why = check_listen_rel(rel, run_id)
     if not ok:
         raise ValueError(f"E_PATH: {why}")
+    if raw.resolve() == out.resolve():
+        raise ValueError("E_PROXY_SAME: raw residual 与监听副本不能是同一路径")
 
     raw_info = wav_facts(raw)
     if codec == "copy":
         payload = raw.read_bytes()
-        out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_bytes(payload)
         convert = "none（逐字节副本）"
     elif codec == "pcm16":
         if raw_info["tag"] not in (1, 3) or raw_info["bits_per_sample"] not in (16, 24, 32, 64):
             raise ValueError(f"E_WAV_CODEC: raw residual 编码不受支持："
                              f"tag={raw_info['tag']} bits={raw_info['bits_per_sample']}")
-        from common import write_wav
+        from common import encode_wav_bytes
         samples, channels, sr = read_frames(raw)
         if sr != raw_info["sample_rate"] or len(samples) != raw_info["frames"] * channels:
             raise ValueError("E_WAV_FORMAT: 采样率/帧数读取不一致")
-        out.parent.mkdir(parents=True, exist_ok=True)
-        write_wav(out, samples, sr, channels=channels, fmt="pcm16")
+        payload = encode_wav_bytes(samples, sr, channels=channels, fmt="pcm16")
         convert = (f"tag{raw_info['tag']}/bits{raw_info['bits_per_sample']}->pcm16"
-                   f"（幅度 [-1,1] 量化，帧数/声道/采样率不变）")
+                   f"（幅度 [-1,1] 量化，帧数/声道/采样率不变；幅度量化 ≠ 时间量化）")
     else:
         raise ValueError(f"E_CODEC: 不支持的代理 codec：{codec!r}（pcm16|copy）")
+
+    # 写前守卫：已有文件不得覆盖（不同内容 → 拒；逐字节相同 → 幂等放行）
+    out.parent.mkdir(parents=True, exist_ok=True)
+    if out.exists():
+        if out.read_bytes() != payload:
+            raise ValueError(f"E_PROXY_EXISTS: 已存在不同内容的文件，拒绝覆盖（不重写既有听音/证据）：{rel}")
+    else:
+        out.write_bytes(payload)
 
     proxy_info = wav_facts(out)
     if proxy_info["frames"] != raw_info["frames"] \
@@ -368,8 +426,7 @@ def residual_attach_calls(trace: dict | None, clip_name: str, run_id: str) -> li
             continue
         facts = call.get("facts") or {}
         path = _norm(str(call.get("args_summary") or ""))
-        first = path.split("/")[0]
-        if path == _norm(str(clip_name)) or not first.startswith(str(run_id)):
+        if path == _norm(str(clip_name)) or not check_listen_rel(path, run_id)[0]:
             continue
         if facts.get("attach_success") is True:
             out.append({"path": path, "bytes": facts.get("attach_bytes"),
@@ -593,6 +650,47 @@ def verify_chain(doc: dict | None, *, run_dir: Path, clip: dict, roots: dict,
             "各级 residual 均有监听副本（raw/proxy hash、转换参数、等长）且 trace 观测到真实挂载"
             if not listen_bad else f"监听证据问题：{listen_bad[:4]}")
 
+    # 6b) 听音必须在“下一次成功分离”之前，且中间隔一次模型轮次（评审加固）--
+    #   工作流是 听→模型自主选择→分离：同一轮并行调用（无中间模型轮次）不能声称
+    #   “依据新听到的声音选择了下一层”。
+    order_bad = []
+    order_detail = "未提供 trace（standalone 核对；run 内会用事件流强制顺序）"
+    if trace is not None:
+        calls = trace.get("tool_calls") or []
+        sam_entries = classify_separations(trace)["real_success"]
+        turn_seqs = [t for t in (trace.get("turn_start_seqs") or []) if isinstance(t, int)]
+        for j in range(len(stages) - 1):
+            nxt = stages[j + 1]
+            if not (nxt.get("sam") or {}).get("performed"):
+                continue
+            listen = stages[j].get("listen") or {}
+            path = _norm(str(listen.get("path") or ""))
+            k = performed.index(nxt)
+            if k >= len(sam_entries):
+                order_bad.append(f"stages[{j}]→[{j + 1}]: 未找到对应的 SAM 分离调用")
+                continue
+            sam_seq = sam_entries[k].get("seq")
+            attach = [c for c in calls if c.get("tool") == "audio_attach"
+                      and _norm(str(c.get("args_summary") or "")) == path
+                      and (c.get("facts") or {}).get("attach_success") is True]
+            good, why = False, f"未观测到对 {path} 的成功挂载"
+            for c in attach:
+                a_end = c.get("end_seq")
+                if a_end is None or sam_seq is None:
+                    why = "事件流缺序号，无法证明顺序"
+                elif not a_end < sam_seq:
+                    why = (f"挂载（end@{a_end}）不在下一次分离（start@{sam_seq}）之前（late listen）")
+                elif not [t for t in turn_seqs if a_end < t < sam_seq]:
+                    why = "听音与下一次分离之间没有模型轮次（同轮并行，不能声称依据新声音自主选择）"
+                else:
+                    good = True
+                    break
+            if not good:
+                order_bad.append(f"stages[{j}]→[{j + 1}]: {why}")
+        order_detail = ("每级听音均发生在下一次成功分离之前，且中间隔模型轮次（自主选择可成立）"
+                        if not order_bad else f"听音/分离顺序问题：{order_bad[:3]}")
+    chk.add("listen_before_next_separation", not order_bad, order_detail)
+
     # 7) 停止策略 ----------------------------------------------------------
     stop = doc.get("stop") or {}
     reason = stop.get("reason")
@@ -619,14 +717,33 @@ def verify_chain(doc: dict | None, *, run_dir: Path, clip: dict, roots: dict,
                             f"失败/未知尝试 {failed_attempts} 次 < 预算 {budget}）")
     if reason == "budget" and not any(k in lim_text for k in ("残余", "残留", "未剥离", "未辨认", "剩余")):
         stop_bad.append("stop.reason=budget 时 limitations 必须写明残余未剥离部分")
-    residual_left = stop.get("residual_left")
-    if residual_left:
-        left = entry_ok(len(stages), "stop.residual_left", residual_left, is_wav=True)
-        if left is None:
-            stop_bad.append("stop.residual_left 文件/hash 核对失败")
     chk.add("stop_policy", not stop_bad,
             f"停止原因 {reason!r} 合规，残余与不确定性已如实记录"
             if not stop_bad else f"停止策略问题：{stop_bad[:3]}")
+
+    # 7b) stop.residual_left 必须就是最终级 residual（评审加固）-----------
+    left_bad = []
+    residual_left = stop.get("residual_left")
+    final = stages[-1].get("residual") or {}
+    if not residual_left:
+        left_bad.append("stop.residual_left 必须记录最终残余（= 最后一级 residual），不得省略")
+    else:
+        if entry_ok(len(stages), "stop.residual_left", residual_left, is_wav=True) is None:
+            left_bad.append("stop.residual_left 文件/hash/时间轴核对失败")
+        if residual_left.get("sha256") == clip_sha:
+            left_bad.append("stop.residual_left 不得是原混音")
+        earlier = [i for i, st in enumerate(stages[:-1])
+                   if (st.get("residual") or {}).get("sha256") == residual_left.get("sha256")]
+        if earlier:
+            left_bad.append(f"stop.residual_left 不得是更早级的 residual（stages {earlier}）")
+        if (residual_left.get("sha256") != final.get("sha256")
+                or residual_left.get("rel") != final.get("rel")
+                or residual_left.get("root") != final.get("root")):
+            left_bad.append("stop.residual_left 必须与最后一级 residual 是同一文件（root/rel/sha256 一致）")
+    chk.add("residual_left_is_final_residual", not left_bad,
+            f"stop.residual_left == 最后一级 residual（{final.get('rel')}，"
+            f"{str(final.get('sha256'))[:12]}…）"
+            if not left_bad else f"残余引用问题：{left_bad[:3]}")
 
     # 8) 预算 --------------------------------------------------------------
     budget_bad = []
@@ -682,6 +799,24 @@ def verify_chain(doc: dict | None, *, run_dir: Path, clip: dict, roots: dict,
     chk.add("reused_baseline_integrity", not reuse_bad,
             f"{len(reused)} 个复用级与基线 hash/事件逐一相符（基线只读，未被覆盖）"
             if not reuse_bad else f"基线复用问题：{reuse_bad[:3]}")
+
+    # 9b) 基线必须与当前 clip 同源（评审加固：只时长相同不够）-------------
+    same_clip_bad = []
+    for st in reused:
+        idx = stages.index(st)
+        base_root = roots.get("baseline")
+        if base_root is None:
+            continue      # 已在 reused_baseline_integrity 失败
+        req_entry = st.get("request") or {}
+        request_rel = req_entry.get("rel") if req_entry.get("root") == "baseline" else None
+        err = check_baseline_clip(Path(base_root), clip, request_rel=request_rel)
+        if err:
+            same_clip_bad.append(f"stages[{idx}]: {err}")
+    chk.add("baseline_same_clip", not same_clip_bad,
+            (f"{len(reused)} 个复用级的基线与当前 clip 同源"
+             "（基线 result.audio + 原始 request 实测输入 hash/duration 均一致）" if reused
+             else "无基线复用级")
+            if not same_clip_bad else f"基线不同源：{same_clip_bad[:2]}")
 
     # 10) 复用事件必须原样进入 result.json（drums 保留证据） -----------------
     carry_bad = []

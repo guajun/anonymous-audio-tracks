@@ -30,12 +30,13 @@ BASE_ID = "e2e-base-1"
 # --------------------------------------------------------------- 构造工具
 
 
-def _samples(n: int) -> list[float]:
-    return [0.3 * ((i // 40) % 2) * (1.0 if (i // 200) % 2 == 0 else 0.5) for i in range(n)]
+def _samples(n: int, seed: int = 1) -> list[float]:
+    return [0.3 * ((i // 40) % 2) * (1.0 if (i // 200) % 2 == 0 else 0.5) + 0.001 * seed
+            for i in range(n)]
 
 
-def _write_wav32(path: Path, seconds: float = DURATION_S, sr: int = SR) -> Path:
-    write_wav(path, _samples(int(seconds * sr)), sr, channels=1, fmt="float32")
+def _write_wav32(path: Path, seconds: float = DURATION_S, sr: int = SR, seed: int = 1) -> Path:
+    write_wav(path, _samples(int(seconds * sr), seed), sr, channels=1, fmt="float32")
     return path
 
 
@@ -74,8 +75,8 @@ class Env:
         self.base_dir = self.ws / "outputs" / "e2e" / BASE_ID
         bdir = self.base_dir / "stems" / "drums"
         bdir.mkdir(parents=True)
-        self.base_target = _write_wav32(bdir / "target.wav")
-        self.base_residual = _write_wav32(bdir / "residual.wav")
+        self.base_target = _write_wav32(bdir / "target.wav", seed=1)
+        self.base_residual = _write_wav32(bdir / "residual.wav", seed=2)
         (bdir / "request.json").write_text(json.dumps(
             {"audio": str(self.clip_path), "description": "drums", "duration_s": DURATION_S}), encoding="utf-8")
         (bdir / "report.json").write_text(json.dumps(
@@ -104,10 +105,10 @@ class Env:
             d = self.run_dir / "stems" / name
             d.mkdir(parents=True)
             self.layer_dirs[name] = d
-        self.l2_target = _write_wav32(self.layer_dirs["layer2"] / "target.wav")
-        self.l2_residual = _write_wav32(self.layer_dirs["layer2"] / "residual.wav")
-        self.l3_target = _write_wav32(self.layer_dirs["layer3"] / "target.wav")
-        self.l3_residual = _write_wav32(self.layer_dirs["layer3"] / "residual.wav")
+        self.l2_target = _write_wav32(self.layer_dirs["layer2"] / "target.wav", seed=3)
+        self.l2_residual = _write_wav32(self.layer_dirs["layer2"] / "residual.wav", seed=4)
+        self.l3_target = _write_wav32(self.layer_dirs["layer3"] / "target.wav", seed=5)
+        self.l3_residual = _write_wav32(self.layer_dirs["layer3"] / "residual.wav", seed=6)
         # SAM 输入链：layer2 ← R1（基线 drums residual）；layer3 ← R2（layer2 residual）
         self.sam_inputs["layer2"] = self.base_residual
         self.sam_inputs["layer3"] = self.l2_residual
@@ -216,39 +217,87 @@ class Env:
             ],
         }
 
-    def _default_trace(self) -> dict:
+    def _events(self, *, late_listen: bool = False, batch_same_turn: bool = False) -> list[dict]:
+        """构造事件流：默认每工具调用前一个模型轮次（turn_start）。
+
+        * ``late_listen``：R1 挂载晚于 layer2 分离（late-listen 反例）；
+        * ``batch_same_turn``：R1 挂载与 layer2 分离同轮并行（无中间模型轮次反例）。
+        """
         attach = json.dumps({"attached": True, "mime": "audio/wav", "bytes": 1000,
                              "sha256": "ab", "queueDepth": 1, "queuedBytes": 1000})
-        events = []
-        for i, path in enumerate([self.clip["name"]] +
-                                 [f"{self.listen_dir}/{k}-listen.wav" for k in ("r1", "r2", "r3")]):
-            events += [
-                {"type": "tool_execution_start", "toolCallId": f"a{i}", "toolName": "audio_attach",
-                 "args": {"path": path}},
-                {"type": "tool_execution_end", "toolCallId": f"a{i}", "toolName": "audio_attach",
-                 "isError": False, "result": {"content": [{"type": "text", "text": attach}]}},
-            ]
-        for i, name in enumerate(("layer2", "layer3")):
+        events: list[dict] = []
+        counter = {"n": 0}
+
+        def add_attach(path: str) -> None:
+            counter["n"] += 1
+            cid = f"a{counter['n']}"
+            events.append({"type": "tool_execution_start", "toolCallId": cid,
+                           "toolName": "audio_attach", "args": {"path": path}})
+            events.append({"type": "tool_execution_end", "toolCallId": cid,
+                           "toolName": "audio_attach", "isError": False,
+                           "result": {"content": [{"type": "text", "text": attach}]}})
+
+        def add_sam(name: str, dry: bool = False) -> None:
+            counter["n"] += 1
+            cid = f"s{counter['n']}"
             wrapper = json.dumps({
                 "schema": "audio-toolbox.sam/v1", "tool": "audio-toolbox", "ok": True,
-                "action": "sam.separate", "exit_code": 0,
+                "action": "sam.dry-run" if dry else "sam.separate", "exit_code": 0,
                 "run_dir": f"outputs/e2e/{RUN_ID}/stems/{name}",
-                "outputs": [f"stems/{name}/target.wav", f"stems/{name}/residual.wav"],
+                "outputs": [] if dry else [f"stems/{name}/target.wav", f"stems/{name}/residual.wav"],
                 "report": {"description": name}})
-            events += [
-                {"type": "tool_execution_start", "toolCallId": f"s{i}", "toolName": "bash",
-                 "args": {"command": f'python audio_toolbox.py sam separate --audio "{self.sam_inputs[name]}" '
-                                     f'--description "{name}" --output-dir outputs/e2e/{RUN_ID}/stems/{name} '
-                                     f'--timeout 900'}},
-                {"type": "tool_execution_end", "toolCallId": f"s{i}", "toolName": "bash", "isError": False,
-                 "result": {"content": [{"type": "text", "text": wrapper}]}},
-            ]
+            cmd = (f'python audio_toolbox.py sam separate --audio "{self.sam_inputs[name]}" '
+                   f'--description "{name}" --output-dir outputs/e2e/{RUN_ID}/stems/{name} '
+                   f'--timeout 900' + (" --dry-run" if dry else ""))
+            events.append({"type": "tool_execution_start", "toolCallId": cid, "toolName": "bash",
+                           "args": {"command": cmd}})
+            events.append({"type": "tool_execution_end", "toolCallId": cid, "toolName": "bash",
+                           "isError": False,
+                           "result": {"content": [{"type": "text", "text": wrapper}]}})
+
+        def turn() -> None:
+            events.append({"type": "turn_start"})
+
+        r1 = f"{self.listen_dir}/r1-listen.wav"
+        r2 = f"{self.listen_dir}/r2-listen.wav"
+        r3 = f"{self.listen_dir}/r3-listen.wav"
+        turn()
+        add_attach(self.clip["name"])
+        if batch_same_turn:
+            turn()
+            add_attach(r1)                 # 同轮内并行：无中间模型轮次
+            add_sam("layer2", dry=True)
+            add_sam("layer2", dry=False)
+        elif late_listen:
+            turn()
+            add_sam("layer2", dry=True)
+            add_sam("layer2", dry=False)   # 先分离
+            turn()
+            add_attach(r1)                 # 后听（late listen）
+        else:
+            turn()
+            add_attach(r1)
+            turn()
+            add_sam("layer2", dry=True)
+            turn()
+            add_sam("layer2", dry=False)
+        turn()
+        add_attach(r2)
+        turn()
+        add_sam("layer3", dry=True)
+        turn()
+        add_sam("layer3", dry=False)
+        turn()
+        add_attach(r3)
         events.append(
             {"type": "message_end", "message": {"role": "assistant", "model": "gemini-3.8-flash",
                                                 "provider": "google", "stopReason": "stop",
                                                 "usage": {"input": 10, "output": 5, "totalTokens": 15},
                                                 "content": [{"type": "text", "text": "E2E-DONE ok"}]}})
-        return common.extract_trace(events) | {"runner_exit": 0}
+        return events
+
+    def _default_trace(self) -> dict:
+        return common.extract_trace(self._events()) | {"runner_exit": 0}
 
     # -- 核对 --------------------------------------------------------------
     def verify(self, *, doc="chain", **kw) -> dict:
@@ -300,6 +349,13 @@ def failed_names(report: dict) -> list[str]:
     return [c["name"] for c in report["checks"] if not c["pass"]]
 
 
+def make_other_clip(env: "Env") -> Path:
+    """同长度（4.0 s）但不同内容的音频（“同长不同源”反例用）。"""
+    other = env.ws / "audio" / "inputs" / "other-clip.wav"
+    write_wav(other, [0.5 * s for s in _samples(int(DURATION_S * SR), seed=9)], SR, channels=1, fmt="pcm16")
+    return other
+
+
 @pytest.fixture()
 def env(tmp_path):
     return Env(tmp_path)
@@ -348,6 +404,11 @@ class TestResidualPrompt:
         with pytest.raises(ValueError):
             run_e2e.build_residual_prompt("../evil", env.clip, env.ws, BASE_ID, 2, 900, 2)
 
+    def test_same_source_baseline_accepted(self, env):
+        """同源基线照常接受（评审口径：当前真实基线也由既有 run 复核覆盖）。"""
+        assert residual_chain.check_baseline_clip(env.base_dir, env.clip) is None
+        assert run_e2e.build_residual_prompt(RUN_ID, env.clip, env.ws, BASE_ID, 2, 900, 2)
+
 
 # --------------------------------------------------------------- 链规则
 
@@ -359,8 +420,9 @@ class TestChainRules:
         names = [c["name"] for c in report["checks"]]
         for expect in ("sidecar_wellformed", "chain_input_prev_residual", "no_mix_swap",
                        "request_proves_input", "trace_input_chain", "residual_listen_observed",
-                       "stop_policy", "sam_budget", "reused_baseline_integrity",
-                       "reused_events_carried_into_result", "sidecar_privacy"):
+                       "listen_before_next_separation", "stop_policy",
+                       "residual_left_is_final_residual", "sam_budget", "reused_baseline_integrity",
+                       "baseline_same_clip", "reused_events_carried_into_result", "sidecar_privacy"):
             assert expect in names
 
     def test_wrong_original_mix_rejected(self, env):
@@ -414,6 +476,20 @@ class TestChainRules:
         report = env.verify()
         assert not report["ok"]
         assert "artifacts_exist_hash_match" in failed_names(report)
+
+    def test_late_listen_rejected(self, env):
+        """先分离后听 R1（late listen）→ 不能声称听后自主选择下一层。"""
+        env.trace = common.extract_trace(env._events(late_listen=True)) | {"runner_exit": 0}
+        report = env.verify()
+        assert not report["ok"]
+        assert "listen_before_next_separation" in failed_names(report)
+
+    def test_same_turn_batching_rejected(self, env):
+        """同轮并行（听与分之间无模型轮次）→ 不能声称依据新声音选择。"""
+        env.trace = common.extract_trace(env._events(batch_same_turn=True)) | {"runner_exit": 0}
+        report = env.verify()
+        assert not report["ok"]
+        assert "listen_before_next_separation" in failed_names(report)
 
 
 # --------------------------------------------------------------- 时间轴
@@ -499,6 +575,27 @@ class TestStopAndBudget:
         assert not report["ok"]
         assert "residual_listen_observed" in failed_names(report)
 
+    def test_residual_left_must_be_final_residual(self, env):
+        """stop.residual_left 必须就是最后一级 residual（不得省略/不得写原混音或更早 residual）。"""
+        env.chain["stop"].pop("residual_left")                       # 省略
+        report = env.verify()
+        assert not report["ok"]
+        assert "residual_left_is_final_residual" in failed_names(report)
+
+        env.chain["stop"]["residual_left"] = {                       # 写成原混音
+            "root": "audio", "rel": env.clip["name"], "sha256": env.clip["sha256"],
+            "sample_rate": SR, "duration_s": DURATION_S}
+        report = env.verify()
+        assert not report["ok"]
+        assert "residual_left_is_final_residual" in failed_names(report)
+
+        env.chain["stop"]["residual_left"] = {                       # 写成更早级 residual
+            "root": "run", "rel": "stems/layer2/residual.wav",
+            "sha256": sha256_file(env.l2_residual), "sample_rate": SR, "duration_s": DURATION_S}
+        report = env.verify()
+        assert not report["ok"]
+        assert "residual_left_is_final_residual" in failed_names(report)
+
 
 # --------------------------------------------------------------- 监听副本
 
@@ -534,6 +631,41 @@ class TestListenProxy:
             residual_chain.make_listen_proxy(
                 env.base_residual, env.ws / "audio" / "inputs" / env.listen_dir / "x.wav",
                 env.ws / "audio" / "inputs", "../evil")
+
+    def test_sibling_prefix_namespace_rejected(self, env):
+        """精确命名空间：`run-1` 不得写入 `run-10-listen/`（startswith 反例，评审复现）。"""
+        out = env.ws / "audio" / "inputs" / "run-10-listen" / "x.wav"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_bytes(b"USER_DATA")
+        with pytest.raises(ValueError):
+            residual_chain.make_listen_proxy(env.base_residual, out,
+                                             env.ws / "audio" / "inputs", "run-1")
+        assert out.read_bytes() == b"USER_DATA"          # 兄弟 run 的文件未被动过
+        ok, why = residual_chain.check_listen_rel("run-10-listen/x.wav", "run-1")
+        assert not ok and "精确命名空间" in why
+
+    def test_existing_file_never_overwritten(self, env):
+        out = env.ws / "audio" / "inputs" / env.listen_dir / "r9-listen.wav"
+        out.write_bytes(b"USER_DATA")
+        with pytest.raises(ValueError):
+            residual_chain.make_listen_proxy(env.base_residual, out,
+                                             env.ws / "audio" / "inputs", RUN_ID)
+        assert out.read_bytes() == b"USER_DATA"          # 既有听音/证据文件保留
+
+    def test_idempotent_same_raw_out(self, env):
+        out = env.ws / "audio" / "inputs" / env.listen_dir / "r7-listen.wav"
+        rec1 = residual_chain.make_listen_proxy(env.base_residual, out,
+                                                env.ws / "audio" / "inputs", RUN_ID)
+        rec2 = residual_chain.make_listen_proxy(env.base_residual, out,
+                                                env.ws / "audio" / "inputs", RUN_ID)
+        assert rec1 == rec2                              # 逐字节相同 → 幂等放行
+
+    def test_raw_equals_out_rejected(self, env):
+        raw_in = env.ws / "audio" / "inputs" / env.listen_dir / "same.wav"
+        raw_in.write_bytes(env.base_residual.read_bytes())
+        with pytest.raises(ValueError):
+            residual_chain.make_listen_proxy(raw_in, raw_in,
+                                             env.ws / "audio" / "inputs", RUN_ID)
 
     def test_proxy_dir_rule(self, env):
         env.chain["stages"][0]["listen"]["path"] = "fixture-a.wav"      # 非 run 派生目录
@@ -619,6 +751,27 @@ class TestBaselineReuse:
         report = env.verify()
         assert not report["ok"]
         assert "reused_baseline_integrity" in failed_names(report)
+
+    def test_baseline_wrong_clip_same_duration_rejected(self, env):
+        """同长度但不同源的基线 → 写前拒 + 链核对拒（不得继承另一段音频的 drums）。"""
+        other = make_other_clip(env)
+        base_result_path = env.base_dir / "result.json"
+        base_result = json.loads(base_result_path.read_text(encoding="utf-8"))
+        base_result["audio"]["sha256"] = sha256_file(other)          # 同 duration，不同源
+        base_result_path.write_text(json.dumps(base_result, ensure_ascii=False), encoding="utf-8")
+        req = env.base_dir / "stems" / "drums" / "request.json"
+        req.write_text(json.dumps({"audio": str(other), "description": "drums",
+                                   "duration_s": DURATION_S}), encoding="utf-8")
+        # 写前拒（prompt 构建 = 启动/复用/复制之前）
+        with pytest.raises(ValueError) as exc:
+            run_e2e.build_residual_prompt(RUN_ID, env.clip, env.ws, BASE_ID, 2, 900, 2)
+        assert "E_BASELINE_CLIP" in str(exc.value)
+        # 链核对也拒（sidecar 自述不算数）
+        env.chain["stages"][0]["reused"]["baseline_result_sha256"] = sha256_file(base_result_path)
+        env.chain["stages"][0]["request"]["sha256"] = sha256_file(req)
+        report = env.verify()
+        assert not report["ok"]
+        assert "baseline_same_clip" in failed_names(report)
 
 
 # --------------------------------------------------------------- 路径/隐私/结构

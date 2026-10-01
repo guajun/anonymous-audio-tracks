@@ -119,6 +119,11 @@ def build_residual_prompt(run_id: str, clip: dict, ws: Path, baseline_run_id: st
     facts = residual_chain.drums_baseline_facts(baseline_dir)
     if not facts or not facts.get("target_sha256") or not facts.get("residual_sha256"):
         raise ValueError(f"E_BASELINE: 基线 run 无可复用的 drums 事实：{baseline_dir}")
+    # 同源守卫（评审加固）：基线必须与当前 clip 同一输入（hash+duration+原始 request 实测），
+    # 仅时长相同不够；写 prompt（= 启动/复用/复制）之前就拒绝不同源的基线。
+    err = residual_chain.check_baseline_clip(baseline_dir, clip)
+    if err:
+        raise ValueError(f"E_BASELINE_CLIP: {err}")
     template = PROMPT_TEMPLATE_RESIDUAL.read_text(encoding="utf-8")
     return template.format(
         run_id=run_id,
@@ -692,6 +697,10 @@ def main(argv=None) -> int:
         if not (ws / E2E_OUTPUTS_REL / args.baseline_run / "result.json").is_file():
             print(f"[fail] E_BASELINE: 基线 run 不存在：outputs/e2e/{args.baseline_run}/result.json",
                   file=sys.stderr)
+            return EXIT_USAGE
+        err = residual_chain.check_baseline_clip(ws / E2E_OUTPUTS_REL / args.baseline_run, clip)
+        if err:
+            print(f"[fail] E_BASELINE_CLIP: {err}", file=sys.stderr)
             return EXIT_USAGE
 
     try:

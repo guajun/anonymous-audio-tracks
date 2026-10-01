@@ -12,7 +12,7 @@
 | 项 | 值 |
 |---|---|
 | 新 run | `e2e-real-20261001-03-rflow`（`--profile residual`，flow `residual-peeling-v1`） |
-| 结果 | **pass**（一次真实 run，未复跑）：数据校验 15 项 + 执行证据门 12 项 + 链核对 13 项全绿 |
+| 结果 | **pass**（一次真实 run，未复跑）：数据校验 15 项 + 执行证据门 12 项 + 链核对 16 项全绿 |
 | 基线 run | `e2e-real-20261001-02`（**只读复用**；run 前后 26 个文件 hash 全等，result.json `d789cabc…8311` 未变） |
 | 输入 | 同一个 16 s clip `e2e-clip-001.wav`（`42f968e2…c7f0`，44.1 kHz/2ch），**同一零点**（t=0=clip 开头） |
 | 剥离链 | drums（复用基线）→ R1 → bass（真实分离）→ R2 → synthesizer（真实分离）→ R3 → 停（budget 2/2） |
@@ -34,13 +34,17 @@
 - trace 中真实 SAM 调用（脱敏）：`--audio "outputs/e2e/<RUN_ID>/stems/drums-reused/residual.wav"`
   → 产 bass；`--audio "outputs/e2e/<RUN_ID>/stems/bass/residual.wav"` → 产 synthesizer。
   **没有任何一次分离的输入是原混音**（旧行为是三次都输入原 clip）。
-- 链核对（`stage-chain-verify.json`，`agentic-e2e-stage-chain-verify/v1`）13 项全绿：
+- 链核对（`stage-chain-verify.json`，`agentic-e2e-stage-chain-verify/v1`）16 项全绿：
   `chain_input_prev_residual` / `no_mix_swap` / `request_proves_input` / `trace_input_chain` /
-  `residual_listen_observed` / `stop_policy` / `sam_budget` / `reused_baseline_integrity` /
-  `reused_events_carried_into_result` / `sidecar_privacy` 等。任何“各自从原混音独立分离”或
-  “PCM16 监听代理当 SAM 输入”都会 FAIL（离线回归有专门反例）。
-- 时间轴：每个 target/residual 按**自身采样率**（48 000 Hz）核等长 16.000 s = clip 时长；
-  无 trim/shift/量化（监听副本 PCM16 转换仅幅度量化，帧数/采样率/声道不变）。
+  `residual_listen_observed` / `listen_before_next_separation` / `stop_policy` /
+  `residual_left_is_final_residual` / `sam_budget` / `reused_baseline_integrity` /
+  `baseline_same_clip` / `reused_events_carried_into_result` / `sidecar_privacy` 等。任何“各自从
+  原混音独立分离”“PCM16 监听代理当 SAM 输入”“听音晚于分离/同轮并行假装听后选择”
+  “残余引用不是最终级 residual”都会 FAIL（离线回归有专门反例）。
+- 时间轴：每个 target/residual 按**自身采样率**（48 000 Hz）核等长 16.000 s = clip 时长；无人为
+  trim/shift/时间量化/换采样率（监听副本 PCM16 转换仅幅度量化，帧数/采样率/声道不变）。
+  **口径澄清**：算法内部的采样率转换（clip 44.1 kHz 进 SAM、输出 48 kHz）是既有行为、允许；
+  禁止的是人为改时间轴或让监听副本与 raw residual 采样率/帧数不一致（幅度量化 ≠ 时间量化）。
 - 监听副本（`audio/inputs/<RUN_ID>-listen/`，本 run 派生目录，raw/proxy hash + 转换参数 + 等长
   全记录）：R1 `93367a950451290b` / R2 `4b3cb9b6351a5f54` / R3 `b833e1363a5e627a`
   （均 PCM16、48 kHz、768 000 帧；raw = 各级 residual `ea03d1cc…`/`f33042a0…`/`4ed0a333…`）。
@@ -66,9 +70,21 @@
 
 - 同一次抽查（抽 5 点，能量上升 3/5；独立检测器差异：疑似漏检 0 / 疑似 17——只是同族检测器
   在 0.1 s 容差下的差异**迹象**，不是误检率）；已作废的“隔离比”不使用，跨轴能量比只作代理。
+- **DSP 参数混杂（必须显式声明）**：两次 run 的 onset 检测参数**并不相同**，所以事件数变化
+  **不是**“只换分离方式”的受控消融（not a controlled separation-only ablation）：
+
+| 层 | 旧 run（原混音独立分离）DSP | 新 run（残差剥离）DSP | 阈值 |
+|---|---|---|---|
+| drums | all-band，frame 1024，hop 256，min-gap 0.10 | **复用基线同脚本/同参数的 36 事件**（不重检） | 1.2 |
+| bass | low-band，frame **2048**，hop 256，min-gap **0.15** | low-band，frame **1024**，hop 256，min-gap **0.12** | 1.0（相同） |
+| synthesizer | mid-band，frame 1024，hop 256，min-gap 0.12 | mid-band，frame 1024，hop 256，min-gap 0.12（**相同**） | 1.1（相同） |
+
+（两版脚本的置信度归一化也略有不同：旧 strength/4.0 下限 0.1，新 bass strength/5.0、synth
+  strength/6.0、下限 0.2；不影响 onset 位置，只影响 confidence 展示。）
 - 差异的可能来源（**不承诺方向**）：①分离对象不同（新 target 来自 R1/R2，不是原混音）；②层归属
   随剥离顺序改变（“synthesizer”在 R2 语义下包含更多中高频内容）；③SAM target/residual 本身是
-  估计，**逐层误差会累积**；④DSP 参数在不同 stem 上的响应不同。**不能**据此宣称残差剥离更准。
+  估计，**逐层误差会累积**；④**DSP 参数本身变了**（上表：bass frame/min-gap 不同，synth 相同）。
+  **不能**据此宣称残差剥离更准；原 164 事件不为“好看”而修改。
 
 ## 4. 分栏：实测 / 复用 / 推测
 
@@ -112,3 +128,22 @@
   假设（`source="sam"`）；事件 `source="dsp"`；音频通路 `bridge`（native=unsupported）。
 - 播放滑条（#41）范围 = 真实音频 0..16 s；两侧 result/音频时轴相同，可逐层并排试听
   （drums 复用件 vs 新 bass/synthesizer 与 R3 残余）。
+
+## 7. 评审修订记录（PR #44 R1，守卫加固；无新实验/GPU）
+
+针对主 Agent 评审意见的修复（**不改**原 110 + 新 164 events、音频、raw trace；离线回归 + 既有 run
+复核，无新 Gemini/SAM 调用）：
+
+| # | 缺陷 | 修复 | 回归 |
+|---|---|---|---|
+| 1 | 基线可与当前 clip 不同源（只时长相同也可通过，可能继承另一段音频的 drums） | `check_baseline_clip`：基线 `result.audio.sha256/duration_seconds` + 原始 `request.json` 实测输入 hash 必须与当前 clip 一致；写 prompt（=启动/复用/复制）之前拒绝（`E_BASELINE_CLIP`），链核对新增 `baseline_same_clip` | 同长不同源基线负例（写前拒 + 链拒）+ 同源正例 |
+| 2 | 监听目录 `startswith(run_id)` 可跨 run（`run-1` 写入 `run-10-listen/`）；已存在文件会被覆盖 | 精确命名空间 `<run-id>-listen`（不用 startswith）；`raw==out` 拒；已存在不同内容拒（`E_PROXY_EXISTS`，不重写既有听音/证据），逐字节相同幂等放行 | 兄弟前缀碰撞、既有文件哨兵、幂等、raw==out 负例 |
+| 3 | `stop.residual_left` 可省略/可任指；听音与分离顺序未验证（同轮并行可冒充“听后选择”） | `residual_left_is_final_residual`：必须就是最后一级 residual（root/rel/sha，拒原混音/更早 residual）；`listen_before_next_separation`：听音须在下一次成功分离**之前**且中间隔模型轮次 | late-listen、同轮并行、缺/错 residual_left 负例 |
+| 4 | 报告未显式声明 DSP 参数混杂 | §3 新增新旧 DSP 参数表 + “非分离方式受控消融”声明 | 文档；164 events 未改 |
+
+prompt 口径同步澄清：禁的是**人为** trim/shift/时间量化/监听副本换采样率；算法内部采样率转换
+（44.1 kHz 进 SAM → 48 kHz 输出）是既有行为、允许；PCM16 幅度量化 ≠ 时间量化。
+
+复核结果（离线）：既有 run `e2e-real-20261001-03-rflow` 重新核对 **15 数据 + 12 执行门 + 16 链**
+全绿（含新加的顺序/最终残余/同源检查；真实事件顺序本就合规）；`agentic/` 回归 **397 passed**；
+viewer Node **162 passed**（LF 检出）。基线与新 run 的 result/events/音频/raw trace 均未改动。

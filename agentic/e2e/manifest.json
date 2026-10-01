@@ -66,10 +66,10 @@
     "prompt": "agentic/e2e/harness/prompt_template_residual.md",
     "sidecar_schema": "agentic-e2e-stage-chain/v1（stage-chain.json；加法 sidecar，不扩展 #32 冻结 result 协议；示例 fixtures/stage-chain.example.json）",
     "verify_schema": "agentic-e2e-stage-chain-verify/v1（residual_chain.py verify：sidecar × 真实文件 hash × request.json 实际 input × trace --audio 参数链）",
-    "chain_rule": "每级 input sha256 == 前级 residual 的 raw sha256；原混音 / PCM16 监听代理偷换输入 → FAIL（独立分离不能误报 sequential）",
-    "listen_proxy": "audio/inputs/<run-id>-listen/（pcm16|copy；raw/proxy hash + 转换参数 + 等长同 sr 同声道；SAM 下一层仍用 raw residual）",
+    "chain_rule": "每级 input sha256 == 前级 residual 的 raw sha256；原混音 / PCM16 监听代理偷换输入 → FAIL（独立分离不能误报 sequential）；听音必须在下一次成功分离之前且中间隔模型轮次；基线必须与当前 clip 同源（result 与原始 request 实测输入 hash/duration）",
+    "listen_proxy": "audio/inputs/<run-id>-listen/ 精确命名空间（不用前缀匹配；pcm16|copy；raw/proxy hash + 转换参数 + 等长同 sr 同声道；raw!=out；已存在不同内容文件拒覆盖，逐字节相同幂等；SAM 下一层仍用 raw residual）",
     "stop_reasons": ["near-silence", "artifacts-only", "no-identifiable-layer", "uncertain", "budget"],
-    "stop_policy": "停止须写 reason/evidence/residual_left + limitations（residual 是模型估计、误差会累积、不承诺更准）；budget 停止须真实用尽预算（成功 + 失败/未知尝试 ≥ 预算）",
+    "stop_policy": "停止须写 reason/evidence + limitations（residual 是模型估计、误差会累积、不承诺更准）；residual_left 必须==最后一级 residual（拒原混音/更早 residual）；budget 停止须真实用尽预算（成功 + 失败/未知尝试 ≥ 预算）",
     "reused_drums": "基线 run 只读不改；逐字节副本 + 事件 canonical hash（sha256(json.dumps(events, sort_keys=True, separators=(\",\", \":\"), ensure_ascii=False))）+ 用户局部定性反馈记录（不推导 target 干净 / residual 真值）",
     "budget_residual_run": {"sam_separations_max": 2, "sam_call_timeout_s": 900, "pi_run_timeout_s": 2400, "validator_fix_fixes_max": 2, "note": "复用 drums 不计入预算；对照真实 run 至多 1 次；无参数扫描/不下载权重"},
     "gate_additions": ["residual_chain_recorded", "residual_chain_verified", "residual_listen_attach_observed"]

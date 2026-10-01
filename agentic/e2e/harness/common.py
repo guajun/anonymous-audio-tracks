@@ -196,12 +196,9 @@ def read_mono(path: Path) -> tuple[list[float], int]:
     return out, info["sample_rate"]
 
 
-def write_wav(path: Path, samples: list[float], sample_rate: int, channels: int = 1,
-              fmt: str = "pcm16") -> None:
-    """写 WAV（测试 fixture 用）：fmt ∈ {pcm16, pcm24, pcm32, float32}。样本按 [-1,1] 处理
-    （float32 不裁幅，保留原始值）。"""
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
+def encode_wav_bytes(samples: list[float], sample_rate: int, channels: int = 1,
+                     fmt: str = "pcm16") -> bytes:
+    """把样本序列编码为 WAV 字节（fmt ∈ {pcm16, pcm24, pcm32, float32}；见 write_wav）。"""
     if fmt == "pcm16":
         tag, bits = WAV_PCM, 16
         import array
@@ -229,7 +226,16 @@ def write_wav(path: Path, samples: list[float], sample_rate: int, channels: int 
     header += b"fmt " + struct.pack("<IHHIIHH", 16, tag, channels, sample_rate,
                                     sample_rate * block_align, block_align, bits)
     header += b"data" + struct.pack("<I", len(payload))
-    path.write_bytes(header + payload)
+    return header + payload
+
+
+def write_wav(path: Path, samples: list[float], sample_rate: int, channels: int = 1,
+              fmt: str = "pcm16") -> None:
+    """写 WAV（测试 fixture 用）：fmt ∈ {pcm16, pcm24, pcm32, float32}。样本按 [-1,1] 处理
+    （float32 不裁幅，保留原始值）。"""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(encode_wav_bytes(samples, sample_rate, channels=channels, fmt=fmt))
 
 
 def write_wav16(path: Path, samples: list[float], sample_rate: int, channels: int = 1) -> None:
@@ -491,8 +497,20 @@ def call_facts(tool: str, command: str, full_text: str, is_error: bool) -> dict:
     return facts
 
 
+def _seq(events: list[dict], rec: dict) -> int | None:
+    """事件在事件流里的序号（同引用；找不到时退化为 None）。用于调用顺序/轮次核对。"""
+    for i, e in enumerate(events):
+        if e is rec:
+            return i
+    return None
+
+
 def extract_trace(events: list[dict]) -> dict:
-    """从事件流抽取 trace 摘要（工具调用链、用量、模型、终态文本）。"""
+    """从事件流抽取 trace 摘要（工具调用链、用量、模型、终态文本）。
+
+    除原有摘要外还记录**顺序证据**（issue #42 评审加固）：每条工具调用的 ``seq``/``end_seq``
+    （事件流序号）与 ``turn_start_seqs``（模型轮次起点），供“听音→模型自主选择→分离”
+    顺序核对使用（只加不减）。"""
     calls: list[dict] = []
     usage_total = {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0,
                    "totalTokens": 0, "cost_total": 0.0}
@@ -502,6 +520,7 @@ def extract_trace(events: list[dict]) -> dict:
     turns = 0
     provider_failures: list[str] = []
     last_assistant_stop = None
+    turn_start_seqs: list[int] = []
 
     for rec in events:
         rtype = rec.get("type")
@@ -512,14 +531,17 @@ def extract_trace(events: list[dict]) -> dict:
                 "isError": False,
                 "args_summary": summarize_args(str(rec.get("toolName")), rec.get("args")),
                 "result_head": "",
+                "seq": _seq(events, rec),
+                "end_seq": None,
             })
         elif rtype == "tool_execution_end":
             entry = next((c for c in calls if c.get("call_id") == rec.get("toolCallId")
                           and c.get("tool") == str(rec.get("toolName"))), None)
             if entry is None:
                 entry = {"call_id": rec.get("toolCallId"), "tool": str(rec.get("toolName")),
-                         "args_summary": "", "result_head": ""}
+                         "args_summary": "", "result_head": "", "seq": None, "end_seq": None}
                 calls.append(entry)
+            entry["end_seq"] = _seq(events, rec)
             full_text = _content_texts((rec.get("result") or {}).get("content"))
             entry["isError"] = bool(rec.get("isError"))
             entry["result_head"] = full_text[:300]
@@ -528,6 +550,7 @@ def extract_trace(events: list[dict]) -> dict:
                                         full_text, entry["isError"])
         elif rtype == "turn_start":
             turns += 1
+            turn_start_seqs.append(_seq(events, rec))
         elif rtype == "message_end":
             msg = rec.get("message") or {}
             if msg.get("role") == "assistant":
@@ -557,6 +580,7 @@ def extract_trace(events: list[dict]) -> dict:
         by_tool[c["tool"]] = by_tool.get(c["tool"], 0) + 1
     return {
         "turns": turns,
+        "turn_start_seqs": turn_start_seqs,
         "models": sorted(models),
         "providers": sorted(providers),
         "tool_calls": calls,
@@ -593,7 +617,8 @@ def classify_separations(trace: dict) -> dict:
             continue
         facts = call.get("facts") or {}
         entry = {"command": cmd, "isError": call.get("isError", False),
-                 "result_head": head[:200], "facts": facts}
+                 "result_head": head[:200], "facts": facts,
+                 "seq": call.get("seq"), "end_seq": call.get("end_seq")}
         if "--dry-run" in cmd or facts.get("sam_action") == "sam.dry-run" or "sam.dry-run" in head:
             buckets["dry_run"].append(entry)
             continue

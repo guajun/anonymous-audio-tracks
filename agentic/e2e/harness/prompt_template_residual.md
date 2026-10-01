@@ -3,7 +3,7 @@
 ## 输入
 
 - 音频：`{clip_name}`（在 `audio/inputs/` 内，{duration_s} 秒，{sample_rate} Hz，{channels} 声道）。
-- 时间轴（冻结）：clip 的 **t=0 = 音频文件开头**；所有 onset 都用这个 clip 时轴的秒。每一级 target/residual 都是同一时长（{duration_s} 秒），**禁止裁剪/时间轴平移/重采样/量化**。
+- 时间轴（冻结）：clip 的 **t=0 = 音频文件开头**；所有 onset 都用这个 clip 时轴的秒。每一级 target/residual 都是同一时长（{duration_s} 秒），**禁止人为裁剪/时间轴平移/时间量化/换采样率**（注意：算法内部的采样率转换——如 clip 44.1 kHz 进 SAM、输出 48 kHz——是既有行为、允许；禁止的是人为改时间轴、把 onset 量化到节拍、或让监听副本与 raw residual 的采样率/帧数不一致）。
 - 听音方式：用 `audio_attach` 工具挂载（参数 `{{"path": "<相对 audio/inputs 的路径>"}}`）。**不要**用 `read`/`@file` 读音频文件（那是乱码，模型听不到）。音频会在你下一次模型请求时一次性注入。
 - SAM 路径与解释器在 `local/config.json`（`sam_root` / `sam_python`），调用时显式传 `--sam-root` / `--python`。
 - **对照基线（优先复用，不要重跑）**：上一轮已认可的 drums 分离产物在基线 run `{baseline_run_id}`（目录 `{baseline_run_dir}`，只读，**不得改动**）：
@@ -16,16 +16,16 @@
 ## 核心工作流（必须遵守：从残差继续剥离）
 
 1. **听原混音**：`audio_attach` 挂 `{clip_name}`，写下声音层/乐器/速度**假设**（假设不是事实）。然后核对基线 drums hash 并复用（把 target/residual **逐字节复制**到本 run 目录，例如 `stems/drums-reused/`，hash 必须与基线一致；36 个事件原样复用进 result）。
-2. **听 R1**：R1 = 上一级 residual 的 **raw 字节**。`audio_attach` 只能挂 `audio/inputs` 根内文件，所以先做**本 run 派生的监听副本**目录 `audio/inputs/{listen_dir}/`：
-   - 推荐 PCM16 转换（同采样率/同声道/同帧数；只做 codec 转换），用
+2. **听 R1**：R1 = 上一级 residual 的 **raw 字节**。`audio_attach` 只能挂 `audio/inputs` 根内文件，所以先做**本 run 精确命名空间的监听副本**目录 `audio/inputs/{listen_dir}/`（不要写到别的 run 目录；目标文件已存在就不要覆盖）：
+   - 推荐 PCM16 转换（同采样率/同声道/同帧数；只做 codec 幅度量化，**幅度量化 ≠ 时间量化**），用
      `python {chain_tool} make-proxy --raw <raw residual.wav> --out audio/inputs/{listen_dir}/r1-listen.wav --audio-root audio/inputs --run-id {run_id} --record outputs/e2e/{run_id}/listen-proxies.json`；
    - 或自己转换，但 sidecar 里**必须**记录 raw hash、proxy hash、转换参数、等长（帧数/采样率/声道）；
-   - 然后 `audio_attach` **真实听 R1**（这是你选择下一层的依据）。
+   - 然后 `audio_attach` **真实听 R1**（这是你选择下一层的依据；听音与下一次 SAM 分离之间要有模型回合，不要在同一轮里并行“边听边分”）。
 3. **自主选择下一层**（不强制 bass/synth、不强制填满层数）：基于你**听到的 R1 内容**写下 `next_choice`（依据 + 下一层 SAM 描述）。来源可以 `unknown`，不要硬凑标签。
 4. **真实分离**：读 `.pi/skills/sam-audio/SKILL.md`，然后用其中的 CLI 分离下一层（产物写 `outputs/e2e/{run_id}/stems/<层名>/`）：
    **`--audio` 必须指向 R1 的 raw residual 字节**（前一级 residual 的原始 WAV 或其逐字节相同副本，sha256 必须等于前一级 residual hash）。**绝不允许**指向原混音 `{clip_name}`，也**绝不允许**指向 PCM16 监听代理（那是给耳朵的，不是给 SAM 的）。得到 target L2 + residual R2。
 5. **听 R2 → 再剥或停**：同 2 做 R2 监听副本并**真实听**，再决定继续剥离（预算内）或停止。
-6. **停止条件**（满足任一即停，写入 sidecar `stop`）：接近静音 / 只剩伪影 / 没有可辨认声层 / 来源无法辨认（unknown 允许）/ 预算到达。停止必须写 `stop.reason`（`near-silence` | `artifacts-only` | `no-identifiable-layer` | `uncertain` | `budget`）、`stop.evidence`（听感/测量依据）、`stop.residual_left`（最终残差 hash）与 limitations（残余是什么、为什么不继续）。
+6. **停止条件**（满足任一即停，写入 sidecar `stop`）：接近静音 / 只剩伪影 / 没有可辨认声层 / 来源无法辨认（unknown 允许）/ 预算到达。停止必须写 `stop.reason`（`near-silence` | `artifacts-only` | `no-identifiable-layer` | `uncertain` | `budget`）、`stop.evidence`（听感/测量依据）、`stop.residual_left`（**必须就是最后一级 residual 的相对路径 + hash**，不得写原混音或更早级的 residual）与 limitations（残余是什么、为什么不继续）。
 7. **每级 sidecar**：写 `outputs/e2e/{run_id}/stage-chain.json`（schema `agentic-e2e-stage-chain/v1`，字段模板见 `{chain_example}`；只有相对路径 + hash，**禁止绝对路径/密钥**）。harness 会按真实 `request.json`/文件 hash/trace 校验：**每一级 input hash 必须等于前一级 residual 的 raw hash**；“各自从原混音独立分离”会被判失败，不能伪称 sequential。
 8. **事件检测**：对每个 **target** 做 onset（自写 Python DSP 脚本放 `outputs/e2e/{run_id}/scripts/`，必须实际运行并采用其输出；可选 helper：`{dsp_helper}`）。drums 的 {drums_events_count} 个事件**原样复用**（id/onset 不变，标注 reused 来源 run `{baseline_run_id}`）。同一 clip 零点/秒轴；`source="dsp"` + `method`；不量化到节拍。
 9. **结果文档**：产出 `outputs/e2e/{run_id}/result.json`，协议 **agentic-audio-tracks/v1**：
