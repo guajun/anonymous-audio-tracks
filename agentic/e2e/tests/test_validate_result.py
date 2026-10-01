@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 
+import common
 import validate_result
 from helpers import build_result, make_clip_fixture, make_stem, write_result
 
@@ -149,6 +150,44 @@ class TestNegativeCases:
         report = validate_result.validate(path, level="real")
         assert not report["ok"]
         assert report["checks"][0]["name"] == "parse"
+
+
+class TestStrictProvenanceR1:
+    """R1：pin 必须精确 SHA/前缀；mock/native 冒称在任何字段都拒。"""
+
+    def test_word_only_tool_reference_fails_pins(self, env):
+        steps = [
+            {"tool": "some sam-audio wrapper", "source": "sam", "note": "只提到 sam-audio 字样"},
+            {"tool": "listening", "source": "llm", "note": "假设"},
+            {"tool": "bridge", "source": "bridge", "note": "附件"},
+            {"tool": "dsp", "source": "dsp", "note": "onset"},
+        ]
+        report = _validate(env, build_result(env["clip"], provenance_steps=steps))
+        assert not _by_name(report, "provenance_pins")["pass"]
+        assert common.TOOLBOX_PIN[:12] in _by_name(report, "provenance_pins")["detail"]
+
+    def test_exact_pin_prefixes_pass(self, env):
+        report = _validate(env, build_result(env["clip"]))
+        assert _by_name(report, "provenance_pins")["pass"]
+
+    def test_mock_claim_anywhere_fails_real_level(self, env):
+        doc = build_result(env["clip"])
+        doc["tempo"] = {"bpm": 120.0, "source": "mock", "confidence": 1.0}
+        report = _validate(env, doc)
+        assert not report["ok"]
+        assert not _by_name(report, "no_mock_or_native_claims")["pass"]
+
+    def test_native_event_claim_fails_real_level(self, env):
+        doc = build_result(env["clip"])
+        ev = doc["instruments"][0]["events"][0]
+        ev["source"], ev["method"] = "native", "listening-estimate"
+        report = _validate(env, doc)
+        assert not _by_name(report, "no_mock_or_native_claims")["pass"]
+
+    def test_fixture_level_still_accepts_mock(self, env):
+        doc = build_result(env["clip"], kind="mock")
+        report = _validate(env, doc, level="fixture")
+        assert report["ok"], json.dumps(report, ensure_ascii=False, indent=2)
 
 
 class TestCliContract:

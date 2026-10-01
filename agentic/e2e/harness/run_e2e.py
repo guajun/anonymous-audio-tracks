@@ -8,12 +8,17 @@
 * harness **绝不生成 result.json、不预先固定任何分离/onset**——那必须由 Agent 自主完成
   （音频 hypothesis → 读 sam-audio SKILL → 真实 SAM 分离 → 自写 DSP → 产出 JSON）。
   任何"手工 pipeline + LLM 润色"都违背本 issue 验收；
-* 真实 / mock 分离：`--kind real`（默认，真实 Gemini + bridge + GPU SAM）与离线 fixture/mock
-  从不混用；mock 只在 tests/ 里出现，run manifest 记 `kind`。
+* 真实 / mock 分离：真实运行（真实 Gemini + bridge + GPU SAM）与离线 fixture/mock 从不混用；
+  mock 只在 tests/ 里出现，run manifest 记 `kind`。
+
+真实通过判据（R1 修订）：**文件/schema 校验只算“数据校验”**；一次“真实 pass”还必须由
+**观测到的执行证据**门控（execution gate，见 `execution_gate()`）：观测到的模型/提供方、
+成功的音频附件（MIME+字节）、成功的真·SAM 分离（非 dry-run/非失败）、预算合规、必要 stage
+非失败、原 runner 成功。`--verify` 不会把失败的原始 run 或缺失的执行证据洗成 pass。
 
 失败语义（与 agentic/audio-probe/probe/run_bounded.py 一致，原样传播）：
 ``2`` 用法 / ``3`` 命令失败或无法启动 / ``4`` 超时（杀进程）/ ``5`` provider error /
-``6`` 事件流空/乱码/不完整；``1`` = 运行完成但验收判据未过（result 缺失或校验失败）。
+``6`` 事件流空/乱码/不完整；``1`` = 运行完成但验收判据未过（result 缺失/校验失败/执行门未过）。
 **blocked 不写成 success。**
 
 用法::
@@ -49,12 +54,17 @@ for _p in (str(HERE), str(PROBE_DIR)):
 from common import (  # noqa: E402
     AUDIO_ROOT_REL, BRIDGE_SHA256, E2E_OUTPUTS_REL, IMPL_MODEL, LATEST_NAME,
     RESEARCH_MODEL, SAM_UPSTREAM_COMMIT, TOOLBOX_PIN,
-    count_real_separations, extract_trace, make_redactor, read_json,
+    classify_separations, count_real_separations, ensure_contained, extract_trace,
+    is_safe_leaf_name, is_safe_run_id, make_redactor, read_json,
     sha256_file, write_json,
 )
 
 EXIT_OK, EXIT_ACCEPTANCE, EXIT_USAGE = 0, 1, 2
-MANIFEST_SCHEMA = "agentic-e2e-run-manifest/v1"
+EXIT_GUARD = 3
+MANIFEST_SCHEMA = "agentic-e2e-run-manifest/v2"
+HARNESS_FILES = ("common.py", "make_clip.py", "run_e2e.py", "validate_result.py",
+                 "spotcheck.py", "dsp_onset.py", "prompt_template.md")
+REQUIRED_STAGES = ("model_run", "result", "validate")
 
 
 # --------------------------------------------------------------------- prompt
@@ -62,6 +72,12 @@ MANIFEST_SCHEMA = "agentic-e2e-run-manifest/v1"
 
 def build_prompt(run_id: str, clip: dict, ws: Path, sam_separations: int,
                  sam_timeout: int, max_fixes: int) -> str:
+    ok, why = is_safe_run_id(run_id)
+    if not ok:
+        raise ValueError(f"E_RUN_ID: {why}: {run_id!r}")
+    ok, why = is_safe_leaf_name(str(clip.get("name", "")))
+    if not ok:
+        raise ValueError(f"E_NAME: clip 名不安全（{why}）：{clip.get('name')!r}")
     template = PROMPT_TEMPLATE.read_text(encoding="utf-8")
     return template.format(
         run_id=run_id,
@@ -177,6 +193,104 @@ def preflight(ws: Path, clip: dict, clip_json: Path) -> list[dict]:
     return stages
 
 
+# --------------------------------------------------- 代码/产物可归属性（R1）
+
+
+def code_provenance(run_dir: Path, prior_code: dict | None = None) -> dict:
+    """记录代码归属：git revision（当前）、harness 组件 hash、Agent DSP 脚本 hash。
+
+    run 当时的 revision 若未记录则保持 ``unknown``（**不伪造**）；verification 时的
+    revision/文件 hash 只证明“校验代码版本”，两者分开标注。"""
+    def _git(*args: str) -> str:
+        rc, out = run_quiet(["git", "-C", str(REPO_ROOT), *args])
+        return out.strip() if rc == 0 else "unknown"
+
+    revision = _git("rev-parse", "HEAD")
+    dirty_out = _git("status", "--porcelain")
+    dirty = None if dirty_out == "unknown" else bool(dirty_out)
+    harness_hashes = {}
+    for name in HARNESS_FILES:
+        path = HERE / name
+        if path.is_file():
+            harness_hashes[f"harness/{name}"] = sha256_file(path)
+    dsp_hashes = {}
+    for path in sorted((run_dir / "scripts").glob("*.py")) if (run_dir / "scripts").is_dir() else []:
+        dsp_hashes[f"scripts/{path.name}"] = sha256_file(path)
+    return {
+        "git_revision_at_run": (prior_code or {}).get("git_revision_at_run", "unknown（run 时未记录）"),
+        "git_revision_at_verification": revision,
+        "git_dirty_at_verification": dirty,
+        "harness_files_sha256": harness_hashes,
+        "agent_dsp_scripts_sha256": dsp_hashes,
+        "note": "revision/hash 证明校验与 harness 代码归属；run 时代码未记录的部分保持 unknown",
+    }
+
+
+# ------------------------------------------------------- 执行证据门（R1）
+
+
+def execution_gate(trace: dict | None, params: dict, run_dir: Path, local_dir: Path,
+                   stages: list[dict], prior: dict | None = None) -> dict:
+    """观测执行证据门：真实 pass 的必要条件（不是文档自述）。
+
+    每项 {name, pass, detail}；任一失败即整体失败。"""
+    checks: list[dict] = []
+    trace = trace or {}
+
+    def add(name: str, ok: bool, detail: str) -> None:
+        checks.append({"name": name, "pass": bool(ok), "detail": detail})
+
+    models = trace.get("models") or []
+    providers = trace.get("providers") or []
+    add("observed_model", models == ["gemini-3.8-flash"] and (not providers or providers == ["google"]),
+        f"观测 assistant 消息 model={models} provider={providers}（要求仅 google/gemini-3.8-flash）")
+
+    attach_calls = [c for c in trace.get("tool_calls", []) if c.get("tool") == "audio_attach"]
+    attach_ok = [c for c in attach_calls
+                 if not c.get("isError") and "mime" in c.get("result_head", "")
+                 and "bytes" in c.get("result_head", "")]
+    add("attachment_observed", bool(attach_ok),
+        f"audio_attach 成功（MIME+字节） {len(attach_ok)}/{len(attach_calls)} 次"
+        if attach_calls else "未观测到 audio_attach 调用")
+
+    buckets = classify_separations(trace)
+    add("sam_separation_observed", bool(buckets["real_success"]),
+        f"真·SAM 分离成功 {len(buckets['real_success'])} 次"
+        f"（dry-run {len(buckets['dry_run'])}、失败 {len(buckets['real_failed'])} 分开计数）")
+    reports = list(Path(run_dir).glob("stems/*/report.json")) + list(Path(run_dir).glob("stems/*/*/report.json"))
+    add("sam_artifacts_present", bool(reports),
+        f"分离产物 report.json ×{len(reports)}（观测到的执行产物，不是文本自述）")
+
+    max_sep = int(params.get("sam_separations_max", 0) or 0)
+    add("budget_compliance",
+        len(buckets["real_success"]) <= max_sep if max_sep > 0 else False,
+        f"真实分离 {len(buckets['real_success'])} ≤ 预算 {max_sep}")
+
+    bad_stages = [s for s in stages if s.get("stage", "").split(".")[0] in REQUIRED_STAGES
+                  and s.get("status") not in ("ok", "skip")]
+    add("required_stages_nonfailed", not bad_stages,
+        "必要 stage（model_run/result/validate）均非失败" if not bad_stages
+        else f"失败 stage：{[(s.get('stage'), s.get('status')) for s in bad_stages]}")
+
+    events = local_dir / "events.jsonl"
+    add("execution_evidence_present", events.is_file() and trace.get("tool_calls_total", 0) > 0,
+        f"事件流 {events.name} 存在，工具调用 {trace.get('tool_calls_total', 0)} 次")
+
+    runner_exit = (prior or {}).get("runner_exit", trace.get("runner_exit"))
+    if prior is not None:
+        add("original_runner_success", runner_exit == 0,
+            f"原始 runner exit={runner_exit}（--verify 不得把失败 run 洗成 pass）")
+    else:
+        add("original_runner_success", runner_exit == 0,
+            f"本次 runner exit={runner_exit}")
+
+    return {"schema": "agentic-e2e-execution-gate/v1",
+            "kind": "observed-execution",
+            "ok": all(c["pass"] for c in checks),
+            "checks": checks,
+            "note": "执行证据门：证明真实执行；文件/schema 校验只是数据校验，不证明执行"}
+
+
 # --------------------------------------------------------------------- manifest
 
 
@@ -203,27 +317,36 @@ def collect_sam_reports(run_dir: Path) -> list[dict]:
 
 def build_run_manifest(run_id: str, ws: Path, clip: dict, trace: dict | None,
                        stages: list[dict], validation: dict | None, started: float,
-                       params: dict, gpu: dict, prompt_sha: str, rc: int) -> dict:
+                       params: dict, gpu: dict, prompt_sha: str, rc: int,
+                       prior: dict | None = None, execution: dict | None = None) -> dict:
     run_dir = ws / E2E_OUTPUTS_REL / run_id
+    local_dir = ws / "local" / "e2e" / run_id
     result_path = run_dir / "result.json"
     result_sha = sha256_file(result_path) if result_path.is_file() else None
-    separations = count_real_separations(trace or {})
+    buckets = classify_separations(trace or {})
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    created_at = (prior or {}).get("created_at", now)   # 不改写原始 run 时间戳
+    verifications = list((prior or {}).get("verification_runs", []))
+
     manifest = {
         "schema": MANIFEST_SCHEMA,
         "issue": "guajun/anonymous-audio-tracks#33",
         "run_id": run_id,
         "kind": "real",
-        "created_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "created_at": created_at,
         "models": {
             "music_agent": RESEARCH_MODEL,
             "impl_worker": IMPL_MODEL,
             "via": "pi 0.87.1 项目设置 + project trust（运行命令不传 --model）",
             "assistant_models_seen": (trace or {}).get("models", []),
+            "assistant_providers_seen": (trace or {}).get("providers", []),
         },
         "clip": {
             "name": clip["name"], "sha256": clip["sha256"], "bytes": clip["bytes"],
             "duration_s": clip["duration_s"], "sample_rate": clip["sample_rate"],
             "channels": clip["channels"],
+            "requested": clip.get("requested"),
+            "actual": clip.get("actual"),
             "origin_offset_s": clip["origin"]["offset_s"],
             "origin_sha256": clip["origin"]["sha256"],
             "timeline": clip["timeline"],
@@ -241,10 +364,13 @@ def build_run_manifest(run_id: str, ws: Path, clip: dict, trace: dict | None,
             "sam_upstream_commit": SAM_UPSTREAM_COMMIT,
             "validator": "agentic/schema/validate.py（issue #32 冻结）",
         },
+        "code": code_provenance(run_dir, (prior or {}).get("code")),
         "params": params,
         "gpu": gpu,
-        "timings": {"wall_s": round(time.time() - started, 3),
-                    "sam_reports": collect_sam_reports(run_dir)},
+        "timings": (prior or {}).get("timings") or {
+            "wall_s": round(time.time() - started, 3),
+            "sam_reports": collect_sam_reports(run_dir),
+        },
         "usage": (trace or {}).get("usage"),
         "trace": {
             "tool_calls_total": (trace or {}).get("tool_calls_total", 0),
@@ -252,8 +378,12 @@ def build_run_manifest(run_id: str, ws: Path, clip: dict, trace: dict | None,
             "turns": (trace or {}).get("turns", 0),
             "audio_attach_calls": [c.get("args_summary") for c in (trace or {}).get("tool_calls", [])
                                    if c.get("tool") == "audio_attach"],
-            "sam_separations": [s.get("command") for s in separations],
-            "sam_separations_real": len(separations),
+            "audio_attach_success": sum(1 for c in (trace or {}).get("tool_calls", [])
+                                        if c.get("tool") == "audio_attach" and not c.get("isError")),
+            "sam_separations": [s.get("command") for s in buckets["real_success"]],
+            "sam_separations_real_success": len(buckets["real_success"]),
+            "sam_separations_real_failed": len(buckets["real_failed"]),
+            "sam_separations_dry_run": len(buckets["dry_run"]),
             "provider_failures": (trace or {}).get("provider_failures", []),
             "note": "完整事件流在 local/e2e/<run-id>/events.jsonl（本地保留，不入 git）",
         },
@@ -270,12 +400,20 @@ def build_run_manifest(run_id: str, ws: Path, clip: dict, trace: dict | None,
         "validation": {"ok": (validation or {}).get("ok"),
                        "checks": [c["name"] + ":" + ("pass" if c["pass"] else "FAIL")
                                   for c in (validation or {}).get("checks", [])]},
-        "runner_exit": rc,
+        "execution_gate": {
+            "ok": (execution or {}).get("ok"),
+            "checks": [c["name"] + ":" + ("pass" if c["pass"] else "FAIL")
+                       for c in (execution or {}).get("checks", [])],
+            "note": "观测执行证据门；文件/schema 校验只是数据校验",
+        },
+        "runner_exit": (prior or {}).get("runner_exit", rc),
+        "verification_runs": verifications,
         "limitations": [
             "真实音乐无精确真值：onset/乐器/tempo 都是假设与估计，不承诺准确率",
-            "抽查（spotcheck）是能量/交叉检测迹象，不是总体 accuracy",
+            "抽查（spotcheck）是能量/同族交叉检测迹象，不是总体 accuracy",
+            "跨轴能量代理（own/other 能量比）不是测得的分离度/串音率",
             "SAM 分离产物是目标/残差两路假设，可能含串音",
-            "usage/cost 是 Pi 记账近似值，非账单真值",
+            "usage/cost 是 Pi 记账近似值，非账单真值（含 cacheRead/cacheWrite 口径）",
         ],
         "repro": {
             "commands": [
@@ -303,19 +441,27 @@ def build_run_manifest(run_id: str, ws: Path, clip: dict, trace: dict | None,
 def parse_args(argv=None):
     p = argparse.ArgumentParser(prog="run_e2e.py", description="真实端到端 harness（issue #33）")
     p.add_argument("--workspace", required=True, help="已部署的 Pi workspace 根目录")
-    p.add_argument("--run-id", default=None, help="run id（默认 e2e-real-<UTC 时间戳>）")
-    p.add_argument("--clip-name", default="e2e-clip-001.wav", help="audio/inputs 内的 clip 文件名")
+    p.add_argument("--run-id", default=None, help="run id（默认 e2e-real-<UTC 时间戳>；白名单字符）")
+    p.add_argument("--clip-name", default="e2e-clip-001.wav", help="audio/inputs 内的 clip 文件名（单段）")
     p.add_argument("--clip-json", default=None, help="clip 描述（默认 <WS>/local/e2e/clip-<clip-name>.json）")
     p.add_argument("--timeout", default="2400", help="Pi run 硬超时秒数（有限正数）")
     p.add_argument("--sam-separations", type=int, default=3, help="真实 SAM 分离次数上限")
     p.add_argument("--sam-timeout", type=int, default=900, help="单次 SAM 调用 --timeout")
     p.add_argument("--max-fixes", type=int, default=2, help="校验修复循环上限")
     p.add_argument("--prompt-file", default=None, help="覆盖默认 prompt 模板实例化结果（followup 用）")
-    p.add_argument("--dry-run", action="store_true", help="只打印 argv/环境，不启动（零 API）")
-    p.add_argument("--verify", action="store_true", help="对既有 run 重跑校验 + 重建 manifest")
+    p.add_argument("--dry-run", action="store_true", help="只打印 argv/环境，不启动、不写任何文件（零 API）")
+    p.add_argument("--verify", action="store_true", help="对既有 run 重跑校验/执行门 + 更新 manifest（不改原时间戳）")
     p.add_argument("--redact", action="store_true", help="输出脱敏（公开粘贴用）")
     p.add_argument("--json", action="store_true", help="JSON 摘要输出")
     return p.parse_args(argv)
+
+
+def load_events_safe(path: Path) -> list[dict]:
+    from common import load_events
+    try:
+        return load_events(path)
+    except OSError:
+        return []
 
 
 def main(argv=None) -> int:
@@ -326,18 +472,32 @@ def main(argv=None) -> int:
 
     ws = Path(args.workspace).expanduser().resolve()
     run_id = args.run_id or ("e2e-real-" + datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S"))
-    run_dir = ws / E2E_OUTPUTS_REL / run_id
-    local_dir = ws / "local" / "e2e" / run_id
-    clip_json = Path(args.clip_json) if args.clip_json else ws / "local" / "e2e" / f"clip-{args.clip_name}.json"
     redact = make_redactor(ws, REPO_ROOT)
 
+    # 写前守卫（R1）：run id / clip 名白名单 + 数值预算
+    ok, why = is_safe_run_id(run_id)
+    if not ok:
+        print(f"[fail] E_RUN_ID: {why}: {run_id!r}", file=sys.stderr)
+        return EXIT_USAGE
+    ok, why = is_safe_leaf_name(args.clip_name)
+    if not ok:
+        print(f"[fail] E_NAME: clip 名不安全（{why}）：{args.clip_name!r}", file=sys.stderr)
+        return EXIT_USAGE
     try:
         timeout = float(args.timeout)
         if not (timeout > 0) or timeout == float("inf"):
             raise ValueError
-    except ValueError:
-        print("[fail] E_TIMEOUT: --timeout 必须是有限正数秒", file=sys.stderr)
+        if not (args.sam_separations > 0) or not (args.sam_timeout > 0) \
+                or not (0 <= args.max_fixes <= 5):
+            raise ValueError
+    except (ValueError, TypeError):
+        print("[fail] E_BUDGET: --timeout/--sam-separations/--sam-timeout 需为正有限数，"
+              "--max-fixes ∈ [0,5]", file=sys.stderr)
         return EXIT_USAGE
+
+    run_dir = ensure_contained(ws / E2E_OUTPUTS_REL, run_id)
+    local_dir = ensure_contained(ws / "local" / "e2e", run_id)
+    clip_json = Path(args.clip_json) if args.clip_json else ws / "local" / "e2e" / f"clip-{args.clip_name}.json"
 
     if not clip_json.is_file():
         print(f"[fail] E_CLIP: clip 描述不存在：{clip_json}\n"
@@ -354,8 +514,12 @@ def main(argv=None) -> int:
         "approve": True,
     }
 
-    prompt = args.prompt_file and Path(args.prompt_file).read_text(encoding="utf-8") or \
-        build_prompt(run_id, clip, ws, args.sam_separations, args.sam_timeout, args.max_fixes)
+    try:
+        prompt = args.prompt_file and Path(args.prompt_file).read_text(encoding="utf-8") or \
+            build_prompt(run_id, clip, ws, args.sam_separations, args.sam_timeout, args.max_fixes)
+    except ValueError as exc:
+        print(f"[fail] {exc}", file=sys.stderr)
+        return EXIT_USAGE
     prompt_sha = sha256_bytes(prompt)
 
     import pi_launcher  # type: ignore
@@ -381,9 +545,18 @@ def main(argv=None) -> int:
         print(json.dumps(payload, ensure_ascii=False, indent=2))
         return EXIT_OK
 
-    # ---- verify 模式：对既有 run 重跑校验 + 重建 manifest -------------------
     if args.verify:
         return verify_run(ws, run_id, clip, redact, args.json)
+
+    # ---- 新 run：拒绝复用旧证据目录（R1 所有权/不可变）--------------------
+    if run_dir.exists() and any(run_dir.iterdir()):
+        print(f"[fail] E_RUN_EXISTS: run 目录已有产物（拒绝覆盖既有证据）：{redact(str(run_dir))}\n"
+              f"  复核旧 run 用 --verify；新运行请换 --run-id", file=sys.stderr)
+        return EXIT_GUARD
+    if local_dir.exists() and any(local_dir.iterdir()):
+        print(f"[fail] E_RUN_EXISTS: 本地证据目录已有文件（拒绝覆盖事件流/prompt）："
+              f"{redact(str(local_dir))}\n  复核旧 run 用 --verify；新运行请换 --run-id", file=sys.stderr)
+        return EXIT_GUARD
 
     started = time.time()
     local_dir.mkdir(parents=True, exist_ok=True)
@@ -417,47 +590,54 @@ def main(argv=None) -> int:
                       prompt_sha, 3, redact, args.json, blocked=True)
 
     trace = extract_trace(load_events_safe(events))
+    trace["runner_exit"] = rc
     write_json(local_dir / "trace-summary.json", {
-        "schema": "agentic-e2e-trace-summary/v1", "run_id": run_id, **trace})
+        "schema": "agentic-e2e-trace-summary/v2", "run_id": run_id, **trace})
+    buckets = classify_separations(trace)
     run_status = {0: "ok", 4: "blocked", 5: "fail", 6: "fail"}.get(rc, "fail" if rc else "ok")
     stages.append({"stage": "model_run", "status": run_status,
-                   "detail": f"run_bounded exit={rc}；assistant models={trace.get('models')}；"
-                             f"工具调用 {trace.get('tool_calls_total')} 次；"
-                             f"真实 SAM 分离 {len(count_real_separations(trace))} 次"})
+                   "detail": f"run_bounded exit={rc}；assistant models={trace.get('models')} "
+                             f"providers={trace.get('providers')}；工具调用 {trace.get('tool_calls_total')} 次；"
+                             f"真·SAM 分离成功 {len(buckets['real_success'])} 次"
+                             f"（dry-run {len(buckets['dry_run'])}、失败 {len(buckets['real_failed'])}）"})
 
-    # ---- result / 校验 / 抽查 --------------------------------------------
+    # ---- result / 数据校验 / 执行门 / 抽查 --------------------------------
     validation = None
     result_path = run_dir / "result.json"
     if result_path.is_file():
         stages.append({"stage": "result", "status": "ok",
                        "detail": f"Agent 产出 result.json（{result_path.stat().st_size} bytes）"})
         validation = validate_existing(ws, run_id, clip, run_dir)
-        write_json(run_dir / "validation.json", validation)
         stages.append({"stage": "validate", "status": "ok" if validation["ok"] else "fail",
                        "detail": "; ".join(f"{c['name']}={'pass' if c['pass'] else 'FAIL'}"
-                                           for c in validation["checks"])})
+                                           for c in validation["checks"])
+                       + "（数据校验；不证明执行）"})
         stages.extend(spotcheck_run(ws, run_id, clip, run_dir))
     else:
         stages.append({"stage": "result", "status": "fail",
                        "detail": "未找到 Agent 产出的 outputs/e2e/<run-id>/result.json（见事件流定位失败阶段）"})
 
+    execution = execution_gate(trace, params, run_dir, local_dir, stages)
+    stages.append({"stage": "execution_gate", "status": "ok" if execution["ok"] else "fail",
+                   "detail": ", ".join(f"{c['name']}={'pass' if c['pass'] else 'FAIL'}"
+                                        for c in execution["checks"])})
+    if validation is not None:
+        validation["execution"] = execution
+        validation["ok"] = bool(validation["ok"] and execution["ok"])
+        write_json(run_dir / "validation.json", validation)
+
     acc_rc = EXIT_OK
     if rc != 0:
         acc_rc = rc                      # 传播 runner 失败码（2/3/4/5/6）
     elif not result_path.is_file():
-        acc_rc = EXIT_ACCEPTANCE         # 1 = 运行完成但没产出结果
+        acc_rc = EXIT_ACCEPTANCE
     elif validation is not None and not validation["ok"]:
         acc_rc = EXIT_ACCEPTANCE
+    elif not execution["ok"]:
+        acc_rc = EXIT_ACCEPTANCE
     return finish(ws, run_id, clip, trace, stages, validation, started, params, gpu,
-                  prompt_sha, acc_rc, redact, args.json, blocked=(rc in (4, 5, 6)))
-
-
-def load_events_safe(path: Path) -> list[dict]:
-    from common import load_events
-    try:
-        return load_events(path)
-    except OSError:
-        return []
+                  prompt_sha, acc_rc, redact, args.json, blocked=(rc in (4, 5, 6)),
+                  execution=execution)
 
 
 def validate_existing(ws: Path, run_id: str, clip: dict, run_dir: Path) -> dict:
@@ -484,51 +664,83 @@ def spotcheck_run(ws: Path, run_id: str, clip: dict, run_dir: Path) -> list[dict
                        "detail": f"overlay + 抽查统计完成（抽样 {stats['method']['sampled_events']} 个事件；"
                                  f"能量上升 {sum(1 for e in stats['per_event'] if e['energy_rise_seen'])} 个；"
                                  f"疑似漏检 {len(stats['detector_diff']['possible_missed'])} / "
-                                 f"疑似误检 {len(stats['detector_diff']['possible_false'])}；抽查非总体准确率）"})
+                                 f"疑似误检 {len(stats['detector_diff']['possible_false'])}；"
+                                 f"跨轴能量比仅是代理，抽查非总体准确率）"})
     except Exception as exc:  # noqa: BLE001
         stages.append({"stage": "spotcheck", "status": "fail", "detail": f"抽查失败：{exc.__class__.__name__}: {exc}"})
     return stages
 
 
 def verify_run(ws: Path, run_id: str, clip: dict, redact, as_json: bool) -> int:
+    """对既有 run 复核（离线）：数据校验 + 执行证据门；不改原时间戳，追加 verification 记录。"""
     run_dir = ws / E2E_OUTPUTS_REL / run_id
+    local_dir = ws / "local" / "e2e" / run_id
     if not (run_dir / "result.json").is_file():
         print(f"[fail] E_NO_RESULT: {run_dir / 'result.json'}", file=sys.stderr)
         return EXIT_USAGE
+    prior_path = run_dir / "run-manifest.json"
+    prior = read_json(prior_path) if prior_path.is_file() else None
+    trace_path = local_dir / "trace-summary.json"
+    # 优先从**原始事件流**重抽取（权威证据，含 provider/cache 口径）；事件流缺失才用旧摘要
+    if (local_dir / "events.jsonl").is_file():
+        trace = extract_trace(load_events_safe(local_dir / "events.jsonl"))
+    elif trace_path.is_file():
+        trace = read_json(trace_path)
+    else:
+        trace = None
+    if prior is not None:
+        trace = dict(trace or {})
+        trace.setdefault("runner_exit", prior.get("runner_exit"))
+
     validation = validate_existing(ws, run_id, clip, run_dir)
+    execution = execution_gate(trace, (prior or {}).get("params", {}), run_dir, local_dir,
+                               (prior or {}).get("stages", []), prior=prior if prior else None)
+    validation["execution"] = execution
+    validation["ok"] = bool(validation["ok"] and execution["ok"])
     write_json(run_dir / "validation.json", validation)
 
-    # 可重复执行的 manifest 重建：保留原始 stages/params/gpu/timings，只刷新可推导字段
-    prior_path = run_dir / "run-manifest.json"
-    rebuilt = None
-    if prior_path.is_file():
-        prior = read_json(prior_path)
-        trace_path = ws / "local" / "e2e" / run_id / "trace-summary.json"
-        trace = read_json(trace_path) if trace_path.is_file() else None
-        rebuilt = build_run_manifest(
+    manifest = None
+    if prior is not None:
+        manifest = build_run_manifest(
             run_id, ws, clip, trace, prior.get("stages", []), validation, time.time(),
             prior.get("params", {}), prior.get("gpu", {}),
-            (prior.get("repro") or {}).get("prompt_sha256", ""), prior.get("runner_exit", 0))
-        rebuilt["timings"] = prior.get("timings", rebuilt["timings"])
-        write_json(prior_path, rebuilt)
+            (prior.get("repro") or {}).get("prompt_sha256", ""), prior.get("runner_exit", 0),
+            prior=prior, execution=execution)
+        manifest["verification_runs"] = list(prior.get("verification_runs", [])) + [{
+            "at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "kind": "offline-reverify",
+            "data_validation_ok": validation.get("ok"),
+            "execution_gate_ok": execution.get("ok"),
+            "note": "离线复核（无新 API/GPU）；原 run 时间戳/usage/stages 保持原样",
+        }]
+        write_json(prior_path, manifest)
+
     if as_json:
         print(json.dumps(validation, ensure_ascii=False, indent=2))
     else:
         print(f"{'OK' if validation['ok'] else 'FAIL'} {run_id} level=real")
         for c in validation["checks"]:
             print(f"  [{'pass' if c['pass'] else 'FAIL'}] {c['name']}: {redact(c['detail'])}")
-        if rebuilt:
-            print(f"  manifest rebuilt: 真实 SAM 分离 {rebuilt['trace']['sam_separations_real']} 次；"
-                  f"audio_attach {len(rebuilt['trace']['audio_attach_calls'])} 次")
+        print("  执行证据门：")
+        for c in execution["checks"]:
+            print(f"  [{'pass' if c['pass'] else 'FAIL'}] {c['name']}: {redact(c['detail'])}")
+        if manifest:
+            print(f"  manifest 更新（原 created_at={manifest['created_at']} 保持不变）："
+                  f"真·SAM 分离成功 {manifest['trace']['sam_separations_real_success']} 次 / "
+                  f"失败 {manifest['trace']['sam_separations_real_failed']} / "
+                  f"dry-run {manifest['trace']['sam_separations_dry_run']}")
     return EXIT_OK if validation["ok"] else EXIT_ACCEPTANCE
 
 
 def finish(ws: Path, run_id: str, clip: dict, trace: dict | None, stages: list[dict],
            validation: dict | None, started: float, params: dict, gpu: dict,
-           prompt_sha: str, rc: int, redact, as_json: bool, blocked: bool) -> int:
-    manifest = build_run_manifest(run_id, ws, clip, trace, stages, validation,
-                                  started, params, gpu, prompt_sha, rc)
+           prompt_sha: str, rc: int, redact, as_json: bool, blocked: bool,
+           execution: dict | None = None) -> int:
     run_dir = ws / E2E_OUTPUTS_REL / run_id
+    prior = read_json(run_dir / "run-manifest.json") if (run_dir / "run-manifest.json").is_file() else None
+    manifest = build_run_manifest(run_id, ws, clip, trace, stages, validation,
+                                  started, params, gpu, prompt_sha, rc,
+                                  prior=prior, execution=execution)
     write_json(run_dir / "run-manifest.json", manifest)
     # latest 指针策略（冻结）：outputs/e2e/LATEST.txt = 最近一次 run id
     latest = ws / E2E_OUTPUTS_REL / LATEST_NAME
@@ -541,6 +753,7 @@ def finish(ws: Path, run_id: str, clip: dict, trace: dict | None, stages: list[d
         "runner_exit": rc,
         "stages": [f"{s['stage']}={s['status']}" for s in stages],
         "validation_ok": (validation or {}).get("ok"),
+        "execution_gate_ok": (execution or {}).get("ok"),
         "manifest": redact(str(run_dir / "run-manifest.json")),
     }
     if as_json:

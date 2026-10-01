@@ -16,8 +16,12 @@
    - ``privacy``        绝对路径 / key 形态 / 长 base64 一律拒绝（公开安全）；
    - ``stem_files``     stem 引用必须存在且 sha256 与实际文件一致（在 --run-dir/--audio-root 下）。
 
-真实 / mock 边界：``--level real`` 要求真实来源链与 pin；``--level fixture`` 用于自生成
+真实 / mock 边界：``--level real`` 要求真实来源链与**精确 pin**（固定 SHA 或已知前缀，不认
+“提到 sam-audio 即可”），并拒绝任何 mock/native 来源冒称；``--level fixture`` 用于自生成
 受控 fixture（mock），两者输出都带 ``level`` 字段，报告里不得混用。
+
+**定位声明**：本文件只做**数据校验**（文件/schema/一致性/隐私）——它**不是**“真实执行”
+的证明；真实执行的证明由 ``run_e2e.py`` 的 execution gate（观测到的模型/附件/成功分离）提供。
 
 用法::
 
@@ -43,8 +47,8 @@ for _p in (str(HERE), str(SCHEMA_DIR)):
         sys.path.insert(0, _p)
 
 from common import (  # noqa: E402
-    SCHEMA_VERSION, find_private, is_safe_rel_path, read_json,
-    resolve_within, sha256_file,
+    SAM_UPSTREAM_COMMIT, SCHEMA_VERSION, TOOLBOX_PIN, find_private, is_safe_rel_path,
+    read_json, resolve_within, sha256_file,
 )
 
 EXIT_OK, EXIT_FAIL, EXIT_USAGE = 0, 1, 2
@@ -168,12 +172,14 @@ def check_real_pins(doc: dict, checker: Checker) -> None:
     steps = prov.get("steps") or []
     sources = {s.get("source") for s in steps if isinstance(s, dict)}
     model_ok = "gemini-3.8-flash" in blob
-    toolbox_ok = any(tok in blob for tok in ("audio-toolbox", "sam-audio", "dfbc40a9"))
-    sam_ok = any(tok in blob for tok in ("c603de8", "run_inference", "sam-audio", "audio-toolbox"))
+    # pin 必须精确：固定 SHA 或其已知前缀，不认“提到 sam-audio 即可”
+    toolbox_ok = TOOLBOX_PIN in blob or TOOLBOX_PIN[:12] in blob
+    sam_ok = SAM_UPSTREAM_COMMIT in blob or SAM_UPSTREAM_COMMIT[:12] in blob
     chain_ok = ("sam" in sources and "dsp" in sources and ({"llm", "bridge"} & sources))
     checker.add("provenance_pins", model_ok and toolbox_ok and sam_ok,
-                f"模型 pin={'有' if model_ok else '缺'} gemini-3.8-flash；工具 pin={'有' if toolbox_ok else '缺'}；"
-                f"SAM 来源={'有' if sam_ok else '缺'}")
+                f"模型 pin={'有' if model_ok else '缺'} gemini-3.8-flash；"
+                f"工具 pin={'精确 SHA/前缀 ' + TOOLBOX_PIN[:12] if toolbox_ok else '缺（要求 ' + TOOLBOX_PIN[:12] + '…）'}；"
+                f"SAM 上游={'精确 SHA/前缀 ' + SAM_UPSTREAM_COMMIT[:12] if sam_ok else '缺（要求 ' + SAM_UPSTREAM_COMMIT[:12] + '…）'}")
     checker.add("provenance_chain", chain_ok,
                 f"来源链 steps.source 含 llm|bridge + sam + dsp：{sorted(s for s in sources if s)}")
     native_claims = [s.get("tool") for s in steps
@@ -181,6 +187,25 @@ def check_real_pins(doc: dict, checker: Checker) -> None:
     checker.add("no_native_audio_claim", not native_claims,
                 "Pi 原生音频 unsupported，音频输入未冒充 native（应标 bridge）"
                 if not native_claims else f"出现 source='native' 的步骤：{native_claims[:5]}")
+
+
+def check_no_mock_or_native_claims(doc: dict, checker: Checker) -> None:
+    """real 级：任何字段的来源都不得冒称 mock/native（不止 steps）。"""
+    bad: list[str] = []
+
+    def visit(value, path: str) -> None:
+        if isinstance(value, dict):
+            for key, item in value.items():
+                if key == "source" and item in ("mock", "native"):
+                    bad.append(f"{path}/{key}={item}")
+                visit(item, f"{path}/{key}")
+        elif isinstance(value, list):
+            for i, item in enumerate(value):
+                visit(item, f"{path}/{i}")
+
+    visit(doc, "")
+    checker.add("no_mock_or_native_claims", not bad,
+                "全文档无 mock/native 来源冒称" if not bad else f"出现 mock/native 来源：{bad[:5]}")
 
 
 def check_privacy(doc: dict, checker: Checker) -> None:
@@ -240,6 +265,7 @@ def validate(result_path: Path, level: str = "real", clip_path: Path | None = No
         check_event_provenance(doc, level, checker)
         if level == "real":
             check_real_pins(doc, checker)
+            check_no_mock_or_native_claims(doc, checker)
         check_privacy(doc, checker)
         check_stems(doc, run_dir, checker)
     return {

@@ -16,6 +16,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
 import re
 import struct
 import sys
@@ -61,53 +62,85 @@ def sha256_file(path: Path) -> str:
     return h.hexdigest()
 
 
+# 支持的 WAV 编码（其余一律拒绝，不猜）：PCM 整型 16/24/32-bit、IEEE float 32/64-bit；
+# WAVE_FORMAT_EXTENSIBLE(0xFFFE) 解析子格式后按同一规则。
+WAV_PCM, WAV_FLOAT, WAV_EXTENSIBLE = 1, 3, 0xFFFE
+_SUPPORTED = {WAV_PCM: (16, 24, 32), WAV_FLOAT: (32, 64)}
+
+
 def wav_info(path: Path) -> dict:
     """解析 WAV 头（不依赖 wave 模块对 float/非 PCM 的限制）。
 
-    返回 {format, channels, sample_rate, bits_per_sample, frames, duration_s}。
-    """
+    返回 ``{format, container_tag, tag, channels, sample_rate, bits_per_sample,
+    block_align, frames, duration_s}``；``tag`` 是**实际编码**（EXTENSIBLE 已解析子格式），
+    ``container_tag`` 是原始 fmt tag。不受支持的编码 / 损坏头部受控拒绝（WavError），
+    绝不按另一种编码猜读。"""
     path = Path(path)
     data = path.read_bytes()
     if len(data) < 44 or data[:4] != b"RIFF" or data[8:12] != b"WAVE":
         raise WavError(f"E_WAV_FORMAT: 不是 RIFF/WAVE 文件：{path.name}")
     pos = 12
     fmt = None
-    nframes = None
     data_bytes = 0
     while pos + 8 <= len(data):
         cid = data[pos:pos + 4]
         size = struct.unpack_from("<I", data, pos + 4)[0]
+        if pos + 8 + size > len(data):
+            raise WavError(f"E_WAV_FORMAT: chunk 超出文件长度（损坏）：{path.name}")
         body = data[pos + 8:pos + 8 + size]
         if cid == b"fmt ":
             if len(body) < 16:
                 raise WavError(f"E_WAV_FORMAT: fmt chunk 太短：{path.name}")
-            tag, channels, sr, _brate, block_align, bits = struct.unpack_from("<HHIIHH", body, 0)
-            if tag == 0xFFFE and len(body) >= 26:  # WAVE_FORMAT_EXTENSIBLE：取子格式前 2 字节
-                tag = struct.unpack_from("<H", body, 24)[0]
-            fmt = {"tag": tag, "channels": channels, "sample_rate": sr,
-                   "block_align": block_align, "bits_per_sample": bits}
+            container_tag, channels, sr, _brate, block_align, bits = struct.unpack_from("<HHIIHH", body, 0)
+            tag = container_tag
+            if container_tag == WAV_EXTENSIBLE:
+                if len(body) < 26:
+                    raise WavError(f"E_WAV_FORMAT: EXTENSIBLE fmt 太短：{path.name}")
+                tag = struct.unpack_from("<H", body, 24)[0]  # 子格式前 2 字节
+            fmt = {"container_tag": container_tag, "tag": tag, "channels": channels,
+                   "sample_rate": sr, "block_align": block_align, "bits_per_sample": bits}
         elif cid == b"data":
             data_bytes = len(body)
         pos += 8 + size + (size % 2)
     if fmt is None:
         raise WavError(f"E_WAV_FORMAT: 缺少 fmt chunk：{path.name}")
-    if fmt["block_align"] <= 0:
-        raise WavError(f"E_WAV_FORMAT: 非法 block_align：{path.name}")
-    nframes = data_bytes // fmt["block_align"]
-    if nframes <= 0:
-        raise WavError(f"E_WAV_FORMAT: 没有采样数据：{path.name}")
+    tag = fmt["tag"]
+    if tag not in _SUPPORTED:
+        raise WavError(
+            f"E_WAV_CODEC: 不支持的 WAV 编码 tag={tag}（仅 PCM 16/24/32-bit 与 "
+            f"IEEE float 32/64-bit）：{path.name}")
+    bits = fmt["bits_per_sample"]
+    if bits not in _SUPPORTED[tag]:
+        raise WavError(f"E_WAV_BITS: tag={tag} 不支持的位深 {bits}：{path.name}")
+    channels, sr, block_align = fmt["channels"], fmt["sample_rate"], fmt["block_align"]
+    if channels < 1 or sr < 1:
+        raise WavError(f"E_WAV_FORMAT: 非法 channels/sample_rate：{path.name}")
+    expected_align = channels * (bits // 8)
+    if block_align != expected_align:
+        raise WavError(
+            f"E_WAV_FORMAT: block_align={block_align} 与 channels×bits/8={expected_align} 不符"
+            f"（损坏/不受支持）：{path.name}")
+    if data_bytes < block_align:
+        raise WavError(f"E_WAV_FORMAT: 没有完整采样帧：{path.name}")
+    nframes = data_bytes // block_align
     return {
         "format": "wav",
-        "channels": fmt["channels"],
-        "sample_rate": fmt["sample_rate"],
-        "bits_per_sample": fmt["bits_per_sample"],
+        "container_tag": fmt["container_tag"],
+        "tag": tag,
+        "channels": channels,
+        "sample_rate": sr,
+        "bits_per_sample": bits,
+        "block_align": block_align,
         "frames": nframes,
-        "duration_s": nframes / fmt["sample_rate"],
+        "duration_s": nframes / sr,
     }
 
 
 def read_mono(path: Path) -> tuple[list[float], int]:
-    """读取 WAV 为单声道 float 样本（多声道取均值）。返回 (samples, sample_rate)。"""
+    """读取 WAV 为单声道 float 样本（多声道取均值）。返回 (samples, sample_rate)。
+
+    解码严格按 ``wav_info`` 报告的**实际编码 tag**（PCM 整型 / IEEE float）；
+    float32 不会再被当 int32 读（旧版 bug 已修）。不受支持的编码在这里也拒绝。"""
     path = Path(path)
     info = wav_info(path)
     data = path.read_bytes()
@@ -124,39 +157,84 @@ def read_mono(path: Path) -> tuple[list[float], int]:
     if body is None:
         raise WavError(f"E_WAV_FORMAT: 缺少 data chunk：{path.name}")
 
-    tag, ch, bits = info.get("tag", 1), info["channels"], info["bits_per_sample"]
+    tag, ch, bits = info["tag"], info["channels"], info["bits_per_sample"]
     frames = info["frames"]
-    out: list[float] = []
-    if bits == 16:
-        vals = struct.unpack_from(f"<{frames * ch}h", body, 0)
-        scale = 32768.0
-    elif bits == 32 and tag == 3:
-        vals = struct.unpack_from(f"<{frames * ch}f", body, 0)
-        scale = 1.0
-    elif bits == 32:
-        vals = struct.unpack_from(f"<{frames * ch}i", body, 0)
-        scale = 2147483648.0
-    elif bits == 24:
-        raw = body[: frames * ch * 3]
-        vals = []
+    count = frames * ch
+    if tag == WAV_FLOAT and bits == 32:
+        vals = list(struct.unpack_from(f"<{count}f", body, 0))
+        out_vals = [float(v) for v in vals]
+    elif tag == WAV_FLOAT and bits == 64:
+        vals = list(struct.unpack_from(f"<{count}d", body, 0))
+        out_vals = [float(v) for v in vals]
+    elif tag == WAV_PCM and bits == 16:
+        vals = struct.unpack_from(f"<{count}h", body, 0)
+        out_vals = [v / 32768.0 for v in vals]
+    elif tag == WAV_PCM and bits == 32:
+        vals = struct.unpack_from(f"<{count}i", body, 0)
+        out_vals = [v / 2147483648.0 for v in vals]
+    elif tag == WAV_PCM and bits == 24:
+        raw = body[:count * 3]
+        scale = float(1 << 23)
+        out_vals = []
         for i in range(0, len(raw) - 2, 3):
             b0, b1, b2 = raw[i], raw[i + 1], raw[i + 2]
             v = b0 | (b1 << 8) | (b2 << 16)
             if v >= 1 << 23:
                 v -= 1 << 24
-            vals.append(v)
-        scale = float(1 << 23)
-    else:
-        raise WavError(f"E_WAV_BITS: 不支持的位深 {bits}：{path.name}")
+            out_vals.append(v / scale)
+    else:  # pragma: no cover - wav_info 已拒
+        raise WavError(f"E_WAV_CODEC: 不支持的组合 tag={tag} bits={bits}：{path.name}")
+
     if ch == 1:
-        out = [v / scale for v in vals]
-    else:
-        for i in range(frames):
-            acc = 0.0
-            for c in range(ch):
-                acc += vals[i * ch + c]
-            out.append(acc / (ch * scale))
+        return out_vals, info["sample_rate"]
+    out = []
+    for i in range(frames):
+        acc = 0.0
+        for c in range(ch):
+            acc += out_vals[i * ch + c]
+        out.append(acc / ch)
     return out, info["sample_rate"]
+
+
+def write_wav(path: Path, samples: list[float], sample_rate: int, channels: int = 1,
+              fmt: str = "pcm16") -> None:
+    """写 WAV（测试 fixture 用）：fmt ∈ {pcm16, pcm24, pcm32, float32}。样本按 [-1,1] 处理
+    （float32 不裁幅，保留原始值）。"""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if fmt == "pcm16":
+        tag, bits = WAV_PCM, 16
+        import array
+        arr = array.array("h", (max(-32768, min(32767, int(s * 32768))) for s in samples))
+        payload = arr.tobytes()
+    elif fmt == "pcm32":
+        tag, bits = WAV_PCM, 32
+        payload = struct.pack(f"<{len(samples)}i",
+                              *(max(-2147483648, min(2147483647, int(s * 2147483648)))
+                                for s in samples))
+    elif fmt == "pcm24":
+        tag, bits = WAV_PCM, 24
+        chunks = []
+        for s in samples:
+            v = max(-(1 << 23), min((1 << 23) - 1, int(s * (1 << 23))))
+            chunks.append(struct.pack("<i", v)[:3])
+        payload = b"".join(chunks)
+    elif fmt == "float32":
+        tag, bits = WAV_FLOAT, 32
+        payload = struct.pack(f"<{len(samples)}f", *samples)
+    else:
+        raise ValueError(f"E_WAV_CODEC: write_wav 不支持 fmt={fmt}")
+    block_align = channels * (bits // 8)
+    header = b"RIFF" + struct.pack("<I", 36 + len(payload)) + b"WAVE"
+    header += b"fmt " + struct.pack("<IHHIIHH", 16, tag, channels, sample_rate,
+                                    sample_rate * block_align, block_align, bits)
+    header += b"data" + struct.pack("<I", len(payload))
+    path.write_bytes(header + payload)
+
+
+def write_wav16(path: Path, samples: list[float], sample_rate: int, channels: int = 1) -> None:
+    """写 16-bit PCM WAV（向后兼容包装）。"""
+    write_wav(path, samples, sample_rate, channels=channels, fmt="pcm16")
 
 
 def write_wav16(path: Path, samples: list[float], sample_rate: int, channels: int = 1) -> None:
@@ -227,6 +305,42 @@ def resolve_within(base: Path, rel: str) -> Path:
     return target
 
 
+_SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}(?![\s\S])")
+
+
+def is_safe_run_id(value: str) -> tuple[bool, str]:
+    """run id 白名单（防路径拼接/模板注入）：字母数字开头，仅 ``[A-Za-z0-9._-]``，≤64 字符。"""
+    if not isinstance(value, str) or not _SAFE_ID.match(value):
+        return False, "run id 必须匹配 ^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+    if value.endswith("."):
+        return False, "run id 不得以点结尾"
+    if value.split(".")[0].upper() in _RESERVED:
+        return False, "Windows 保留设备名"
+    return True, "ok"
+
+
+def is_safe_leaf_name(value: str) -> tuple[bool, str]:
+    """单段文件名（不含路径分隔符），用于 clip 名等写入 audio 根的文件。"""
+    ok, why = is_safe_rel_path(value)
+    if not ok:
+        return ok, why
+    if "/" in value:
+        return False, "必须是单段文件名（不含 /）"
+    return True, "ok"
+
+
+def ensure_contained(base: Path, name: str) -> Path:
+    """写前守卫：解析 base/name 的 realpath 并确认仍在 base 内；否则抛 ValueError。"""
+    base_real = Path(base).resolve()
+    target = Path(base_real / name)
+    resolved = Path(os.path.realpath(target))
+    try:
+        resolved.relative_to(base_real)
+    except ValueError:
+        raise ValueError(f"E_PATH: 解析后越出根目录：{name!r}") from None
+    return resolved
+
+
 # ------------------------------------------------------------ 脱敏 / 隐私
 
 _ABS_WIN = re.compile(r'[A-Za-z]:[\\/][^\s"\'<>|]*')
@@ -237,6 +351,14 @@ _SECRET_PATTERNS = [
     (re.compile(r"(?i)bearer\s+[A-Za-z0-9._-]{10,}"), "Bearer token 形态"),
     (re.compile(r"sk-[A-Za-z0-9]{16,}"), "sk- key 形态"),
     (re.compile(r"[A-Za-z0-9+/]{200,}={0,2}"), "长 base64（疑似音频/权重字节）"),
+]
+# 文件系统绝对路径（自由文本 / JSON 转义都要能抓）：Windows 盘符、UNC、常见 POSIX 绝对根。
+# 负向后顾排除 URL scheme（`http://…` 的 `p:/`）与标识符内部；相对引用（stems/x.wav）与 URL 不命中。
+_ABS_PATH_PATTERNS = [
+    (re.compile(r"(?<![A-Za-z0-9_])[A-Za-z]:[\\/][^\s\"'<>|]*"), "Windows 绝对路径"),
+    (re.compile(r"\\\\[A-Za-z0-9._$-]+[\\/]"), "UNC 路径"),
+    (re.compile(r"(?<![A-Za-z0-9_:/])/(?:home|Users|root|mnt|Volumes|private|export|workspace)/[^\s\"'<>|]*"),
+     "POSIX 绝对路径"),
 ]
 
 
@@ -267,9 +389,12 @@ def make_redactor(*roots: Path | str):
 
 
 def find_private(text: str) -> list[str]:
-    """隐私扫描：返回发现项（空列表 = 干净）。用于公开前的自动把关。"""
+    """隐私扫描：返回发现项（空列表 = 干净）。用于公开前的自动把关。
+
+    覆盖：key/token 形态、长 base64、**文件系统绝对路径**（Windows 盘符 / UNC / POSIX 绝对根，
+    含 JSON 转义后的 `C:\\…` 形态）；合法的相对引用（`stems/x.wav`）与 URL（`https://…`）不命中。"""
     findings = []
-    for pattern, label in _SECRET_PATTERNS:
+    for pattern, label in _SECRET_PATTERNS + _ABS_PATH_PATTERNS:
         if pattern.search(str(text)):
             findings.append(label)
     return findings
@@ -312,8 +437,10 @@ def summarize_args(tool: str, args) -> str:
 def extract_trace(events: list[dict]) -> dict:
     """从事件流抽取 trace 摘要（工具调用链、用量、模型、终态文本）。"""
     calls: list[dict] = []
-    usage_total = {"input": 0, "output": 0, "totalTokens": 0, "cost_total": 0.0}
+    usage_total = {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0,
+                   "totalTokens": 0, "cost_total": 0.0}
     models: set[str] = set()
+    providers: set[str] = set()
     final_text = ""
     turns = 0
     provider_failures: list[str] = []
@@ -345,6 +472,8 @@ def extract_trace(events: list[dict]) -> dict:
             if msg.get("role") == "assistant":
                 if msg.get("model"):
                     models.add(str(msg["model"]))
+                if msg.get("provider"):
+                    providers.add(str(msg["provider"]))
                 last_assistant_stop = msg.get("stopReason")
                 if msg.get("stopReason") in ("error", "aborted") or msg.get("errorMessage"):
                     provider_failures.append(
@@ -355,6 +484,8 @@ def extract_trace(events: list[dict]) -> dict:
                 usage = msg.get("usage") or {}
                 usage_total["input"] += int(usage.get("input") or 0)
                 usage_total["output"] += int(usage.get("output") or 0)
+                usage_total["cacheRead"] += int(usage.get("cacheRead") or 0)
+                usage_total["cacheWrite"] += int(usage.get("cacheWrite") or 0)
                 usage_total["totalTokens"] += int(usage.get("totalTokens") or 0)
                 usage_total["cost_total"] += float(((usage.get("cost") or {}).get("total")) or 0)
         elif rtype == "error":
@@ -366,14 +497,18 @@ def extract_trace(events: list[dict]) -> dict:
     return {
         "turns": turns,
         "models": sorted(models),
+        "providers": sorted(providers),
         "tool_calls": calls,
         "tool_calls_total": len(calls),
         "tool_calls_by_tool": by_tool,
         "usage": {
             "input": usage_total["input"],
             "output": usage_total["output"],
+            "cacheRead": usage_total["cacheRead"],
+            "cacheWrite": usage_total["cacheWrite"],
             "totalTokens": usage_total["totalTokens"],
             "cost_total": round(usage_total["cost_total"], 6),
+            "reconcile": "input + output + cacheRead + cacheWrite == totalTokens（逐 assistant 消息累计）",
             "note": "Pi 记账近似值，非账单真值",
         },
         "final_text_tail": final_text[-2000:],
@@ -382,23 +517,35 @@ def extract_trace(events: list[dict]) -> dict:
     }
 
 
-def count_real_separations(trace: dict) -> list[dict]:
-    """从 trace 里挑出**真实** SAM 分离调用。
+def classify_separations(trace: dict) -> dict:
+    """把 SAM separate 相关调用分成三类（dry-run / 成功真实分离 / 失败真实分离）。
 
-    判定：命令含 ``audio_toolbox.py ... separate``，且既不是 ``--dry-run``，工具结果也不是
-    ``sam.dry-run``（结果里的 action 字段是权威标记，命令文本只是辅助——两者都查，避免长命令
-    截断导致 dry-run 被误计为真实分离）。"""
-    hits = []
+    判定：命令含 ``audio_toolbox.py ... separate``；``--dry-run`` 或结果 ``sam.dry-run`` → dry_run；
+    否则按工具结果 ``isError`` 分 real_failed / real_success。长命令可能被截断，工具结果里的
+    ``action`` 字段是权威标记。"""
+    buckets: dict[str, list[dict]] = {"dry_run": [], "real_success": [], "real_failed": []}
     for call in trace.get("tool_calls", []):
         cmd = call.get("args_summary", "")
         head = call.get("result_head", "")
         if "audio_toolbox.py" not in cmd or "separate" not in cmd:
             continue
-        if "--dry-run" in cmd or 'sam.dry-run' in head:
-            continue
-        hits.append({"command": cmd, "isError": call.get("isError", False),
-                     "result_head": head[:200]})
-    return hits
+        entry = {"command": cmd, "isError": call.get("isError", False),
+                 "result_head": head[:200]}
+        if "--dry-run" in cmd or "sam.dry-run" in head:
+            buckets["dry_run"].append(entry)
+        elif call.get("isError", False):
+            buckets["real_failed"].append(entry)
+        else:
+            buckets["real_success"].append(entry)
+    return buckets
+
+
+def count_real_separations(trace: dict) -> list[dict]:
+    """**成功**的真实 SAM 分离调用（不含 dry-run、不含失败调用）。
+
+    判定：命令含 ``audio_toolbox.py ... separate``，且既不是 ``--dry-run``，工具结果也不是
+    ``sam.dry-run``，且工具结果 ``isError=False``（attempted/failed 另见 classify_separations）。"""
+    return classify_separations(trace)["real_success"]
 
 
 # ------------------------------------------------------------ 通用小工具

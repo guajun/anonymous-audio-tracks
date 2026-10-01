@@ -10,14 +10,15 @@
 | 项 | 值 |
 |---|---|
 | run id | `e2e-real-20261001-02`（`outputs/e2e/LATEST.txt` 指向它） |
-| 结果 | **pass**（runner exit 0；冻结校验 + e2e real 级 14 项全绿） |
+| 结果 | **pass**（runner exit 0；数据校验 15 项全绿 + 执行证据门 8 项全绿） |
+| R1 修订 | 读取器/抽查统计 bug 已修并**离线重算**；旧 “isolation≈0.95–1” 数字作废，见 [`reports/20-spotcheck.md`](20-spotcheck.md) §0（原 result/events/stems 未改动） |
 | 输入 | `e2e-clip-001.wav`（16.0 s / 44.1 kHz / 2ch，sha256 `42f968e2…c7f0`，clip 时轴 t=0=源 4.0 s） |
 | 模型 | 全部 assistant 消息 `model=gemini-3.8-flash`（**未传 `--model`**，来自项目设置 + `pi --approve` project trust） |
 | 音频通路 | `bridge`：`audio_attach {"path":"e2e-clip-001.wav"}` ×2（第 2 次用于抽查试听）；**非** Pi 原生（unsupported，#30） |
 | 真实 SAM 分离 | **3/3 预算**：`drums` / `bass` / `synthesizer`（各先 `--dry-run` 再真跑；`cuda`+`bfloat16`） |
 | Agent DSP | 自写 `outputs/e2e/<RUN_ID>/scripts/detect_events.py`（三频带能量通量），实际运行 |
 | 结果 | 110 个 onset（全部 `source="dsp"` `method="energy-flux"`）；tempo 按 unknown 规则写 null |
-| 用量 | 59 轮 / 58 工具调用；input 312,380、output 33,021、totalTokens 2,889,303；cost ≈ **0.549**（Pi 记账近似，非账单真值） |
+| 用量 | 59 轮 / 58 工具调用；input 312,380、output 33,021、cacheRead 2,543,902、cacheWrite 0 = totalTokens 2,889,303（逐步累计可对账）；cost ≈ **0.549**（Pi 记账近似，非账单真值） |
 | 耗时 | wall **354.9 s**（SAM 上游推理 21.6 / 22.2 / 22.2 s）；GPU RTX 3070 Laptop 8 GB |
 
 ## 1. 为什么这是“Agent 自主”，不是手工 pipeline（trace 证据）
@@ -76,12 +77,13 @@ write 3 / edit 1），关键顺序（脱敏摘要）：
   → 依协议写 `{"bpm": null, "source": "unknown", "confidence": 0}`，**不猜、不量化**。
 - `pitch`/`duration_seconds`：无充分证据，**未填**（协议“没证据不填”）。
 
-## 5. 校验（两级，均通过）
+## 5. 校验（两级，均通过）：**数据校验** + **执行证据门**
 
-**① 冻结协议校验**（#32）：`python <REPO>/agentic/schema/validate.py <WS>/outputs/e2e/<RUN_ID>/result.json`
-→ `OK (engine=stdlib)`，退出码 0。
+> 定位声明（R1）：文件/schema/一致性/隐私检查只是**数据校验**，不证明“真实执行”；
+> 真实执行由**执行证据门**（观测到的模型/附件/成功分离/预算/stage）证明，两者都必须过。
 
-**② e2e real 级一致性校验**（`harness/validate_result.py --level real`，14/14 pass）：
+**① 数据校验**：冻结协议校验（#32）`python <REPO>/agentic/schema/validate.py <WS>/outputs/e2e/<RUN_ID>/result.json`
+→ `OK (engine=stdlib)`，退出码 0；+ `harness/validate_result.py --level real`（15/15 pass）：
 
 | 检查 | 结果 | 证据 |
 |---|---|---|
@@ -94,8 +96,22 @@ write 3 / edit 1），关键顺序（脱敏摘要）：
 | provenance_pins | pass | 含 `gemini-3.8-flash`、`audio-toolbox.sam pin dfbc40a9541f (sam c603de8794cc)` |
 | provenance_chain | pass | steps.source = {bridge, llm, sam, dsp} |
 | no_native_audio_claim | pass | 音频输入标 bridge，未冒充 native |
+| no_mock_or_native_claims | pass | 全文档（tempo/instruments/events/steps）无 mock/native 冒称 |
 | privacy | pass | 无绝对路径/key 形态/长 base64 |
 | stem_files | pass | 3 个 stem 存在且 sha256 一致（相对 run 目录解析） |
+
+**② 执行证据门**（`run_e2e.py` execution gate，观测证据而非文档自述，8/8 pass）：
+
+| 检查 | 结果 | 观测证据 |
+|---|---|---|
+| observed_model | pass | 事件流中 assistant `model=['gemini-3.8-flash']` `provider=['google']`（未传 --model） |
+| attachment_observed | pass | `audio_attach` 成功（MIME+字节）2/2 次（各自 audio/wav + 2,822,444 bytes） |
+| sam_separation_observed | pass | 真·SAM 分离**成功 3** 次；dry-run 3、失败 0 **分开计数** |
+| sam_artifacts_present | pass | `stems/*/report.json` ×3（实际产物，非文本自述） |
+| budget_compliance | pass | 真实分离 3 ≤ 预算 3 |
+| required_stages_nonfailed | pass | model_run/result/validate 均 ok |
+| execution_evidence_present | pass | `events.jsonl` 存在，58 次工具调用 |
+| original_runner_success | pass | 原 runner exit=0（`--verify` 不会把失败 run 洗成 pass） |
 
 **result 摘要（纯 JSON，脱敏）**
 
@@ -116,12 +132,17 @@ write 3 / edit 1），关键顺序（脱敏摘要）：
 
 （示例为**摘录**；完整文档在本地 `outputs/e2e/<RUN_ID>/result.json`，sha256 `d789cab…8311`。）
 
-## 6. run manifest（本地，schema `agentic-e2e-run-manifest/v1`）
+## 6. run manifest（本地，schema `agentic-e2e-run-manifest/v2`）
 
 `<WS>/outputs/e2e/<RUN_ID>/run-manifest.json` 含：clip 源/clip hash 与 offset、模型/工具/bridge pin、
-参数（timeout/分离次数上限/修复上限）、GPU 与 run 前显存、wall 与 SAM 耗时、usage/请求数、
-tool trace 摘要（含 3 次真实分离命令与 2 次 audio_attach）、逐 stage 状态、输出校验摘要、限制、
-脱敏复现命令。失败 stage 语义：本 run 全部 `ok`；若失败会写 `fail`/`blocked` 并保留事件流。
+参数、GPU 与 run 前显存、wall 与 SAM 耗时、usage（含 cacheRead/cacheWrite 与对账说明）、
+tool trace 摘要（真·分离 3 成功 / 0 失败 / 3 dry-run、2 次 audio_attach）、逐 stage 状态、
+数据校验与执行门摘要、限制、脱敏复现命令。**可归属性（R1）**：`code` 块记录 git revision
+（run 时未记录 → 保持 `unknown`，**不伪造**；verification 时 revision 分开标注）+ harness 各组件
+sha256 + **Agent DSP 脚本 sha256 `f8b97e45…e298a`**（`scripts/detect_events.py`，14,582 bytes）。
+**时间戳**：`created_at` 与 `timings` 保持原 run 值；离线复核追加 `verification_runs[]`
+（`kind=offline-reverify`）而不改写历史。失败 stage 语义：本 run 全部 `ok`；若失败会写
+`fail`/`blocked` 并保留事件流。
 
 ## 7. 产物位置（本地，均 ignored）
 
@@ -131,10 +152,12 @@ tool trace 摘要（含 3 次真实分离命令与 2 次 audio_attach）、逐 s
   notes.md               Agent 过程/假设/参数/抽查表
   scripts/detect_events.py  Agent 自写 DSP（实际运行）
   stems/{drums,bass,synthesizer}/  target.wav + residual.wav + request.json + report.json
-  validation.json        harness 校验报告（14 项）
-  spotcheck/             overlay.wav + spotcheck.json + overlay.json（harness）
-  overlay.wav, spotcheck-stats.json  Agent 自产的同名辅助产物
-  run-manifest.json      run manifest
+  validation.json        harness 校验报告（数据校验 15 项 + 执行门 8 项）
+  spotcheck/             overlay.wav + spotcheck.json + overlay.json（harness，R1 修复后重算）
+  overlay.wav, spotcheck-stats.json  Agent 自产的同名辅助产物（原样保留）
+  stem-map.json          唯一 stem 文件名映射（R1：hash/相对路径/采样率；原件不动）
+  stems-unique/          唯一文件名副本（stem-<instrument-id>-target.wav）
+  run-manifest.json      run manifest（v2）
 <WS>/local/e2e/e2e-real-20261001-02/
   prompt.txt events.jsonl stderr.txt trace-summary.json   本地证据（不入 git）
 ```

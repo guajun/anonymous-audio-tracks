@@ -4,11 +4,13 @@
 用途（对应验收第 5 条）：
 
 * ``overlay`` —— 在 clip 上叠加 onset 处的短促 click，生成 ``overlay.wav`` 供人类试听；
-* ``stats``   —— 对若干 onset 时间点做**抽查**统计（能量上升比、stem 串音比、
-  独立检测器与 result 的差异计数），用于记录漏检/误检/串音迹象。
+* ``stats``   —— 对若干 onset 时间点做**抽查**统计（能量上升比、**跨轴能量代理**（own/other
+  能量比，不等于分离度/串音率）、独立检测器与 result 的差异计数），用于记录漏检/误检迹象。
 
 **口径（冻结）**：这些都是抽查与迹象，**不是**总体准确率；真实音乐没有精确真值，
-报告不得把本输出写成 accuracy。真实/mock 由 ``--kind`` 显式声明并写进输出。
+报告不得把本输出写成 accuracy，也不得把跨轴能量比写成“测得的串音/泄露”。真实/mock 由
+``--kind`` 显式声明并写进输出。各 stem 用自己的采样率按秒取窗（SAM 输出常见 48 kHz，
+mix 常见 44.1 kHz），绝不拿 mix 的采样率去索引 stem。
 
 用法::
 
@@ -76,9 +78,20 @@ def build_overlay(audio: Path, doc: dict, out: Path, gain: float = 0.5,
             if 0 <= start + i < len(overlay):
                 overlay[start + i] += 0.35 * v
     write_wav16(out, overlay, sr, channels=1)
-    return {"schema": "agentic-e2e-overlay/v1", "audio": audio.name, "out": out.name,
-            "onset_clicks": len(events), "click_hz": click_hz, "kind": "spotcheck-aid",
+    return {"schema": "agentic-e2e-overlay/v2", "audio": audio.name, "out": out.name,
+            "sample_rate": sr, "onset_clicks": len(events), "click_hz": click_hz,
+            "kind": "spotcheck-aid",
             "note": "click 仅标注 result 中的 onset 位置，供人类试听核对；不代表真值"}
+
+
+def _pick(events: list[dict], sample: int) -> tuple[list[dict], str]:
+    """确定性抽样：sample<=1 取首个事件；否则等距取至多 sample 个（首尾各留一席）。"""
+    if sample <= 1:
+        return (events[:1], "first-only")
+    if len(events) > sample:
+        idx = sorted({round(i * (len(events) - 1) / (sample - 1)) for i in range(sample)})
+        return ([events[i] for i in idx], f"evenly-spaced:{len(idx)}")
+    return (list(events), "all")
 
 
 def stats(audio: Path, doc: dict, run_dir: Path | None, kind: str,
@@ -87,12 +100,7 @@ def stats(audio: Path, doc: dict, run_dir: Path | None, kind: str,
     events = collect_events(doc)
     duration = len(samples) / sr
 
-    # 抽样：等距取至多 sample 个（确定性），首尾各留一席
-    if len(events) > sample >= 1:
-        idx = sorted({round(i * (len(events) - 1) / (sample - 1)) for i in range(sample)})
-        picked = [events[i] for i in idx]
-    else:
-        picked = list(events)
+    picked, sample_policy = _pick(events, max(1, int(sample)))
 
     per_event = []
     for ev in picked:
@@ -110,10 +118,12 @@ def stats(audio: Path, doc: dict, run_dir: Path | None, kind: str,
             "energy_rise_seen": post > pre * 1.2,
         })
 
-    # stem 串音抽查（需要 run 目录里的实际 stem 文件）
-    crosstalk = []
+    # stem 跨轴能量代理（需要 run 目录里的实际 stem 文件）
+    # 注意：每个 stem 用自己的采样率（SAM 输出常见 48 kHz，mix 可能是 44.1 kHz），
+    # 窗口一律以**秒**换算到各自采样率索引——绝不拿 mix 的 sr 去索引 stem。
+    cross_stem = []
     if run_dir:
-        stems = {}
+        stems: dict[str, tuple[list[float], int]] = {}
         for inst in doc.get("instruments") or []:
             stem = (inst.get("stem") or {}).get("filename")
             if not stem:
@@ -121,7 +131,7 @@ def stats(audio: Path, doc: dict, run_dir: Path | None, kind: str,
             path = Path(run_dir) / stem
             if path.is_file():
                 try:
-                    stems[inst.get("id")] = read_mono(path)[0]
+                    stems[inst.get("id")] = read_mono(path)   # (samples, 自己的 sr)
                 except Exception:
                     continue
         for ev in picked[:sample]:
@@ -129,14 +139,19 @@ def stats(audio: Path, doc: dict, run_dir: Path | None, kind: str,
             if inst_id not in stems or len(stems) < 2:
                 continue
             t = float(ev["onset_seconds"])
-            own = rms(stems[inst_id], sr, t - 0.05, t + 0.15)
-            others = [rms(sig, sr, t - 0.05, t + 0.15)
-                      for oid, sig in stems.items() if oid != inst_id]
+            own_sig, own_sr = stems[inst_id]
+            own = rms(own_sig, own_sr, t - 0.05, t + 0.15)
+            others = []
+            for oid, (sig, sig_sr) in stems.items():
+                if oid != inst_id:
+                    others.append(rms(sig, sig_sr, t - 0.05, t + 0.15))
             other = sum(others) / len(others) if others else 0.0
-            crosstalk.append({
+            cross_stem.append({
                 "id": ev["id"], "instrument": inst_id, "onset_seconds": t,
-                "own_stem_rms": round(own, 6), "other_stem_rms": round(other, 6),
-                "isolation_ratio": round(own / (other + EPS), 3),
+                "own_stem_rms": round(own, 6), "other_stems_rms": round(other, 6),
+                "own_stem_sample_rate": own_sr,
+                "cross_stem_energy_ratio": round(own / (other + EPS), 3),
+                "proxy_only": True,
             })
 
     # 独立检测器 vs result 差异计数（漏检/误检迹象，非准确率）
@@ -158,14 +173,14 @@ def stats(audio: Path, doc: dict, run_dir: Path | None, kind: str,
     possible_false = [round(reported[j], 3) for j in range(len(reported)) if j not in matched_rep]
 
     return {
-        "schema": "agentic-e2e-spotcheck/v1",
+        "schema": "agentic-e2e-spotcheck/v2",
         "kind": kind,
         "evidence_class": "dsp-spotcheck",
         "audio": {"filename": audio.name, "duration_s": round(duration, 6), "sample_rate": sr},
         "method": {"detector": method, "tolerance_s": 0.1, "sampled_events": len(picked),
-                   "total_events": len(events)},
+                   "total_events": len(events), "sample_policy": sample_policy},
         "per_event": per_event,
-        "crosstalk": crosstalk,
+        "cross_stem_energy": cross_stem,
         "detector_diff": {
             "detector_peaks": len(det_times),
             "reported_events": len(reported),
@@ -175,7 +190,9 @@ def stats(audio: Path, doc: dict, run_dir: Path | None, kind: str,
         "limitations": [
             "抽查与迹象统计，不是总体准确率；真实音乐无精确真值",
             "rise_ratio 依赖窗口与阈值，弱 onset 可能比值接近 1",
-            "串音比只在有 stem 文件时给出，且是能量比不是感知分离度",
+            "cross_stem_energy_ratio 只是**跨轴能量代理**（own/other 能量比），不是测得的分离度/串音率：",
+            "  多声源本就同时发声时比值≈1 并不能证明泄露；也未控制各 stem 增益差异",
+            "各 stem 用自己的采样率按秒取窗（SAM 输出常见 48 kHz），但同秒窗口内仍含真实混叠",
             "detector_diff 用同族 DSP 方法交叉比对，共享偏差会被漏掉",
         ],
     }

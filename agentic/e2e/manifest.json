@@ -54,8 +54,10 @@
     },
     "event_provenance": "DSP 检出事件必须 source='dsp' + method=<检测法>；乐器 source=假设来源（sam/llm）；事件按 (onset,id) 升序；秒时间轴 t=0=clip 开头",
     "audio_pathway": "bridge（audio_attach）；Pi 原生音频=unsupported（issue #30），结果不得标 native",
-    "run_manifest": "agentic-e2e-run-manifest/v1：输入 hash、commit/model/tool pin、参数、耗时/GPU 设备、用量与请求数、tool trace 摘要、成功/失败 stage、输出校验、限制、复现命令",
-    "spotcheck": "agentic-e2e-spotcheck/v1：overlay + 能量上升/串音/独立检测器差异；口径=抽查迹象，非总体准确率"
+    "run_manifest": "agentic-e2e-run-manifest/v2：输入 hash、commit/model/tool/代码归属 pin（git revision + harness 组件 hash + Agent DSP 脚本 hash）、参数、耗时/GPU 设备、用量（含 cacheRead/cacheWrite 与对账）、tool trace 摘要（真·分离成功/失败/dry-run 分开计数）、成功/失败 stage、数据校验+执行门、限制、复现命令；verification_runs[] 追加式，不改写原 run 时间戳",
+    "execution_gate": "agentic-e2e-execution-gate/v1：观测 google/gemini-3.8-flash + 成功 audio_attach（MIME+字节）+ 成功真·SAM 分离（非 dry-run/非失败）+ 产物 report.json + 预算合规 + 必要 stage 非失败 + 原 runner 成功；数据校验 ≠ 执行证明",
+    "stem_map": "agentic-e2e-stem-map/v1：stem-map.json + stems-unique/ 唯一文件名副本（真实 hash/相对路径/采样率/时长）；只做加法，不动原 Agent result/stems、不改 schema、时轴不变",
+    "spotcheck": "agentic-e2e-spotcheck/v2：overlay + 能量上升/跨轴能量代理（cross_stem_energy_ratio，proxy_only，非分离度/串音率）/独立检测器差异；逐 stem 用自己的采样率按秒取窗；口径=抽查迹象，非总体准确率"
   },
   "clip": {
     "name": "e2e-clip-001.wav",
@@ -97,6 +99,7 @@
   "privacy": {
     "committed": ["纯 JSON fixture/真值（自生成 mock）", "代码与文档", "脱敏报告"],
     "never_committed": ["真实音频/clip/stems", "模型权重", "API key", "完整会话/事件流", "个人绝对路径"],
-    "redaction": "harness/common.make_redactor（路径→占位符）+ find_private（key 形态/长 base64/绝对路径）+ validate_result privacy 检查"
+    "upload_boundary": "只有裁剪后的 clip 以 inlineData 内联上传 Google/Gemini API 分析（issue #33 明确允许该 API 分析本任务音频）；源音乐/stems 不上传，不用 Gemini Files API；SAM 全程本地离线",
+    "redaction": "harness/common.make_redactor（路径→占位符）+ find_private（key 形态/长 base64/绝对路径 Windows/UNC/POSIX 含 JSON 转义）+ validate_result privacy 检查"
   }
 }

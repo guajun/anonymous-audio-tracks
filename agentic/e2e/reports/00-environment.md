@@ -23,7 +23,8 @@
 | 项 | 值 |
 |---|---|
 | clip 名 | `e2e-clip-001.wav`（位于 `<WS>/audio/inputs/`，#31 音频 manifest 已登记） |
-| 来源 | 真实复音音乐 `<AUDIO>`（用户自有；本机 `data/` 下，不上传、不入 git） |
+| 来源 | 真实复音音乐 `<AUDIO>`（用户自有；本机 `data/` 下，不入 git、不上传 GitHub） |
+| 上传边界 | **裁剪后的 clip 以 inlineData 内联上传 Google/Gemini API 分析**（本 issue 明确允许；非 Files API）；源音乐不上传；**SAM 全程本地离线** |
 | 裁剪 | offset **4.0 s**，时长 **16.0 s**（`harness/make_clip.py`，帧级裁剪，未转码） |
 | 规格 | 44 100 Hz，2 声道，16-bit WAV；**2 822 444 bytes = 2.69 MiB < 4 MiB**（#30 单文件预算） |
 | clip sha256 | `42f968e24dee43008a1e4164ae5567a503d45bc3211db5b6d6b96971b06dc7f0` |
