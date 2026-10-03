@@ -1,0 +1,8 @@
+# Isolated issue #46 environment; the CUDA torch/torchaudio wheel index is
+# selected at installation time, separately from the project's CPU uv lock.
+torch==2.9.1
+torchaudio==2.9.1
+demucs==4.0.1
+dawdreamer==0.9.0
+numpy>=2,<3
+pytest>=8.3,<9

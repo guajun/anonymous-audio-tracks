@@ -1,0 +1,75 @@
+"""Small deterministic C0 corpus using the existing DawDreamer renderer."""
+from __future__ import annotations
+
+from pathlib import Path
+import hashlib
+import numpy as np
+from aat.contracts.jsonio import dump_json
+from aat.render.config import config_from_dict
+from aat.render.pipeline import render_sample
+from .labels import label_sample, overlap_ratio
+
+
+def c0_config(seed: int, sample_id: str):
+    rng = np.random.default_rng(seed)
+    # One voice shared intentionally for C0 engineering validation. Parameters
+    # and performances are held out; this is not an unseen-timbre benchmark.
+    amp = {"attack_ms": float(rng.choice([10, 40, 100, 200])),
+           "decay_ms": float(rng.choice([40, 100, 200])),
+           "sustain": float(rng.choice([0.35, 0.6, 0.9])),
+           "release_ms": float(rng.choice([100, 200, 400]))}
+    notes = [{"step": step, "note": 60, "velocity": int(rng.integers(65, 116)),
+              "length_steps": int(rng.integers(3, 6))} for step in (12, 40, 68)]
+    return config_from_dict({
+        "render": {"sample_id": sample_id, "composition": sample_id, "seed": seed,
+                   "sample_rate": 44100, "block_size": 512, "bpm": 100,
+                   "duration_seconds": 8.0, "tail_seconds": 2.0},
+        "sources": [{"id": "s01", "gain": float(rng.uniform(0.3, 0.65)), "center_note": 60,
+                     "preset_ref": "aat/c0/fixed-pad-v1", "sample_ref": "generated/c0/fixed-pad-v1",
+                     "sample": {"type": "pad", "seed": 46,
+                                "params": {"duration_seconds": 1.5, "attack_seconds": 0.05,
+                                           "release_seconds": 0.15, "freq_hz": 261.626,
+                                           "detune_cents": 0.0, "stereo": False}},
+                     "amp": amp, "pattern": {"step_seconds": 0.1, "notes": notes}}],
+    })
+
+
+def prepare_c0(out: str | Path, *, seed=4600, counts=(4,2,2)):
+    out = Path(out)
+    if out.exists() and any(out.iterdir()):
+        raise ValueError("C0 output must be empty; refusing to overwrite prior data")
+    out.mkdir(parents=True, exist_ok=True)
+    entries = []
+    for split, count in zip(("train", "val", "test"), counts):
+        for index in range(count):
+            sample_id = f"c0-{split}-{index:02d}"
+            song_seed = seed + len(entries)*101
+            config = c0_config(song_seed, sample_id)
+            directory = out / sample_id
+            rendered = render_sample(config, directory)
+            labels = label_sample(directory)
+            # Notes are spaced 2.8s, exceeding sample duration + maximum release.
+            ratio = overlap_ratio(labels.rms[labels.valid])
+            if ratio != 0.0:
+                raise ValueError("C0 contains cross-source overlap")
+            before_peaks=[]
+            for onset in (1.2,4.0,6.8):
+                before=(labels.center_times>=onset-0.15)&(labels.center_times<onset-0.06)
+                peak=float(labels.rms[before].max())
+                before_peaks.append(peak)
+                if peak>1e-3:
+                    raise ValueError("C0 has an audible tail before the next note")
+            entries.append({"sample_id": sample_id, "split": split, "directory": sample_id,
+                            "seed": song_seed, "amp": config.sources[0].amp.to_dict(),
+                            "gain": config.sources[0].gain, "acoustic_overlap_ratio": ratio,
+                            "minimum_note_gap_seconds": 2.8,
+                            "max_sample_plus_release_seconds": 1.5 + config.sources[0].amp.release_ms/1000,
+                            "pre_note_rms_peaks": before_peaks,
+                            "mix_sha256": hashlib.sha256((directory/"mix.wav").read_bytes()).hexdigest(),
+                            "envelope_sha256": hashlib.sha256((directory/"envelope.npz").read_bytes()).hexdigest(),
+                            "stem_sum": rendered.report["stem_sum"]})
+    index = {"version": "aat-curriculum-v1", "stage": "C0", "seed": seed,
+             "split_policy": "held-out sequence/ADSR/gain; shared fixed voice intentional; not unseen timbre",
+             "entries": entries}
+    dump_json(out / "index.json", index)
+    return index
