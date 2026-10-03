@@ -33,7 +33,8 @@ class Telemetry:
             if values:self.scalars(prefix,{key:float(np.mean(values))},step)
         for key in ('pregate_A_mean','pregate_A_max','gate_zero_fraction','gate_all_zero_frames','fragment_count','fragment_columns',
                     'direct_anchor_frames','expired_endpoints','local_link_pairs','reference_short_gap_pairs','short_gap_both_detected',
-                    'short_gap_pit_stitched','short_gap_pit_stitch_fraction','diagnostic_short_gap_fragment_breaks','reference_long_gap_pairs'):
+                    'short_gap_pit_stitched','short_gap_pit_stitch_fraction','diagnostic_short_gap_fragment_breaks','reference_long_gap_pairs',
+                    'transport_pregate_sum_mean','transport_gate_removed_sum_mean','transport_gate_zero_fraction'):
             values=[s[key] for s in songs if s.get(key) is not None]
             if values:self.scalars(prefix,{key:float(np.mean(values))},step)
         for key in ('onset_mae_seconds','offset_mae_seconds','frame_f1'):

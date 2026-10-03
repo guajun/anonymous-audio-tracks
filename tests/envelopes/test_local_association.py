@@ -38,6 +38,25 @@ def test_short_zero_gap_links_nonzero_endpoints_in_shared_real_context():
     assert result['tracked'][1:15].sum()==0
 
 
+@pytest.mark.parametrize('distance,expected_same',[(.6,True),(1.2,False)])
+def test_one_source_zero_gap_while_another_source_remains_audible(distance,expected_same):
+    n=round(distance/.04)+1
+    e=torch.eye(2)[None].expand(n,-1,-1).clone()
+    p=torch.zeros(n,2);p[:,1]=.2;p[0,0]=.2;p[-1,0]=.2
+    e[1:-1,0]=0
+    result=rollout(e,p)
+    assert (result['tracked'][1:-1,0]==0).all()
+    if expected_same:assert (result['fragment_ids'][1:-1,0]==-1).all()
+    same=result['fragment_ids'][0,0]==result['fragment_ids'][-1,0]
+    assert same==expected_same
+    assert result['fragment_ids'][0,1]==result['fragment_ids'][-1,1]
+    if expected_same:
+        link=result['cycle_links'][-1]
+        assert link['endpoint_frames'][0]==0  # no zero or other-source overwrite
+    else:
+        assert result['tracked'][-1,0]==0
+
+
 @pytest.mark.parametrize('hop',[.04,.05])
 def test_long_gap_creates_real_fragment_and_does_not_reuse_old_track_id(hop):
     e=torch.ones(30,1,2);p=torch.zeros(30,1);p[0]=.2;p[-1]=.2

@@ -8,8 +8,9 @@ import math
 import numpy as np
 import torch
 from torch.nn import functional as F
+from .models import magnitude_gate
 
-VERSION='aat-local-endpoint-fragments-v1'
+VERSION='aat-local-endpoint-fragments-v2'
 
 
 @dataclass(frozen=True)
@@ -21,13 +22,15 @@ class LocalAssociationConfig:
     hop_seconds: float=.04
     edge_guard_seconds: float=.05
     evidence_seconds: float=.04
+    transport_gate: float=.002
 
     def __post_init__(self):
-        values=(self.temperature,self.similarity_gate,self.context_seconds,self.hop_seconds,self.edge_guard_seconds,self.evidence_seconds)
+        values=(self.temperature,self.similarity_gate,self.context_seconds,self.hop_seconds,self.edge_guard_seconds,self.evidence_seconds,self.transport_gate)
         if not all(math.isfinite(v) for v in values) or min(self.temperature,self.context_seconds,self.hop_seconds)<=0:
             raise ValueError('finite positive local settings required')
         if self.iterations<1 or min(self.edge_guard_seconds,self.evidence_seconds)<0 or self.maximum_endpoint_distance<=0:
             raise ValueError('invalid local evidence margin')
+        if not 0<=self.transport_gate<1:raise ValueError('invalid transport magnitude gate')
 
     @property
     def maximum_endpoint_distance(self):
@@ -72,7 +75,7 @@ def rollout(directions,intensity,config=LocalAssociationConfig(),*,center_times=
             return row
         value=next_fragment;next_fragment+=1
         return value
-    values,identities,links,entropies,nulls,births,residuals,anchors,expiries=[],[],[],[],[],[],[],[],[]
+    values,identities,links,entropies,nulls,births,residuals,anchors,expiries,pretransport=[],[],[],[],[],[],[],[],[],[]
     for frame,p in enumerate(intensity):
         active=nonzero[frame]
         live=last>=0
@@ -92,12 +95,14 @@ def rollout(directions,intensity,config=LocalAssociationConfig(),*,center_times=
             a=torch.eye(k,device=p.device,dtype=p.dtype)
             b=a
             tracked=p
+            before_gate=p
             entropy=p*0;null=live_tensor.to(p.dtype);birth=p*0
             direct=False
         elif not live.any():
             # First effective activity is self-corresponding by construction.
             a=torch.eye(k,device=p.device,dtype=p.dtype);b=a
             tracked=p;entropy=p*0;null=p*0;birth=active.to(p.dtype)
+            before_gate=p
             direct=True
             for row in torch.nonzero(active).flatten().cpu().tolist():
                 fragments[row]=new_fragment(row)
@@ -115,7 +120,8 @@ def rollout(directions,intensity,config=LocalAssociationConfig(),*,center_times=
             logits=torch.where(active[None,:],logits,torch.zeros_like(logits))
             a=balanced(logits,config.iterations)
             b=balanced(logits.T,config.iterations)  # independently normalized
-            tracked=a@p
+            before_gate=a@p
+            tracked=magnitude_gate(before_gate,config.transport_gate,training=torch.is_grad_enabled())
             observed=a*active[None,:]
             conditional=observed/observed.sum(1,keepdim=True).clamp_min(1e-12)
             entropy=-(conditional*conditional.clamp_min(1e-12).log()).sum(1)
@@ -135,6 +141,7 @@ def rollout(directions,intensity,config=LocalAssociationConfig(),*,center_times=
                 endpoint_e[row]=e[frame]
                 last[row]=frame
         values.append(tracked);identities.append(np.where(tracked.detach().cpu().numpy()>0,fragments,-1))
+        pretransport.append(before_gate)
         entropies.append(entropy);nulls.append(null);births.append(birth)
         residuals.append((a.sum(1)-1).abs().max())
         anchors.append(direct);expiries.append(int(expired.sum()))
@@ -147,6 +154,7 @@ def rollout(directions,intensity,config=LocalAssociationConfig(),*,center_times=
         expanded.append(p.new_zeros(columns).scatter_add(0,idx,p))
     return {'version':VERSION,'tracked':torch.stack(expanded),'lane_activity':torch.stack(values),
             'fragment_ids':np.stack(identities),'cycle_links':links,
+            'pregate_lane_activity':torch.stack(pretransport),
             'entropy':torch.stack(entropies),'null_mass':torch.stack(nulls),'birth_mass':torch.stack(births),
             'capacity_residual':torch.stack(residuals),'direct_anchor_frames':np.flatnonzero(anchors).tolist(),
             'expired_endpoints':expiries,'center_times':times,'context_bounds':bounds,

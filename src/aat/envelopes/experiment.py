@@ -168,7 +168,10 @@ def fragment_diagnostics(result):
     return {'fragment_count':int((result['tracked'].detach()>0).any(0).sum()),
             'fragment_columns':result['tracked'].shape[1],'direct_anchor_frames':len(result['direct_anchor_frames']),
             'expired_endpoints':sum(result['expired_endpoints']),
-            'local_link_pairs':sum(int(link['eligible'].sum()) for link in result['cycle_links'])}
+            'local_link_pairs':sum(int(link['eligible'].sum()) for link in result['cycle_links']),
+            'transport_pregate_sum_mean':float(result['pregate_lane_activity'].detach().sum(1).mean()),
+            'transport_gate_removed_sum_mean':float((result['pregate_lane_activity'].detach()-result['lane_activity'].detach()).sum(1).mean()),
+            'transport_gate_zero_fraction':float((result['lane_activity'].detach()==0).float().mean())}
 
 
 def eligible_offsets(target,n,*,require_recurrence=False):
@@ -234,6 +237,7 @@ def evaluate(model, samples, config, device, *, predictions_out=None,association
                                 raw_candidates=raw.cpu().numpy(),tracked_candidates=p.cpu().numpy(),
                                 pregate_candidates=pregate.cpu().numpy(),
                                 fragment_ids=associated['fragment_ids'] if local else np.empty((0,0),dtype=int),
+                                pregate_lane_activity=associated['pregate_lane_activity'].cpu().numpy() if local else raw.cpu().numpy(),
                                 matched_slots=np.array(selected))
             if local:
                 links=associated['cycle_links']
