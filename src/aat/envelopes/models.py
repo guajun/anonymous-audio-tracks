@@ -43,7 +43,7 @@ class EnvelopeVectorHead(nn.Module):
         z = raw * occupancy
         radius = z.norm(dim=-1)
         intensity = radius/(1+radius)
-        direction = F.normalize(z,dim=-1,eps=1e-8)
+        direction = F.normalize(raw,dim=-1,eps=1e-8)
         return direction, intensity
 
 

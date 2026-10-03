@@ -128,7 +128,7 @@ def evaluate(model, samples, config, device):
 def train_combinations(cache: str | Path, out: str | Path, *, device="cuda:0", steps=100, seed=46, lr=3e-4,
                        families=("l1","huber","area_iou","huber_iou","multiscale"), segment_centers=40,
                        delta=0.05, iou_weight=0.1, empty_weight=1.0,
-                       scales_seconds=(0.0,0.02,0.05,0.10)):
+                       scales_seconds=(0.0,0.02,0.05,0.10),normalize_huber=True):
     cache,out=Path(cache),Path(out)
     if steps<1 or segment_centers<2 or lr<=0:
         raise ValueError("invalid training budget")
@@ -163,7 +163,8 @@ def train_combinations(cache: str | Path, out: str | Path, *, device="cuda:0", s
         rng=np.random.default_rng(seed)
         model=EnvelopeVectorHead(samples["train"][0]["features"].shape[1]).to(device)
         config=ShapeLossConfig(family=family,hop_seconds=meta["hop_seconds"],delta=delta,
-                               iou_weight=iou_weight,empty_weight=empty_weight,scales_seconds=tuple(scales_seconds))
+                               iou_weight=iou_weight,empty_weight=empty_weight,scales_seconds=tuple(scales_seconds),
+                               normalize_huber=normalize_huber)
         optim=torch.optim.AdamW(model.parameters(),lr=lr,weight_decay=1e-4)
         initial=evaluate(model,samples["val"],config,device)
         logs=[]

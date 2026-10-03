@@ -18,6 +18,7 @@ class ShapeLossConfig:
     empty_weight: float = 1.0
     scales_seconds: tuple[float, ...] = (0.0, 0.02, 0.05, 0.10)
     hop_seconds: float = 0.02
+    normalize_huber: bool = True
 
     def __post_init__(self):
         if self.family not in ("l1", "huber", "area_iou", "huber_iou", "multiscale"):
@@ -57,6 +58,10 @@ def curve_loss(predicted: Tensor, target: Tensor, valid: Tensor, config: ShapeLo
     residual = p-y
     l1 = (residual.abs()*mask).sum(-1)/denom
     huber = (F.huber_loss(p, y, reduction="none", delta=config.delta)*mask).sum(-1)/denom
+    if config.normalize_huber:
+        # Match L1's unit slope for large residuals; otherwise the null-track
+        # L1 penalty can dominate merely because delta is expressed in RMS.
+        huber = huber/config.delta
     intersection = (torch.minimum(p,y)*mask).sum(-1)
     union = (torch.maximum(p,y)*mask).sum(-1)
     nonempty = (y*mask).sum(-1) > 0
@@ -73,7 +78,8 @@ def curve_loss(predicted: Tensor, target: Tensor, valid: Tensor, config: ShapeLo
         terms = []
         for sigma in config.scales_seconds:
             smooth_p, smooth_y = _smooth(p*mask, sigma/config.hop_seconds), _smooth(y*mask, sigma/config.hop_seconds)
-            terms.append((F.huber_loss(smooth_p, smooth_y, reduction="none", delta=config.delta)*mask).sum(-1)/denom)
+            value=(F.huber_loss(smooth_p, smooth_y, reduction="none", delta=config.delta)*mask).sum(-1)/denom
+            terms.append(value/config.delta if config.normalize_huber else value)
         main = torch.stack(terms).mean(0)
     silent = ((y == 0)*mask).to(p.dtype)
     silence_loss = (p*silent).sum(-1)/silent.sum(-1).clamp_min(1)

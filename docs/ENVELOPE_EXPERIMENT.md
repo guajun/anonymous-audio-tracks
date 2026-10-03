@@ -54,6 +54,8 @@ python scripts/envelope_experiment.py train --cache runs/envelope/cache \
 
 首轮实现 R0–R4：L1、Huber、面积 IoU、Huber+IoU、多尺度 Huber。
 默认 Huber delta=0.05、IoU weight=0.1、空槽/静音 weight=1，均可通过 CLI 改动。
+默认 Huber 除以 delta（等价于相应 SmoothL1），让大残差斜率与 L1 一致；
+`--raw-huber` 可复现未校准的原始 Huber 量级。早期原始 Huber 的空槽惩罚相对过强，不能据此排名损失。
 Gaussian 尺度默认 0/20/50/100 ms，含原尺度；TimeCycle 为 0。
 默认权重是预声明的探针起点，不是已经调优或完成量级标定的结论。
 

@@ -100,3 +100,12 @@ def test_background_allocation_suppresses_vector_radius():
         model.allocate.bias[-1]=20
     _,after=model(features,times,level)
     assert after.max()<before.max()*1e-6
+
+
+def test_normalized_huber_and_l1_have_equal_large_residual_slopes():
+    for family in ("l1","huber"):
+        p=torch.tensor([.5],requires_grad=True)
+        value=curve_loss(p,torch.tensor([.1]),torch.ones(1,dtype=torch.bool),
+                         ShapeLossConfig(family=family,empty_weight=0))
+        value.backward()
+        assert p.grad.item()==pytest.approx(1.0)
