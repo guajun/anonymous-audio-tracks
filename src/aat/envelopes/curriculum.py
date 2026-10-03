@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import copy
 import hashlib
 import numpy as np
 from aat.contracts.jsonio import dump_json
@@ -72,4 +73,70 @@ def prepare_c0(out: str | Path, *, seed=4600, counts=(4,2,2)):
              "split_policy": "held-out sequence/ADSR/gain; shared fixed voice intentional; not unseen timbre",
              "entries": entries}
     dump_json(out / "index.json", index)
+    return index
+
+
+def c1_config(seed: int, sample_id: str):
+    """Two fixed timbres, alternating with acoustic gaps and A-B-A recurrence."""
+    rng=np.random.default_rng(seed)
+    initial=c0_config(seed,sample_id)
+    base=initial.sources[0].to_dict()
+    base['id']=base.pop('source_id')
+    base.pop('index')
+    sources=[copy.deepcopy(base),copy.deepcopy(base)]
+    onsets=np.array([12,40,68,96,124])+rng.integers(-1,2,size=5)
+    first=int(rng.integers(2))
+    owners=[(first+i)%2 for i in range(5)]
+    sources[1].update(id='s02',preset_ref='aat/c1/fixed-pluck-v1',sample_ref='generated/c1/fixed-pluck-v1',
+                      sample={'type':'pluck','seed':47,'params':{'duration_seconds':1.5,'freq_hz':261.626,'decay_seconds':.8,'damping':.5}})
+    sources[0]['preset_ref']='aat/c1/fixed-pad-v1'
+    sources[0]['sample_ref']='generated/c1/fixed-pad-v1'
+    for source_index,source in enumerate(sources):
+        source['gain']=float(rng.uniform(.3,.65))
+        source['amp']={'attack_ms':float(rng.choice([10,40,100])), 'decay_ms':100.,
+                       'sustain':float(rng.choice([.35,.6,.9])),'release_ms':float(rng.choice([100,200,400]))}
+        source['pattern']={'step_seconds':.1,'notes':[
+            {'step':int(onset),'note':60,'velocity':int(rng.integers(65,116)),'length_steps':int(rng.integers(3,6))}
+            for onset,owner in zip(onsets,owners) if owner==source_index]}
+    config=config_from_dict({'render':{'sample_id':sample_id,'composition':sample_id,'seed':seed,
+                                      'sample_rate':44100,'block_size':512,'bpm':100,'duration_seconds':14.,'tail_seconds':2.},
+                             'sources':sources})
+    return config,onsets*.1,owners
+
+
+def prepare_c1(out: str | Path, *, seed=4610, counts=(4,2,2)):
+    out=Path(out)
+    if out.exists() and any(out.iterdir()):
+        raise ValueError('C1 output must be empty')
+    out.mkdir(parents=True,exist_ok=True)
+    entries=[]
+    for split,count in zip(('train','val','test'),counts):
+        for index in range(count):
+            sample_id=f'c1-{split}-{index:02d}'
+            song_seed=seed+len(entries)*101
+            config,onsets,owners=c1_config(song_seed,sample_id)
+            directory=out/sample_id
+            rendered=render_sample(config,directory)
+            labels=label_sample(directory)
+            overlap=overlap_ratio(labels.rms[labels.valid])
+            if overlap!=0:
+                raise ValueError('C1 contains acoustic overlap')
+            peaks=[]
+            for onset in onsets:
+                before=(labels.center_times>=onset-.15)&(labels.center_times<onset-.06)
+                peaks.append(float(labels.rms[before].max()))
+            if max(peaks)>1e-3:
+                raise ValueError('C1 contains an audible tail before the next note')
+            entries.append({'sample_id':sample_id,'split':split,'directory':sample_id,'seed':song_seed,
+                            'onsets_seconds':onsets.tolist(),'owners':[config.sources[i].source_id for i in owners],
+                            'minimum_note_gap_seconds':float(np.diff(onsets).min()),'acoustic_overlap_ratio':overlap,
+                            'pre_note_rms_peaks':peaks,'amp':[s.amp.to_dict() for s in config.sources],
+                            'gain':[s.gain for s in config.sources],
+                            'mix_sha256':hashlib.sha256((directory/'mix.wav').read_bytes()).hexdigest(),
+                            'envelope_sha256':hashlib.sha256((directory/'envelope.npz').read_bytes()).hexdigest(),
+                            'stem_sum':rendered.report['stem_sum']})
+    index={'version':'aat-curriculum-v1','stage':'C1','seed':seed,
+           'split_policy':'held-out sequence/ADSR/gain; two fixed voices shared intentionally; not unseen timbre; alternating start/jittered onsets',
+           'entries':entries}
+    dump_json(out/'index.json',index)
     return index

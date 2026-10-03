@@ -19,11 +19,16 @@ class ShapeLossConfig:
     scales_seconds: tuple[float, ...] = (0.0, 0.02, 0.05, 0.10)
     hop_seconds: float = 0.02
     normalize_huber: bool = True
+    null_weight: float | None = None
 
     def __post_init__(self):
         if self.family not in ("l1", "huber", "area_iou", "huber_iou", "multiscale"):
             raise ValueError("unsupported shape loss family")
         values = (self.delta, self.iou_weight, self.empty_weight, self.hop_seconds, *self.scales_seconds)
+        if self.null_weight is not None:
+            values=(*values,self.null_weight)
+            if self.null_weight<0:
+                raise ValueError("nonnegative null weight required")
         if not all(math.isfinite(v) for v in values) or min(self.delta, self.hop_seconds) <= 0:
             raise ValueError("finite positive delta/hop required")
         if min(self.iou_weight, self.empty_weight, *self.scales_seconds) < 0 or not self.scales_seconds:
@@ -41,7 +46,7 @@ def _smooth(x: Tensor, sigma_samples: float):
     return F.conv1d(F.pad(flat, (radius, radius)), kernel[None, None]).reshape_as(x)
 
 
-def curve_loss(predicted: Tensor, target: Tensor, valid: Tensor, config: ShapeLossConfig):
+def curve_components(predicted: Tensor, target: Tensor, valid: Tensor, config: ShapeLossConfig):
     """Return loss per broadcasted curve, time on the last axis.
 
     Empty curves use explicit output suppression, not epsilon-normalized IoU.
@@ -84,8 +89,15 @@ def curve_loss(predicted: Tensor, target: Tensor, valid: Tensor, config: ShapeLo
     silent = ((y == 0)*mask).to(p.dtype)
     silence_loss = (p*silent).sum(-1)/silent.sum(-1).clamp_min(1)
     empty_loss = (p*mask).sum(-1)/denom
-    return torch.where(nonempty, main + config.empty_weight*silence_loss,
-                       config.empty_weight*empty_loss)
+    zero=torch.zeros_like(main)
+    null_weight=config.empty_weight if config.null_weight is None else config.null_weight
+    return {"shape":torch.where(nonempty,main,zero),
+            "silence":torch.where(nonempty,config.empty_weight*silence_loss,zero),
+            "null":torch.where(nonempty,zero,null_weight*empty_loss)}
+
+
+def curve_loss(predicted: Tensor, target: Tensor, valid: Tensor, config: ShapeLossConfig):
+    return sum(curve_components(predicted,target,valid,config).values())
 
 
 def segment_shape_loss(predicted: Tensor, target: Tensor, valid: Tensor, config: ShapeLossConfig):
@@ -94,13 +106,21 @@ def segment_shape_loss(predicted: Tensor, target: Tensor, valid: Tensor, config:
     Assignment includes the costs of unused tracks. Tied optimal assignments
     are averaged symmetrically. Truncated tie sets fail rather than invent IDs.
     """
+    components,assignment=segment_shape_components(predicted,target,valid,config)
+    return sum(components.values()),assignment
+
+
+def segment_shape_components(predicted: Tensor, target: Tensor, valid: Tensor, config: ShapeLossConfig):
+    """PIT-selected shape/silence/null terms on one common segment mapping."""
     if predicted.ndim != 2 or target.ndim != 2 or predicted.shape[0] != target.shape[0]:
         raise ValueError("expected matching [time, tracks/sources] arrays")
     slots, sources = predicted.shape[1], target.shape[1]
     if not 1 <= sources <= slots <= 8:
         raise ValueError("expected 1 <= sources <= tracks <= 8")
-    paired = curve_loss(predicted.T[None], target.T[:,None], valid, config)
-    empty = curve_loss(predicted.T, torch.zeros_like(predicted.T), valid, config)
+    paired_parts=curve_components(predicted.T[None], target.T[:,None], valid, config)
+    empty_parts=curve_components(predicted.T, torch.zeros_like(predicted.T), valid, config)
+    paired=sum(paired_parts.values())
+    empty=sum(empty_parts.values())
     # Replacing a null target by a source also replaces that track's empty cost.
     cost = paired / sources
     if slots > sources:
@@ -112,10 +132,10 @@ def segment_shape_loss(predicted: Tensor, target: Tensor, valid: Tensor, config:
     for perm in assignment.assignments:
         marginal[np.arange(sources),np.asarray(perm)] += 1/len(assignment.assignments)
     weights = torch.as_tensor(marginal,device=predicted.device,dtype=paired.dtype)
-    value = (paired*weights).sum()/sources
+    values={name:(part*weights).sum()/sources for name,part in paired_parts.items()}
     if slots>sources:
-        value=value+(empty*(1-weights.sum(0))).sum()/(slots-sources)
-    return value, assignment
+        values["null"]=values["null"]+(empty*(1-weights.sum(0))).sum()/(slots-sources)
+    return values, assignment
 
 
 def area_iou_numpy(predicted, target):

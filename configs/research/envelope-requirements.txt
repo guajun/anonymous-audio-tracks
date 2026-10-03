@@ -6,3 +6,4 @@ demucs==4.0.1
 dawdreamer==0.9.0
 numpy>=2,<3
 pytest>=8.3,<9
+tensorboard==2.21.0
