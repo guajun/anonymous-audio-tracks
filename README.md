@@ -11,6 +11,7 @@
 Issue #46 的冻结 Demucs、无 Query 向量头与连续包络课程实验在独立分支推进：
 [设计与损失组合](docs/ISSUE_46_DESIGN.md)、[运行入口](docs/ENVELOPE_EXPERIMENT.md)、
 [C0 实测与失败分析](docs/reports/issue-46-c0.md)。当前完成单来源工程基线，后续关联与重叠课程仍待验证。
+新关联训练、双音色接线诊断与 TensorBoard 入口见 [ENVELOPE_ASSOCIATION.md](docs/ENVELOPE_ASSOCIATION.md)。
 
 ## 当前状态与快速开始
 

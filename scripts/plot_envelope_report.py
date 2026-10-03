@@ -16,6 +16,7 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--evidence',type=Path,default=Path('docs/reports/evidence/issue-46-c0.json'))
     parser.add_argument('--out',type=Path,default=Path('docs/reports/figures'))
+    parser.add_argument('--association-evidence',type=Path,default=Path('docs/reports/evidence/issue-46-association.json'))
     args=parser.parse_args()
     data=json.loads(args.evidence.read_text(encoding='utf-8'))
     args.out.mkdir(parents=True,exist_ok=True)
@@ -41,6 +42,28 @@ def main():
     fig.suptitle('C0: 8 candidates, 1,000 steps, seeds 46/47/48\nEach point averages two held-out sequences; fixed timbre')
     fig.savefig(args.out/'issue-46-c0-screen.png',dpi=150)
     plt.close(fig)
+
+    if args.association_evidence.exists():
+        association=json.loads(args.association_evidence.read_text(encoding='utf-8'))
+        rows=[r for r in association['runs'] if r['name'].startswith('c1-association-hiou-')]
+        fig,axes=plt.subplots(2,3,figsize=(13,6.3),sharex=True,sharey=True,layout='constrained')
+        for column,(row,label) in enumerate(zip(rows,('Channel index','Soft, cycle=0','Soft, cycle=0.001'))):
+            curve=row['validation_example']
+            times=curve['center_times']
+            for source in range(2):
+                ax=axes[source,column]
+                ax.plot(times,np.asarray(curve['target'])[:,source],color='#222222',lw=1.6,label='Reference stem')
+                ax.plot(times,np.asarray(curve['predicted'])[:,source],color=('#31688e','#d59b13')[source],lw=1.5,label='Matched track')
+                ax.plot(times,curve['unused_max'],color='#bf3868',ls='--',lw=1,label='Max unused track')
+                ax.axhline(.002,color='gray',ls=':',lw=.7)
+                ax.grid(alpha=.2)
+                if source==0:ax.set_title(label)
+                if column==0:ax.set_ylabel(f'Source {source+1}: linear RMS')
+                if source==1:ax.set_xlabel('Original-track seconds')
+        axes[0,0].legend(loc='upper right',bbox_to_anchor=(1,1.32),fontsize=7)
+        fig.suptitle('C1 wiring diagnostic: Huber + IoU, seed 46, 100 steps\nc1-val-00, fixed pad/pluck; soft association failed in this budget')
+        fig.savefig(args.out/'issue-46-c1-association.png',dpi=150)
+        plt.close(fig)
 
     fig,axes=plt.subplots(5,1,figsize=(12,11),sharex=True,layout='constrained')
     for ax,family,label,color in zip(axes,families,labels,colors):
