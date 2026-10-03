@@ -102,16 +102,14 @@ def segment_shape_loss(predicted: Tensor, target: Tensor, valid: Tensor, config:
     assignment = enumerate_optimal_assignments(cost.detach().cpu().numpy(), max_optimal=40320)
     if assignment.truncated:
         raise ValueError("unresolved truncated trajectory matching")
-    values = []
+    marginal = np.zeros((sources,slots),dtype=np.float64)
     for perm in assignment.assignments:
-        chosen = torch.tensor(perm, device=predicted.device)
-        unused = [k for k in range(slots) if k not in perm]
-        # Source curves and unused tracks have separate averages; K cannot dilute the main loss.
-        value = paired[torch.arange(sources, device=predicted.device), chosen].mean()
-        if unused:
-            value = value + empty[unused].mean()
-        values.append(value)
-    return torch.stack(values).mean(), assignment
+        marginal[np.arange(sources),np.asarray(perm)] += 1/len(assignment.assignments)
+    weights = torch.as_tensor(marginal,device=predicted.device,dtype=paired.dtype)
+    value = (paired*weights).sum()/sources
+    if slots>sources:
+        value=value+(empty*(1-weights.sum(0))).sum()/(slots-sources)
+    return value, assignment
 
 
 def area_iou_numpy(predicted, target):

@@ -13,6 +13,8 @@ class EnvelopeVectorHead(nn.Module):
     learned query vectors or independent per-slot descriptor projection heads.
     Absolute mixture RMS is supplied because Demucs normalizes each input.
     """
+    VERSION = "aat-envelope-vector-v2"
+
     def __init__(self, in_channels: int, slots=8, hidden=128):
         super().__init__()
         self.slots = slots
@@ -34,7 +36,11 @@ class EnvelopeVectorHead(nn.Module):
         center = torch.einsum('bkft,bcft->bkc',cmask,x)/cmass[...,None]
         occupancy = (cmass/(center_weight.sum((2,3))*features.shape[2]).clamp_min(1e-6))[...,None]
         level = mixture_rms[:,None,None].expand(-1,self.slots,1)
-        z = self.vector(torch.cat((context,center,occupancy,level,torch.log1p(level*100)),dim=-1))
+        raw = self.vector(torch.cat((context,center,occupancy,level,torch.log1p(level*100)),dim=-1))
+        # A slot cannot claim the entire mixture with near-zero allocation.
+        # Tie vector radius to observed center allocation, retaining a shared
+        # content-dependent vector mapping and no independent activity head.
+        z = raw * occupancy
         radius = z.norm(dim=-1)
         intensity = radius/(1+radius)
         direction = F.normalize(z,dim=-1,eps=1e-8)

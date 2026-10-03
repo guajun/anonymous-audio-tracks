@@ -124,4 +124,3 @@ C0 最优不代表多来源最优；C1/C2 保留一个简单回归参照。
 
 - Soft-DTW：https://arxiv.org/abs/1703.01541
 - 一维 W1 与 CDF 的等价关系：https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.wasserstein_distance.html
-

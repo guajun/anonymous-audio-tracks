@@ -85,3 +85,18 @@ def test_shape_error_reaches_descriptors_through_soft_association():
     for a in matrices:
         torch.testing.assert_close(a.sum(0),torch.ones(2),atol=1e-4,rtol=1e-4)
         torch.testing.assert_close(a.sum(1),torch.ones(2),atol=1e-4,rtol=1e-4)
+
+
+def test_background_allocation_suppresses_vector_radius():
+    torch.manual_seed(46)
+    model=EnvelopeVectorHead(12)
+    features=torch.randn(3,12,8,20)
+    times=torch.linspace(-1,1,20).expand(3,-1)
+    level=torch.ones(3)*.1
+    _,before=model(features,times,level)
+    with torch.no_grad():
+        model.allocate.weight.zero_()
+        model.allocate.bias.fill_(-20)
+        model.allocate.bias[-1]=20
+    _,after=model(features,times,level)
+    assert after.max()<before.max()*1e-6

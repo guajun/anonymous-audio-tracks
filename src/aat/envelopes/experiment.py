@@ -156,6 +156,7 @@ def train_combinations(cache: str | Path, out: str | Path, *, device="cuda:0", s
             "git_commit":git,"torch":torch.__version__,"cache_identity_sha256":hashlib.sha256((cache/"index.json").read_bytes()).hexdigest(),
             "encoder":meta["encoder"],"data_policy":meta["data_policy"],
             "association":"C0 fixed segment slots; E discrimination/association not validated",
+            "head_version":EnvelopeVectorHead.VERSION,
             "cycle_weight":0,"runs":[]}
     for family in families:
         torch.manual_seed(seed)
@@ -197,6 +198,7 @@ def train_combinations(cache: str | Path, out: str | Path, *, device="cuda:0", s
              "initial_val":initial,"val":val,"test":test,"seconds":time.perf_counter()-start_time,
              "peak_cuda_mib":torch.cuda.max_memory_allocated(device)/2**20 if device.startswith("cuda") else None}
         torch.save({"version":result["version"],"model":model.state_dict(),"config":asdict(config),
+                    "head_version":EnvelopeVectorHead.VERSION,
                     "in_channels":samples["train"][0]["features"].shape[1],"encoder":meta["encoder"],
                     "seed":seed,"steps":steps},out/f"{family}.pt")
         dump_json(out/f"{family}.json",run)
