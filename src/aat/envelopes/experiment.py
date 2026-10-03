@@ -16,7 +16,7 @@ from aat.labels.energy import mean_square_at_samples
 from aat.windowing import centered_window_bounds
 from .demucs import FrozenDemucsFeatures
 from .labels import EnvelopeData
-from .losses import ShapeLossConfig, segment_shape_loss, segment_shape_components, area_iou_numpy
+from .losses import ShapeLossConfig, segment_shape_components, area_iou_numpy
 from .models import EnvelopeVectorHead
 from .metrics import event_diagnostics
 from .association import AssociationConfig,rollout,reference_cycle_mask,cycle_loss
@@ -120,7 +120,7 @@ def _track(e,p,association,association_config):
 
 @torch.no_grad()
 def evaluate(model, samples, config, device, *, predictions_out=None,association="index",
-             association_config=AssociationConfig(),shuffle_seed=None):
+             association_config=AssociationConfig(),shuffle_seed=None,cycle_weight=0):
     rows=[]
     model.eval()
     for sample in samples:
@@ -130,7 +130,11 @@ def evaluate(model, samples, config, device, *, predictions_out=None,association
         p,associated=_track(e,p,association,association_config)
         target=sample["target"].to(device)
         valid=torch.ones(len(target),dtype=torch.bool,device=device)
-        loss,assignment=segment_shape_loss(p,target,valid,config)
+        parts,assignment=segment_shape_components(p,target,valid,config)
+        cycle=p.sum()*0
+        if associated is not None:
+            cycle=cycle_loss(associated,reference_cycle_mask(target,assignment,p.shape[1]))
+        loss=sum(parts.values())+cycle_weight*cycle
         selected=list(assignment.assignments[0])
         matched=p[:,selected].cpu().numpy()
         truth=target.cpu().numpy()
@@ -152,6 +156,7 @@ def evaluate(model, samples, config, device, *, predictions_out=None,association
                                 predicted=matched,unused=empty_curves,
                                 matched_slots=np.array(selected))
         rows.append({"sample_id":sample["sample_id"],"loss":float(loss),"mae":float(np.abs(matched-truth).mean()),
+                     **{key:float(value) for key,value in parts.items()},"cycle":float(cycle),"weighted_cycle":float(cycle_weight*cycle),
                      "relative_l1":float(np.abs(matched-truth).sum()/max(1e-8,truth.sum())),
                      "area_iou":float(np.mean([area_iou_numpy(matched[:,s],truth[:,s]) for s in range(truth.shape[1])])),
                      "empty_mean":float(p[:,unused].mean()) if unused else 0.0,
@@ -166,7 +171,8 @@ def evaluate(model, samples, config, device, *, predictions_out=None,association
             rows[-1].update(association_entropy=float(associated["entropy"].mean()),
                             association_null_mass=float(associated["null_mass"].mean()),
                             association_capacity_residual=float(associated["capacity_residual"].max()))
-    return {"songs":rows,"mean_mae":float(np.mean([r["mae"] for r in rows])),
+    return {"songs":rows,**{f'mean_{key}':float(np.mean([r[key] for r in rows])) for key in ('loss','shape','silence','null','cycle','weighted_cycle')},
+            "mean_mae":float(np.mean([r["mae"] for r in rows])),
             "mean_area_iou":float(np.mean([r["area_iou"] for r in rows])),
             "mean_empty":float(np.mean([r["empty_mean"] for r in rows]))}
 
@@ -221,10 +227,11 @@ def train_combinations(cache: str | Path, out: str | Path, *, device="cuda:0", s
                                iou_weight=iou_weight,empty_weight=empty_weight,scales_seconds=tuple(scales_seconds),
                                normalize_huber=normalize_huber,null_weight=null_weight)
         optim=torch.optim.AdamW(model.parameters(),lr=lr,weight_decay=1e-4)
-        evaluation_settings={"association":association,"association_config":association_config}
+        evaluation_settings={"association":association,"association_config":association_config,"cycle_weight":cycle_weight}
         telemetry=Telemetry(tensorboard_root,f"{out.name}/{family}",{**{k:v for k,v in result.items() if k!='runs'},"loss_config":asdict(config),"walltime":"actual measurement time"})
         initial=evaluate(model,samples["val"],config,device,**evaluation_settings)
         telemetry.evaluation('val',initial,0)
+        validation_history=[{"step":0,"metrics":initial}]
         logs=[]
         start_time=time.perf_counter()
         if device.startswith("cuda"):
@@ -270,7 +277,9 @@ def train_combinations(cache: str | Path, out: str | Path, *, device="cuda:0", s
             logs.append(row)
             telemetry.scalars('train',row,step+1)
             if eval_every and (step+1)%eval_every==0 and step+1<steps:
-                telemetry.evaluation('val',evaluate(model,samples["val"],config,device,**evaluation_settings),step+1)
+                measured=evaluate(model,samples["val"],config,device,**evaluation_settings)
+                validation_history.append({"step":step+1,"metrics":measured})
+                telemetry.evaluation('val',measured,step+1)
             if (step+1)%25==0:
                 print(f"{family} step={step+1} loss={float(loss.detach()):.6f}",flush=True)
         val=evaluate(model,samples["val"],config,device,predictions_out=out/f"{family}-predictions",**evaluation_settings)
@@ -278,11 +287,12 @@ def train_combinations(cache: str | Path, out: str | Path, *, device="cuda:0", s
         test=evaluate(model,samples["test"],config,device,predictions_out=out/f"{family}-predictions",**evaluation_settings)
         shuffled=evaluate(model,samples["val"],config,device,shuffle_seed=seed+460001,**evaluation_settings)
         telemetry.evaluation('val',val,steps)
+        validation_history.append({"step":steps,"metrics":val})
         telemetry.evaluation('test',test,steps)
         telemetry.evaluation('val_shuffled',shuffled,steps)
         telemetry.curves(out/f"{family}-predictions",steps)
         run={"family":family,"config":asdict(config),"parameters":sum(p.numel() for p in model.parameters()),
-             "initial_val":initial,"val":val,"test":test,"val_shuffled":shuffled,"seconds":time.perf_counter()-start_time,
+             "initial_val":initial,"val":val,"test":test,"val_shuffled":shuffled,"validation_history":validation_history,"seconds":time.perf_counter()-start_time,
              "peak_cuda_mib":torch.cuda.max_memory_allocated(device)/2**20 if device.startswith("cuda") else None}
         torch.save({"version":result["version"],"model":model.state_dict(),"config":asdict(config),
                     "head_version":EnvelopeVectorHead.VERSION,
