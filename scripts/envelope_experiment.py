@@ -30,6 +30,7 @@ def main():
     train.add_argument("--huber-delta",type=float,default=0.05)
     train.add_argument("--iou-weight",type=float,default=0.1)
     train.add_argument("--empty-weight",type=float,default=1.0)
+    train.add_argument("--slots",type=int,default=8,help="candidate capacity; 1 is a C0 diagnostic")
     train.add_argument("--raw-huber",action="store_true",help="do not divide Huber by delta; diagnostic legacy scale")
     train.add_argument("--scales-seconds",nargs="+",type=float,default=[0,0.02,0.05,0.10])
     train.add_argument("--families",nargs="+",default=["l1","huber","area_iou","huber_iou","multiscale"])
@@ -45,7 +46,7 @@ def main():
         result=train_combinations(args.cache,args.out,device=args.device,steps=args.steps,seed=args.seed,lr=args.lr,
                                   segment_centers=args.segment_centers,families=tuple(args.families),
                                   delta=args.huber_delta,iou_weight=args.iou_weight,empty_weight=args.empty_weight,
-                                  scales_seconds=tuple(args.scales_seconds),normalize_huber=not args.raw_huber)
+                                  scales_seconds=tuple(args.scales_seconds),normalize_huber=not args.raw_huber,slots=args.slots)
     print(f"completed {args.command}: {len(result.get('entries',result.get('runs',[])))} records",flush=True)
 
 

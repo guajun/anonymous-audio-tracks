@@ -141,9 +141,9 @@ def evaluate(model, samples, config, device, *, predictions_out=None):
 def train_combinations(cache: str | Path, out: str | Path, *, device="cuda:0", steps=100, seed=46, lr=3e-4,
                        families=("l1","huber","area_iou","huber_iou","multiscale"), segment_centers=40,
                        delta=0.05, iou_weight=0.1, empty_weight=1.0,
-                       scales_seconds=(0.0,0.02,0.05,0.10),normalize_huber=True):
+                       scales_seconds=(0.0,0.02,0.05,0.10),normalize_huber=True,slots=8):
     cache,out=Path(cache),Path(out)
-    if steps<1 or segment_centers<2 or lr<=0:
+    if steps<1 or segment_centers<2 or lr<=0 or not 1<=slots<=8:
         raise ValueError("invalid training budget")
     if out.exists() and any(out.iterdir()):
         raise ValueError("experiment output must be empty")
@@ -165,7 +165,7 @@ def train_combinations(cache: str | Path, out: str | Path, *, device="cuda:0", s
         raise ValueError("train, val, test splits required")
     git=subprocess.run(["git","rev-parse","HEAD"],capture_output=True,text=True).stdout.strip()
     result={"version":"aat-c0-loss-sweep-v1","result_kind":"frozen-pretrained-demucs-c0-envelope-experiment",
-            "seed":seed,"steps":steps,"lr":lr,"segment_centers":segment_centers,"device":device,
+            "seed":seed,"steps":steps,"lr":lr,"segment_centers":segment_centers,"device":device,"slots":slots,
             "git_commit":git,"torch":torch.__version__,"cache_identity_sha256":hashlib.sha256((cache/"index.json").read_bytes()).hexdigest(),
             "encoder":meta["encoder"],"data_policy":meta["data_policy"],
             "association":"C0 fixed segment slots; E discrimination/association not validated",
@@ -174,7 +174,7 @@ def train_combinations(cache: str | Path, out: str | Path, *, device="cuda:0", s
     for family in families:
         torch.manual_seed(seed)
         rng=np.random.default_rng(seed)
-        model=EnvelopeVectorHead(samples["train"][0]["features"].shape[1]).to(device)
+        model=EnvelopeVectorHead(samples["train"][0]["features"].shape[1],slots=slots).to(device)
         config=ShapeLossConfig(family=family,hop_seconds=meta["hop_seconds"],delta=delta,
                                iou_weight=iou_weight,empty_weight=empty_weight,scales_seconds=tuple(scales_seconds),
                                normalize_huber=normalize_huber)
@@ -213,6 +213,7 @@ def train_combinations(cache: str | Path, out: str | Path, *, device="cuda:0", s
              "peak_cuda_mib":torch.cuda.max_memory_allocated(device)/2**20 if device.startswith("cuda") else None}
         torch.save({"version":result["version"],"model":model.state_dict(),"config":asdict(config),
                     "head_version":EnvelopeVectorHead.VERSION,
+                    "slots":slots,
                     "in_channels":samples["train"][0]["features"].shape[1],"encoder":meta["encoder"],
                     "seed":seed,"steps":steps},out/f"{family}.pt")
         dump_json(out/f"{family}.json",run)

@@ -17,6 +17,8 @@ class EnvelopeVectorHead(nn.Module):
 
     def __init__(self, in_channels: int, slots=8, hidden=128):
         super().__init__()
+        if not 1<=slots<=8:
+            raise ValueError("expected 1 <= candidate slots <= 8")
         self.slots = slots
         self.project = nn.Sequential(nn.Conv2d(in_channels, hidden, 1), nn.GELU(),
                                      nn.Conv2d(hidden, hidden, 3, padding=1, groups=hidden), nn.GELU())
