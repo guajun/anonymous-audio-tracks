@@ -17,7 +17,8 @@ from aat.windowing import centered_window_bounds
 from .demucs import FrozenDemucsFeatures
 from .labels import EnvelopeData
 from .losses import ShapeLossConfig, segment_shape_loss, area_iou_numpy
-from .models import EnvelopeVectorHead, associate_soft
+from .models import EnvelopeVectorHead
+from .metrics import event_diagnostics
 
 
 def build_cache(data_root: str | Path, out: str | Path, *, device="cuda:0", hop_seconds=0.04, batch_windows=4):
@@ -103,7 +104,7 @@ def _predict(model, sample, device, *, batch=32):
 
 
 @torch.no_grad()
-def evaluate(model, samples, config, device):
+def evaluate(model, samples, config, device, *, predictions_out=None):
     rows=[]
     model.eval()
     for sample in samples:
@@ -114,10 +115,22 @@ def evaluate(model, samples, config, device):
         matched=p[:,assignment.assignments[0][0]].cpu().numpy()
         truth=target[:,0].cpu().numpy()
         unused=[k for k in range(p.shape[1]) if k!=assignment.assignments[0][0]]
+        empty_curves=p[:,unused].cpu().numpy()
+        diagnostics=event_diagnostics(matched,truth,sample["center_times"].numpy())
+        if predictions_out is not None:
+            predictions_out=Path(predictions_out)
+            predictions_out.mkdir(parents=True,exist_ok=True)
+            np.savez_compressed(predictions_out/f"{sample['sample_id']}.npz",
+                                center_times=sample["center_times"].numpy(),target=truth,
+                                predicted=matched,unused=empty_curves,
+                                matched_slot=np.array(assignment.assignments[0][0]))
         rows.append({"sample_id":sample["sample_id"],"loss":float(loss),"mae":float(np.abs(matched-truth).mean()),
                      "relative_l1":float(np.abs(matched-truth).sum()/max(1e-8,truth.sum())),
                      "area_iou":area_iou_numpy(matched,truth),
                      "empty_mean":float(p[:,unused].mean()) if unused else 0.0,
+                     "extra_active_fraction":float((empty_curves>=diagnostics["rms_threshold"]).any(1).mean()),
+                     "mean_extra_active_count":float((empty_curves>=diagnostics["rms_threshold"]).sum(1).mean()),
+                     "events":diagnostics,
                      "assignment_ambiguous":not assignment.unique,
                      "mix_rms_baseline_mae":float(np.abs(sample["mix_rms"].numpy()-truth).mean())})
     return {"songs":rows,"mean_mae":float(np.mean([r["mae"] for r in rows])),
@@ -192,9 +205,9 @@ def train_combinations(cache: str | Path, out: str | Path, *, device="cuda:0", s
             logs.append({"step":step+1,"loss":float(loss.detach()),"sample_id":sample["sample_id"],"segment_start":offset})
             if (step+1)%25==0:
                 print(f"{family} step={step+1} loss={float(loss.detach()):.6f}",flush=True)
-        val=evaluate(model,samples["val"],config,device)
+        val=evaluate(model,samples["val"],config,device,predictions_out=out/f"{family}-predictions")
         # No selection/tuning on test; all predeclared loss families are evaluated.
-        test=evaluate(model,samples["test"],config,device)
+        test=evaluate(model,samples["test"],config,device,predictions_out=out/f"{family}-predictions")
         run={"family":family,"config":asdict(config),"parameters":sum(p.numel() for p in model.parameters()),
              "initial_val":initial,"val":val,"test":test,"seconds":time.perf_counter()-start_time,
              "peak_cuda_mib":torch.cuda.max_memory_allocated(device)/2**20 if device.startswith("cuda") else None}
