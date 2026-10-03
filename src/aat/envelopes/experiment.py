@@ -18,10 +18,11 @@ from .demucs import FrozenDemucsFeatures
 from .labels import EnvelopeData
 from .losses import ShapeLossConfig, segment_shape_components, area_iou_numpy
 from .models import EnvelopeVectorHead
-from .metrics import event_diagnostics
+from .metrics import event_diagnostics,stitch_diagnostics
 from .association import AssociationConfig,rollout,reference_cycle_mask,cycle_loss
 from .telemetry import Telemetry
 from .local_context import audit_local_context,CONSTRAINT_VERSION,CONTEXT_SECONDS
+from .local_association import LocalAssociationConfig,rollout as local_rollout,cycle_loss as local_cycle_loss,VERSION as LOCAL_VERSION
 
 
 def build_cache(data_root: str | Path, out: str | Path, *, device="cuda:0", hop_seconds=0.04, batch_windows=4):
@@ -116,15 +117,17 @@ def build_cache(data_root: str | Path, out: str | Path, *, device="cuda:0", hop_
     return meta
 
 
-def _predict(model, sample, device, *, batch=32):
-    directions,intensity=[],[]
+def _predict(model, sample, device, *, batch=32,return_raw=False):
+    directions,intensity,pregate=[],[],[]
     for start in range(0,len(sample["target"]),batch):
         features=sample["features"][start:start+batch].to(device)
         n=features.shape[0]
-        e,p=model(features,sample["relative_times"].to(device).expand(n,-1),sample["mix_rms"][start:start+batch].to(device))
+        e,p,raw=model(features,sample["relative_times"].to(device).expand(n,-1),sample["mix_rms"][start:start+batch].to(device),return_raw=True)
         directions.append(e)
         intensity.append(p)
-    return torch.cat(directions),torch.cat(intensity)
+        pregate.append(raw)
+    result=(torch.cat(directions),torch.cat(intensity))
+    return (*result,torch.cat(pregate)) if return_raw else result
 
 
 def _candidate_permutation(e,p,seed):
@@ -133,11 +136,39 @@ def _candidate_permutation(e,p,seed):
     return e.gather(1,indices[...,None].expand_as(e)),p.gather(1,indices)
 
 
-def _track(e,p,association,association_config):
+def _track(e,p,association,association_config,sample=None):
     if association=="index":
         return p,None
-    result=rollout(e,p,association_config)
+    if isinstance(association_config,LocalAssociationConfig):
+        result=local_rollout(e,p,association_config,center_times=None if sample is None else sample['center_times'],
+                            context_bounds=None if sample is None else sample.get('context_bounds'))
+    else:result=rollout(e,p,association_config)
     return result["tracked"],result
+
+
+def _cycle(result,target,assignment,slots):
+    if result is not None and result.get('version')==LOCAL_VERSION:
+        return local_cycle_loss(result,target,assignment)
+    mask=target.new_zeros((len(target)-1,slots))
+    value=target.sum()*0
+    if result is not None:
+        mask=reference_cycle_mask(target,assignment,slots)
+        value=cycle_loss(result,mask)
+    return value,float(mask.mean()) if mask.numel() else 0.
+
+
+def gate_diagnostics(raw,selected):
+    return {'pregate_A_mean':float(raw.detach().mean()),'pregate_A_max':float(raw.detach().max()),
+            'gate_zero_fraction':float((selected.detach()==0).float().mean()),
+            'gate_all_zero_frames':int((selected.detach()==0).all(1).sum())}
+
+
+def fragment_diagnostics(result):
+    if result is None or result.get('version')!=LOCAL_VERSION:return {}
+    return {'fragment_count':int((result['tracked'].detach()>0).any(0).sum()),
+            'fragment_columns':result['tracked'].shape[1],'direct_anchor_frames':len(result['direct_anchor_frames']),
+            'expired_endpoints':sum(result['expired_endpoints']),
+            'local_link_pairs':sum(int(link['eligible'].sum()) for link in result['cycle_links'])}
 
 
 def eligible_offsets(target,n,*,require_recurrence=False):
@@ -170,19 +201,16 @@ def evaluate(model, samples, config, device, *, predictions_out=None,association
     rows=[]
     model.eval()
     for sample in samples:
-        e,p=_predict(model,sample,device)
+        e,p,pregate=_predict(model,sample,device,return_raw=True)
         if shuffle_seed is not None:
             e,p=_candidate_permutation(e,p,shuffle_seed)
         raw=p
-        p,associated=_track(e,p,association,association_config)
+        p,associated=_track(e,p,association,association_config,sample)
         target=sample["target"].to(device)
         valid=torch.ones(len(target),dtype=torch.bool,device=device)
-        parts,assignment=segment_shape_components(p,target,valid,config)
-        cycle=p.sum()*0
-        cycle_mask=p.new_zeros((len(p)-1,p.shape[1]))
-        if associated is not None:
-            cycle_mask=reference_cycle_mask(target,assignment,p.shape[1])
-            cycle=cycle_loss(associated,cycle_mask)
+        local=associated is not None and associated.get('version')==LOCAL_VERSION
+        parts,assignment=segment_shape_components(p,target,valid,config,fragment_capacity=raw.shape[1] if local else None)
+        cycle,cycle_fraction=_cycle(associated,target,assignment,p.shape[1])
         loss=sum(parts.values())+cycle_weight*cycle
         selected=list(assignment.assignments[0])
         matched=p[:,selected].cpu().numpy()
@@ -204,10 +232,21 @@ def evaluate(model, samples, config, device, *, predictions_out=None,association
                                 center_times=sample["center_times"].numpy(),target=truth,
                                 predicted=matched,unused=empty_curves,
                                 raw_candidates=raw.cpu().numpy(),tracked_candidates=p.cpu().numpy(),
+                                pregate_candidates=pregate.cpu().numpy(),
+                                fragment_ids=associated['fragment_ids'] if local else np.empty((0,0),dtype=int),
                                 matched_slots=np.array(selected))
+            if local:
+                links=associated['cycle_links']
+                dump_json(predictions_out/f"{sample['sample_id']}-links.json",{
+                    'version':LOCAL_VERSION,'direct_anchor_frames':associated['direct_anchor_frames'],
+                    'expired_endpoints':associated['expired_endpoints'],
+                    'maximum_endpoint_distance_seconds':associated['maximum_endpoint_distance_seconds'],
+                    'links':[{'frame':l['frame'],'endpoint_frames':l['endpoint_frames'].tolist(),
+                              'fragment_ids':l['fragment_ids'].tolist(),'eligible':l['eligible'].cpu().tolist(),
+                              'forward':l['forward'].cpu().tolist(),'backward':l['backward'].cpu().tolist()} for l in links]})
         rows.append({"sample_id":sample["sample_id"],"loss":float(loss),"mae":float(np.abs(matched-truth).mean()),
                      **{key:float(value) for key,value in parts.items()},"cycle":float(cycle),"weighted_cycle":float(cycle_weight*cycle),
-                     "cycle_eligible_fraction":float(cycle_mask.mean()) if cycle_mask.numel() else 0.0,
+                     "cycle_eligible_fraction":cycle_fraction,
                      "relative_l1":float(np.abs(matched-truth).sum()/max(1e-8,truth.sum())),
                      "area_iou":float(np.mean([area_iou_numpy(matched[:,s],truth[:,s]) for s in range(truth.shape[1])])),
                      "empty_mean":float(p[:,unused].mean()) if unused else 0.0,
@@ -218,7 +257,9 @@ def evaluate(model, samples, config, device, *, predictions_out=None,association
                      "source_count_mae":float(np.abs((p.cpu().numpy()>=.002).sum(1)-(truth>=.002).sum(1)).mean()),
                      "assignment_ambiguous":not assignment.unique,
                      "pit_optimal_count":assignment.num_optimal,
-                     **activity_transport_diagnostics(raw,p,target),
+                     **activity_transport_diagnostics(raw,p,target),**gate_diagnostics(pregate,raw),**fragment_diagnostics(associated),
+                     **stitch_diagnostics(p.cpu().numpy(),truth,sample['center_times'].numpy(),assignment,
+                                          maximum_endpoint_distance=association_config.maximum_endpoint_distance if local else .91),
                      "mix_rms_baseline_mae":float(np.abs(sample["mix_rms"].numpy()-truth[:,0]).mean()) if truth.shape[1]==1 else None})
         if associated is not None:
             rows[-1].update(association_entropy=float(associated["entropy"].mean()),
@@ -235,8 +276,9 @@ def train_combinations(cache: str | Path, out: str | Path, *, device="cuda:0", s
                        delta=0.05, iou_weight=0.1, empty_weight=1.0,
                        scales_seconds=(0.0,0.02,0.05,0.10),normalize_huber=True,slots=8,
                        null_weight=None,association="index",cycle_weight=0.0,
-                       association_config=AssociationConfig(),shuffle_candidates=False,
-                       tensorboard_root=None,eval_every=0,require_recurrence=None):
+                       association_config=None,shuffle_candidates=False,
+                       tensorboard_root=None,eval_every=0,require_recurrence=None,
+                       association_backend='local',magnitude_gate=.002):
     cache,out=Path(cache),Path(out)
     if steps<1 or segment_centers<2 or lr<=0 or not 1<=slots<=8:
         raise ValueError("invalid training budget")
@@ -248,6 +290,11 @@ def train_combinations(cache: str | Path, out: str | Path, *, device="cuda:0", s
         raise ValueError("experiment output must be empty")
     out.mkdir(parents=True,exist_ok=True)
     meta=load_json(cache/"index.json")
+    if association_backend not in ('local','legacy'):raise ValueError('invalid association backend')
+    if association_config is None:
+        association_config=LocalAssociationConfig(hop_seconds=meta['hop_seconds'],context_seconds=meta['context_seconds']) if association_backend=='local' else AssociationConfig()
+    if isinstance(association_config,LocalAssociationConfig)!=(association_backend=='local'):
+        raise ValueError('association configuration/backend mismatch')
     if require_recurrence is None:
         require_recurrence=meta["stage"] in ("C1","C1-local")
     samples={split:[] for split in ("train","val","test")}
@@ -267,14 +314,16 @@ def train_combinations(cache: str | Path, out: str | Path, *, device="cuda:0", s
     if not all(samples.values()):
         raise ValueError("train, val, test splits required")
     git=subprocess.run(["git","rev-parse","HEAD"],capture_output=True,text=True).stdout.strip()
-    result={"version":"aat-envelope-association-sweep-v2","result_kind":f"frozen-pretrained-demucs-{meta['stage'].lower()}-envelope-experiment",
+    result={"version":"aat-envelope-local-fragments-sweep-v3" if association_backend=='local' else "aat-envelope-association-sweep-v2","result_kind":f"frozen-pretrained-demucs-{meta['stage'].lower()}-envelope-experiment",
             "seed":seed,"steps":steps,"lr":lr,"segment_centers":segment_centers,"device":device,"slots":slots,
             "git_commit":git,"torch":torch.__version__,"cache_identity_sha256":hashlib.sha256((cache/"index.json").read_bytes()).hexdigest(),
             "encoder":meta["encoder"],"data_policy":meta["data_policy"],
             "association":association,"stage":meta["stage"],"association_config":asdict(association_config),
             "shuffle_candidates":shuffle_candidates,
             "require_recurrence":require_recurrence,
-            "head_version":EnvelopeVectorHead.VERSION,
+            "head_version":'aat-envelope-vector-gated-v3' if magnitude_gate else EnvelopeVectorHead.VERSION,
+            "association_backend":association_backend,"association_version":LOCAL_VERSION if association_backend=='local' else 'aat-persistent-prototype-v1',
+            "magnitude_gate":magnitude_gate,"gate_training_gradient":"identity straight-through surrogate" if magnitude_gate else 'ungated',
             "cycle_weight":cycle_weight,"runs":[]}
     if meta.get('context_constraint'):
         result.update(context_constraint=meta['context_constraint'],context_seconds=meta['context_seconds'])
@@ -282,7 +331,7 @@ def train_combinations(cache: str | Path, out: str | Path, *, device="cuda:0", s
         torch.manual_seed(seed)
         rng=np.random.default_rng(seed)
         shuffle_rng=np.random.default_rng(seed+460000)
-        model=EnvelopeVectorHead(samples["train"][0]["features"].shape[1],slots=slots).to(device)
+        model=EnvelopeVectorHead(samples["train"][0]["features"].shape[1],slots=slots,magnitude_gate=magnitude_gate).to(device)
         config=ShapeLossConfig(family=family,hop_seconds=meta["hop_seconds"],delta=delta,
                                iou_weight=iou_weight,empty_weight=empty_weight,scales_seconds=tuple(scales_seconds),
                                normalize_huber=normalize_huber,null_weight=null_weight)
@@ -305,18 +354,17 @@ def train_combinations(cache: str | Path, out: str | Path, *, device="cuda:0", s
                 raise ValueError("no eligible training segments; C1 requires three full activity events; increase segment-centers")
             offset=int(rng.choice(candidates))
             features=sample["features"][offset:offset+n].to(device)
-            e,p=model(features,sample["relative_times"].to(device).expand(n,-1),sample["mix_rms"][offset:offset+n].to(device))
+            e,p,pregate=model(features,sample["relative_times"].to(device).expand(n,-1),sample["mix_rms"][offset:offset+n].to(device),return_raw=True)
             if shuffle_candidates:
                 e,p=_candidate_permutation(e,p,int(shuffle_rng.integers(2**31)))
-            tracked,associated=_track(e,p,association,association_config)
+            context={'center_times':sample['center_times'][offset:offset+n]}
+            if 'context_bounds' in sample:context['context_bounds']=sample['context_bounds'][offset:offset+n]
+            tracked,associated=_track(e,p,association,association_config,context)
             target=sample["target"][offset:offset+n].to(device)
-            parts,assignment=segment_shape_components(tracked,target,torch.ones(n,dtype=torch.bool,device=device),config)
+            local=associated is not None and associated.get('version')==LOCAL_VERSION
+            parts,assignment=segment_shape_components(tracked,target,torch.ones(n,dtype=torch.bool,device=device),config,fragment_capacity=slots if local else None)
             shape_total=sum(parts.values())
-            cycle=shape_total*0
-            cycle_mask=target.new_zeros((n-1,slots))
-            if associated is not None:
-                cycle_mask=reference_cycle_mask(target,assignment,slots)
-                cycle=cycle_loss(associated,cycle_mask)
+            cycle,cycle_fraction=_cycle(associated,target,assignment,tracked.shape[1])
             loss=shape_total+cycle_weight*cycle
             if not torch.isfinite(loss):
                 raise ValueError("nonfinite training loss")
@@ -325,14 +373,21 @@ def train_combinations(cache: str | Path, out: str | Path, *, device="cuda:0", s
             if association=="soft" and (step==0 or (step+1)%25==0):
                 gradient=torch.autograd.grad(parts["shape"],e,retain_graph=True,allow_unused=True)[0]
                 descriptor_gradient=float(gradient.norm()) if gradient is not None else 0.0
+            amplitude_gradient=None
+            if step==0 or (step+1)%25==0:
+                gate_gradient=torch.autograd.grad(shape_total,pregate,retain_graph=True,allow_unused=True)[0]
+                if gate_gradient is not None:
+                    amplitude_gradient=float(gate_gradient[pregate.detach()<magnitude_gate].norm())
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(),1.0,error_if_nonfinite=True)
             optim.step()
             row={"step":step+1,"loss":float(loss.detach()),"sample_id":sample["sample_id"],"segment_start":offset,
                  **{key:float(value.detach()) for key,value in parts.items()},"cycle":float(cycle.detach()),
                  "weighted_cycle":float((cycle_weight*cycle).detach()),"shape_descriptor_grad_norm":descriptor_gradient}
-            row.update(cycle_eligible_fraction=float(cycle_mask.mean()),pit_ambiguous=float(not assignment.unique))
+            row['gate_closed_amplitude_grad_norm']=amplitude_gradient
+            row.update(cycle_eligible_fraction=cycle_fraction,pit_ambiguous=float(not assignment.unique))
             row.update(activity_transport_diagnostics(p,tracked,target),pit_optimal_count=assignment.num_optimal)
+            row.update(gate_diagnostics(pregate,p),**fragment_diagnostics(associated))
             if associated is not None:
                 row.update(association_entropy=float(associated["entropy"].mean().detach()),
                            association_null_mass=float(associated["null_mass"].mean().detach()),
@@ -359,7 +414,8 @@ def train_combinations(cache: str | Path, out: str | Path, *, device="cuda:0", s
              "initial_val":initial,"val":val,"test":test,"val_shuffled":shuffled,"validation_history":validation_history,"seconds":time.perf_counter()-start_time,
              "peak_cuda_mib":torch.cuda.max_memory_allocated(device)/2**20 if device.startswith("cuda") else None}
         torch.save({"version":result["version"],"model":model.state_dict(),"config":asdict(config),
-                    "head_version":EnvelopeVectorHead.VERSION,
+                    "head_version":model.version,"magnitude_gate":magnitude_gate,"association_backend":association_backend,
+                    "association_version":result['association_version'],
                     "slots":slots,
                     "association":association,"association_config":asdict(association_config),"cycle_weight":cycle_weight,
                     "stage":meta["stage"],"label_unit":"linear_rms_full_scale","cache_identity_sha256":result["cache_identity_sha256"],

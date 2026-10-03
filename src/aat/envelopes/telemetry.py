@@ -31,6 +31,11 @@ class Telemetry:
                     'raw_A_active_mean','tracked_A_active_mean','raw_A_silent_mean','tracked_A_silent_mean','transported_mass_ratio','pit_optimal_count'):
             values=[s[key] for s in songs if s.get(key) is not None]
             if values:self.scalars(prefix,{key:float(np.mean(values))},step)
+        for key in ('pregate_A_mean','pregate_A_max','gate_zero_fraction','gate_all_zero_frames','fragment_count','fragment_columns',
+                    'direct_anchor_frames','expired_endpoints','local_link_pairs','reference_short_gap_pairs','short_gap_both_detected',
+                    'short_gap_pit_stitched','short_gap_pit_stitch_fraction','diagnostic_short_gap_fragment_breaks','reference_long_gap_pairs'):
+            values=[s[key] for s in songs if s.get(key) is not None]
+            if values:self.scalars(prefix,{key:float(np.mean(values))},step)
         for key in ('onset_mae_seconds','offset_mae_seconds','frame_f1'):
             values=[s['events'][key] for s in songs if s['events'][key] is not None]
             if values:self.scalars(prefix+'/events',{key:float(np.mean(values))},step)

@@ -15,11 +15,15 @@ class EnvelopeVectorHead(nn.Module):
     """
     VERSION = "aat-envelope-vector-v2"
 
-    def __init__(self, in_channels: int, slots=8, hidden=128):
+    def __init__(self, in_channels: int, slots=8, hidden=128, magnitude_gate=0.):
         super().__init__()
         if not 1<=slots<=8:
             raise ValueError("expected 1 <= candidate slots <= 8")
         self.slots = slots
+        if magnitude_gate<0 or not float(magnitude_gate)<1:
+            raise ValueError('magnitude gate must be in [0,1)')
+        self.magnitude_gate=float(magnitude_gate)
+        self.version=self.VERSION if not magnitude_gate else 'aat-envelope-vector-gated-v3'
         self.project = nn.Sequential(nn.Conv2d(in_channels, hidden, 1), nn.GELU(),
                                      nn.Conv2d(hidden, hidden, 3, padding=1, groups=hidden), nn.GELU())
         self.allocate = nn.Conv2d(hidden, slots+1, 1)  # extra background channel
@@ -27,7 +31,7 @@ class EnvelopeVectorHead(nn.Module):
         nn.init.normal_(self.vector[-1].weight, std=0.001)
         nn.init.zeros_(self.vector[-1].bias)
 
-    def forward(self, features: Tensor, relative_times: Tensor, mixture_rms: Tensor):
+    def forward(self, features: Tensor, relative_times: Tensor, mixture_rms: Tensor, *, return_raw=False):
         x = self.project(features.float())
         masks = self.allocate(x).softmax(1)[:, :self.slots]
         mass = masks.sum((2,3)).clamp_min(1e-6)
@@ -44,9 +48,21 @@ class EnvelopeVectorHead(nn.Module):
         # content-dependent vector mapping and no independent activity head.
         z = raw * occupancy
         radius = z.norm(dim=-1)
-        intensity = radius/(1+radius)
-        direction = F.normalize(raw,dim=-1,eps=1e-8)
-        return direction, intensity
+        raw_intensity = radius/(1+radius)
+        intensity=magnitude_gate(raw_intensity,self.magnitude_gate,training=self.training)
+        direction = F.normalize(raw,dim=-1,eps=1e-8)*(intensity.detach()>0)[...,None]
+        return (direction,intensity,raw_intensity) if return_raw else (direction,intensity)
+
+
+def magnitude_gate(activity,threshold,*,training):
+    """Exact-zero forward; identity straight-through A gradient in training.
+
+    This is an explicit surrogate, not the derivative of the hard inference
+    operation. Closed candidates have no E and no descriptor gradient.
+    """
+    if threshold==0:return activity
+    value=activity*(activity>=threshold)
+    return activity+(value-activity).detach() if training else value
 
 
 def associate_soft(directions: Tensor, intensity: Tensor, *, temperature=0.05, iterations=12):

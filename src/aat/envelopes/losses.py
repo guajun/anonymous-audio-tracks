@@ -110,13 +110,16 @@ def segment_shape_loss(predicted: Tensor, target: Tensor, valid: Tensor, config:
     return sum(components.values()),assignment
 
 
-def segment_shape_components(predicted: Tensor, target: Tensor, valid: Tensor, config: ShapeLossConfig):
+def segment_shape_components(predicted: Tensor, target: Tensor, valid: Tensor, config: ShapeLossConfig, *, fragment_capacity=None):
     """PIT-selected shape/silence/null terms on one common segment mapping."""
     if predicted.ndim != 2 or target.ndim != 2 or predicted.shape[0] != target.shape[0]:
         raise ValueError("expected matching [time, tracks/sources] arrays")
     slots, sources = predicted.shape[1], target.shape[1]
-    if not 1 <= sources <= slots <= 8:
+    if not 1 <= sources <= slots or (slots>8 and fragment_capacity is None):
         raise ValueError("expected 1 <= sources <= tracks <= 8")
+    capacity=slots if fragment_capacity is None else fragment_capacity
+    if not sources<=capacity<=8:raise ValueError('invalid local candidate capacity')
+    null_denominator=max(1,capacity-sources)
     paired_parts=curve_components(predicted.T[None], target.T[:,None], valid, config)
     empty_parts=curve_components(predicted.T, torch.zeros_like(predicted.T), valid, config)
     paired=sum(paired_parts.values())
@@ -124,8 +127,9 @@ def segment_shape_components(predicted: Tensor, target: Tensor, valid: Tensor, c
     # Replacing a null target by a source also replaces that track's empty cost.
     cost = paired / sources
     if slots > sources:
-        cost = cost - empty[None] / (slots-sources)
-    assignment = enumerate_optimal_assignments(cost.detach().cpu().numpy(), max_optimal=40320)
+        cost = cost - empty[None] / null_denominator
+    detached=cost.detach().cpu().numpy()
+    assignment = fragment_assignment(detached) if slots>8 else enumerate_optimal_assignments(detached, max_optimal=40320)
     if assignment.truncated:
         raise ValueError("unresolved truncated trajectory matching")
     marginal = np.zeros((sources,slots),dtype=np.float64)
@@ -134,8 +138,26 @@ def segment_shape_components(predicted: Tensor, target: Tensor, valid: Tensor, c
     weights = torch.as_tensor(marginal,device=predicted.device,dtype=paired.dtype)
     values={name:(part*weights).sum()/sources for name,part in paired_parts.items()}
     if slots>sources:
-        values["null"]=values["null"]+(empty*(1-weights.sum(0))).sum()/(slots-sources)
+        values["null"]=values["null"]+(empty*(1-weights.sum(0))).sum()/null_denominator
     return values, assignment
+
+
+def fragment_assignment(cost):
+    """Exact rectangular PIT for this 1/2-source curriculum, without 2**F DP."""
+    from aat.losses.matching import OptimalAssignments
+    sources,fragments=cost.shape
+    if sources==1:
+        totals=cost[0];best=totals.min()
+        found=np.flatnonzero(totals<=best+1e-9+1e-9*abs(best))
+        assignments=tuple((int(i),) for i in found)
+    elif sources==2:
+        totals=cost[0,:,None]+cost[1,None,:]
+        np.fill_diagonal(totals,np.inf);best=totals.min()
+        found=np.argwhere(totals<=best+1e-9+1e-9*abs(best))
+        assignments=tuple(map(tuple,found.tolist()))
+    else:raise ValueError('wide fragment PIT currently supports at most two sources')
+    if len(assignments)>40320:raise ValueError('unresolved fragment PIT ties')
+    return OptimalAssignments(assignments=assignments,num_optimal=len(assignments),truncated=False,optimal_cost=float(best))
 
 
 def area_iou_numpy(predicted, target):

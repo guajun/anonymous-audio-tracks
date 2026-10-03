@@ -39,6 +39,8 @@ def main():
     train.add_argument("--slots",type=int,default=8,help="candidate capacity; 1 is a C0 diagnostic")
     train.add_argument("--null-weight",type=float,default=None,help="separate unused-track weight; defaults to empty-weight")
     train.add_argument("--association",choices=["index","soft"],default="index")
+    train.add_argument('--association-backend',choices=['local','legacy'],default='local')
+    train.add_argument('--magnitude-gate',type=float,default=.002)
     train.add_argument("--cycle-weight",type=float,default=0)
     train.add_argument("--association-temperature",type=float,default=.1)
     train.add_argument("--association-iterations",type=int,default=12)
@@ -66,13 +68,16 @@ def main():
     else:
         from aat.envelopes.experiment import train_combinations
         from aat.envelopes.association import AssociationConfig
+        from aat.envelopes.local_association import LocalAssociationConfig
         result=train_combinations(args.cache,args.out,device=args.device,steps=args.steps,seed=args.seed,lr=args.lr,
                                   segment_centers=args.segment_centers,families=tuple(args.families),
                                   delta=args.huber_delta,iou_weight=args.iou_weight,empty_weight=args.empty_weight,
                                   scales_seconds=tuple(args.scales_seconds),normalize_huber=not args.raw_huber,slots=args.slots,
                                   null_weight=args.null_weight,association=args.association,cycle_weight=args.cycle_weight,
-                                  association_config=AssociationConfig(temperature=args.association_temperature,
+                                  association_config=LocalAssociationConfig(temperature=args.association_temperature,iterations=args.association_iterations)
+                                      if args.association_backend=='local' else AssociationConfig(temperature=args.association_temperature,
                                       iterations=args.association_iterations,max_gap_frames=args.max_gap_frames),
+                                  association_backend=args.association_backend,magnitude_gate=args.magnitude_gate,
                                   shuffle_candidates=args.shuffle_candidates,tensorboard_root=args.tensorboard_root,eval_every=args.eval_every,
                                   require_recurrence=False if args.allow_partial_recurrence else None)
     print(f"completed {args.command}: {len(result.get('entries',result.get('runs',[])))} records",flush=True)
