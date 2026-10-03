@@ -16,6 +16,9 @@ def main():
     prepare_c1=sub.add_parser("prepare-c1")
     prepare_c1.add_argument("--out",required=True)
     prepare_c1.add_argument("--seed",type=int,default=4610)
+    prepare_local=sub.add_parser("prepare-c1-local")
+    prepare_local.add_argument("--out",required=True)
+    prepare_local.add_argument("--seed",type=int,default=4640)
     cache=sub.add_parser("cache")
     cache.add_argument("--data",required=True)
     cache.add_argument("--out",required=True)
@@ -54,6 +57,9 @@ def main():
     elif args.command=="prepare-c1":
         from aat.envelopes.curriculum import prepare_c1
         result=prepare_c1(args.out,seed=args.seed)
+    elif args.command=="prepare-c1-local":
+        from aat.envelopes.curriculum import prepare_c1_local
+        result=prepare_c1_local(args.out,seed=args.seed)
     elif args.command=="cache":
         from aat.envelopes.experiment import build_cache
         result=build_cache(args.data,args.out,device=args.device,hop_seconds=args.hop_seconds,batch_windows=args.batch_windows)

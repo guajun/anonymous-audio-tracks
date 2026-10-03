@@ -21,6 +21,7 @@ from .models import EnvelopeVectorHead
 from .metrics import event_diagnostics
 from .association import AssociationConfig,rollout,reference_cycle_mask,cycle_loss
 from .telemetry import Telemetry
+from .local_context import audit_local_context,CONSTRAINT_VERSION,CONTEXT_SECONDS
 
 
 def build_cache(data_root: str | Path, out: str | Path, *, device="cuda:0", hop_seconds=0.04, batch_windows=4):
@@ -29,16 +30,19 @@ def build_cache(data_root: str | Path, out: str | Path, *, device="cuda:0", hop_
         raise ValueError("cache output must be empty")
     out.mkdir(parents=True,exist_ok=True)
     index = load_json(root/"index.json")
-    if index["stage"] not in ("C0","C1"):
+    if index["stage"] not in ("C0","C1","C1-local"):
         raise ValueError("this runner currently supports C0/C1")
     encoder = FrozenDemucsFeatures(device=device,cache_dir=out/"models")
     records, probes = [], []
+    local_reports=[]
+    cache_version='aat-envelope-cache-local-v2' if index['stage']=='C1-local' else 'aat-envelope-cache-v1'
     start=time.perf_counter()
     try:
         for entry in index["entries"]:
             directory=root/entry["directory"]
             labels=EnvelopeData.load(directory)
             wav=read_wav(directory/"mix.wav")
+            origin=load_json(directory/'manifest.json').get('track_start_seconds',0.)
             if wav.sample_rate != encoder.model.samplerate:
                 raise ValueError("C0 requires native Demucs sample rate")
             for name,digest in labels.input_sha256.items():
@@ -51,12 +55,23 @@ def build_cache(data_root: str | Path, out: str | Path, *, device="cuda:0", hop_
                 raise ValueError("cache hop must be a positive integer multiple of label hop")
             chosen=np.arange(0,len(labels.center_times),stride)
             centers=labels.center_times[chosen]
-            width=round(2.0*wav.sample_rate)
-            indices=np.floor(centers*wav.sample_rate+0.5).astype(np.int64)
+            width=round(CONTEXT_SECONDS*wav.sample_rate)
+            indices=np.floor((centers-origin)*wav.sample_rate+0.5).astype(np.int64)
             valid=np.array([0<=centered_window_bounds(int(i),width)[0] and centered_window_bounds(int(i),width)[1]<=wav.frames for i in indices])
+            valid &= labels.valid[chosen]
+            if index['stage']=='C1-local':
+                if index.get('constraint_version')!=CONSTRAINT_VERSION:
+                    raise ValueError('unsupported local context contract')
+                valid &= (centers>=entry['scoring_start_seconds']-1e-9)&(centers<=entry['scoring_end_seconds']+1e-9)
             chosen,centers,indices=chosen[valid],centers[valid],indices[valid]
             if not len(chosen):
                 raise ValueError("no full-context centers")
+            coverage_arrays=None
+            if index['stage']=='C1-local':
+                audited,coverage_arrays=audit_local_context(labels,centers,audio_frames=wav.frames,origin_seconds=origin)
+                if not audited['passed']:
+                    raise ValueError(f'actual cache windows violate local evidence contract: {audited}')
+                local_reports.append({'sample_id':entry['sample_id'],'split':entry['split'],**audited})
             source_audio=wav.samples
             if source_audio.shape[1]==1:
                 source_audio=np.repeat(source_audio,2,axis=1)
@@ -72,12 +87,17 @@ def build_cache(data_root: str | Path, out: str | Path, *, device="cuda:0", hop_
                 features.append(encoded)
                 probes.append({"sample_id":entry["sample_id"],**probe})
             mix_rms=np.sqrt(mean_square_at_samples(source_audio,wav.sample_rate,labels.energy_window_seconds,indices))
-            payload={"version":"aat-envelope-cache-v1","features":torch.cat(features),
+            payload={"version":cache_version,"features":torch.cat(features),
                      "relative_times":times-1.0,"target":torch.from_numpy(labels.rms[chosen]),
                      "mix_rms":torch.from_numpy(mix_rms).float(),"center_times":torch.from_numpy(centers),
                      "source_ids":list(labels.source_ids),"encoder":encoder.identity,
                      "hop_seconds":hop_seconds,"mix_sha256":entry["mix_sha256"],
                      "label_sha256":hashlib.sha256((directory/"envelope.npz").read_bytes()).hexdigest()}
+            if coverage_arrays is not None:
+                payload.update(context_constraint=CONSTRAINT_VERSION,
+                               context_bounds=torch.from_numpy(coverage_arrays['input_bounds_seconds']),
+                               context_event_counts=torch.from_numpy(coverage_arrays['complete_event_counts']),
+                               context_guard_seconds=audited['edge_guard_seconds'])
             path=out/f"{entry['sample_id']}.pt"
             torch.save(payload,path)
             records.append({"sample_id":entry["sample_id"],"split":entry["split"],"file":path.name,
@@ -85,11 +105,13 @@ def build_cache(data_root: str | Path, out: str | Path, *, device="cuda:0", hop_
             print(f"cached {entry['sample_id']} {payload['features'].shape}",flush=True)
     finally:
         encoder.close()
-    meta={"version":"aat-envelope-cache-v1","stage":index["stage"],"data_index_sha256":hashlib.sha256((root/"index.json").read_bytes()).hexdigest(),
+    meta={"version":cache_version,"stage":index["stage"],"data_index_sha256":hashlib.sha256((root/"index.json").read_bytes()).hexdigest(),
           "encoder":encoder.identity,"hop_seconds":hop_seconds,"context_seconds":2.0,
           "data_policy":index["split_policy"],"entries":records,
           "extraction_seconds":time.perf_counter()-start,"probes":probes,
           "peak_cuda_mib":torch.cuda.max_memory_allocated(device)/2**20 if device.startswith("cuda") else None}
+    if local_reports:
+        meta.update(context_constraint=CONSTRAINT_VERSION,local_context_audits=local_reports)
     dump_json(out/"index.json",meta)
     return meta
 
@@ -128,6 +150,20 @@ def eligible_offsets(target,n,*,require_recurrence=False):
             (not require_recurrence or ((starts>=i)&(ends<i+n)).sum()>=3)]
 
 
+def activity_transport_diagnostics(raw,tracked,target):
+    active=(target>=.002).any(1)
+    values={'raw_A_mean':float(raw.detach().mean()),'raw_A_max':float(raw.detach().max()),
+            'tracked_A_mean':float(tracked.detach().mean()),'tracked_A_max':float(tracked.detach().max()),
+            'raw_A_sum_mean':float(raw.detach().sum(1).mean()),
+            'tracked_A_sum_mean':float(tracked.detach().sum(1).mean())}
+    for role,mask in (('active',active),('silent',~active)):
+        values[f'raw_A_{role}_mean']=float(raw[mask].detach().mean()) if mask.any() else None
+        values[f'tracked_A_{role}_mean']=float(tracked[mask].detach().mean()) if mask.any() else None
+    total=float(raw.detach().sum())
+    values['transported_mass_ratio']=float(tracked.detach().sum())/total if total>0 else None
+    return values
+
+
 @torch.no_grad()
 def evaluate(model, samples, config, device, *, predictions_out=None,association="index",
              association_config=AssociationConfig(),shuffle_seed=None,cycle_weight=0):
@@ -137,6 +173,7 @@ def evaluate(model, samples, config, device, *, predictions_out=None,association
         e,p=_predict(model,sample,device)
         if shuffle_seed is not None:
             e,p=_candidate_permutation(e,p,shuffle_seed)
+        raw=p
         p,associated=_track(e,p,association,association_config)
         target=sample["target"].to(device)
         valid=torch.ones(len(target),dtype=torch.bool,device=device)
@@ -166,6 +203,7 @@ def evaluate(model, samples, config, device, *, predictions_out=None,association
             np.savez_compressed(predictions_out/f"{sample['sample_id']}.npz",
                                 center_times=sample["center_times"].numpy(),target=truth,
                                 predicted=matched,unused=empty_curves,
+                                raw_candidates=raw.cpu().numpy(),tracked_candidates=p.cpu().numpy(),
                                 matched_slots=np.array(selected))
         rows.append({"sample_id":sample["sample_id"],"loss":float(loss),"mae":float(np.abs(matched-truth).mean()),
                      **{key:float(value) for key,value in parts.items()},"cycle":float(cycle),"weighted_cycle":float(cycle_weight*cycle),
@@ -179,6 +217,8 @@ def evaluate(model, samples, config, device, *, predictions_out=None,association
                      "events_by_source":by_source,
                      "source_count_mae":float(np.abs((p.cpu().numpy()>=.002).sum(1)-(truth>=.002).sum(1)).mean()),
                      "assignment_ambiguous":not assignment.unique,
+                     "pit_optimal_count":assignment.num_optimal,
+                     **activity_transport_diagnostics(raw,p,target),
                      "mix_rms_baseline_mae":float(np.abs(sample["mix_rms"].numpy()-truth[:,0]).mean()) if truth.shape[1]==1 else None})
         if associated is not None:
             rows[-1].update(association_entropy=float(associated["entropy"].mean()),
@@ -209,7 +249,7 @@ def train_combinations(cache: str | Path, out: str | Path, *, device="cuda:0", s
     out.mkdir(parents=True,exist_ok=True)
     meta=load_json(cache/"index.json")
     if require_recurrence is None:
-        require_recurrence=meta["stage"]=="C1"
+        require_recurrence=meta["stage"] in ("C1","C1-local")
     samples={split:[] for split in ("train","val","test")}
     for record in meta["entries"]:
         path=cache/record["file"]
@@ -218,6 +258,8 @@ def train_combinations(cache: str | Path, out: str | Path, *, device="cuda:0", s
         sample=torch.load(path,map_location="cpu",weights_only=True)
         if sample["version"]!=meta["version"] or sample["encoder"]!=meta["encoder"]:
             raise ValueError("cache identity mismatch")
+        if meta['stage']=='C1-local' and (sample.get('context_constraint')!=CONSTRAINT_VERSION or sample['context_event_counts'].min()<2):
+            raise ValueError('local context evidence missing from feature cache')
         sample["sample_id"]=record["sample_id"]
         if not 1<=sample["target"].shape[1]<=slots:
             raise ValueError("source count exceeds candidate capacity")
@@ -234,6 +276,8 @@ def train_combinations(cache: str | Path, out: str | Path, *, device="cuda:0", s
             "require_recurrence":require_recurrence,
             "head_version":EnvelopeVectorHead.VERSION,
             "cycle_weight":cycle_weight,"runs":[]}
+    if meta.get('context_constraint'):
+        result.update(context_constraint=meta['context_constraint'],context_seconds=meta['context_seconds'])
     for family in families:
         torch.manual_seed(seed)
         rng=np.random.default_rng(seed)
@@ -288,6 +332,7 @@ def train_combinations(cache: str | Path, out: str | Path, *, device="cuda:0", s
                  **{key:float(value.detach()) for key,value in parts.items()},"cycle":float(cycle.detach()),
                  "weighted_cycle":float((cycle_weight*cycle).detach()),"shape_descriptor_grad_norm":descriptor_gradient}
             row.update(cycle_eligible_fraction=float(cycle_mask.mean()),pit_ambiguous=float(not assignment.unique))
+            row.update(activity_transport_diagnostics(p,tracked,target),pit_optimal_count=assignment.num_optimal)
             if associated is not None:
                 row.update(association_entropy=float(associated["entropy"].mean().detach()),
                            association_null_mass=float(associated["null_mass"].mean().detach()),
@@ -319,6 +364,7 @@ def train_combinations(cache: str | Path, out: str | Path, *, device="cuda:0", s
                     "association":association,"association_config":asdict(association_config),"cycle_weight":cycle_weight,
                     "stage":meta["stage"],"label_unit":"linear_rms_full_scale","cache_identity_sha256":result["cache_identity_sha256"],
                     "require_recurrence":require_recurrence,
+                    "context_constraint":meta.get('context_constraint'),
                     "in_channels":samples["train"][0]["features"].shape[1],"encoder":meta["encoder"],
                     "seed":seed,"steps":steps},out/f"{family}.pt")
         dump_json(out/f"{family}.json",run)

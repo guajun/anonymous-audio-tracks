@@ -27,6 +27,10 @@ class Telemetry:
         for key in ('extra_active_fraction','mean_extra_active_count','source_count_mae','association_entropy','association_null_mass','association_capacity_residual','cycle_eligible_fraction'):
             values=[s[key] for s in songs if key in s]
             if values:self.scalars(prefix,{key:float(np.mean(values))},step)
+        for key in ('raw_A_mean','raw_A_max','tracked_A_mean','tracked_A_max','raw_A_sum_mean','tracked_A_sum_mean',
+                    'raw_A_active_mean','tracked_A_active_mean','raw_A_silent_mean','tracked_A_silent_mean','transported_mass_ratio','pit_optimal_count'):
+            values=[s[key] for s in songs if s.get(key) is not None]
+            if values:self.scalars(prefix,{key:float(np.mean(values))},step)
         for key in ('onset_mae_seconds','offset_mae_seconds','frame_f1'):
             values=[s['events'][key] for s in songs if s['events'][key] is not None]
             if values:self.scalars(prefix+'/events',{key:float(np.mean(values))},step)
@@ -51,5 +55,12 @@ class Telemetry:
                     self.writer.add_scalar(tags[0],float(truth),round(float(time)*1000))
                     self.writer.add_scalar(tags[1],float(predicted),round(float(time)*1000))
                 layout[f'source-{source+1}']=['Multiline',tags]
+            if 'raw_candidates' in curves:
+                prefix=f'envelope/val/{files[0].stem}/step-{step}/all-candidates'
+                tags=[prefix+'/raw-mean',prefix+'/tracked-mean']
+                for time,raw,tracked in zip(curves['center_times'],curves['raw_candidates'].mean(1),curves['tracked_candidates'].mean(1)):
+                    self.writer.add_scalar(tags[0],float(raw),round(float(time)*1000))
+                    self.writer.add_scalar(tags[1],float(tracked),round(float(time)*1000))
+                layout['all-candidates']=['Multiline',tags]
             self.writer.add_custom_scalars({'Original-track milliseconds':layout})
         self.writer.flush()

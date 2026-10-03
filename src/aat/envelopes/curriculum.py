@@ -8,7 +8,9 @@ import numpy as np
 from aat.contracts.jsonio import dump_json
 from aat.render.config import config_from_dict
 from aat.render.pipeline import render_sample
+from aat.labels.wav import read_wav
 from .labels import label_sample, overlap_ratio
+from .local_context import audit_local_context,CONSTRAINT_VERSION
 
 
 def c0_config(seed: int, sample_id: str):
@@ -137,6 +139,72 @@ def prepare_c1(out: str | Path, *, seed=4610, counts=(4,2,2)):
                             'stem_sum':rendered.report['stem_sum']})
     index={'version':'aat-curriculum-v1','stage':'C1','seed':seed,
            'split_policy':'held-out sequence/ADSR/gain; two fixed voices shared intentionally; not unseen timbre; alternating start/jittered onsets',
+           'entries':entries}
+    dump_json(out/'index.json',index)
+    return index
+
+
+def c1_local_config(seed: int,sample_id: str):
+    """Dense, short alternating notes with true silence and local recurrence."""
+    rng=np.random.default_rng(seed)
+    old,_,_=c1_config(seed,sample_id)
+    sources=[]
+    first=int(rng.integers(2))
+    steps=20+16*np.arange(36)+rng.integers(-1,2,size=36)  # .4 + .32*i +/- .02s
+    owners=[(first+i)%2 for i in range(len(steps))]
+    for i,old_source in enumerate(old.sources):
+        source=old_source.to_dict()
+        source['id']=source.pop('source_id');source.pop('index')
+        source.update(preset_ref=f'aat/c1-local/{old_source.sample.type}-v1',
+                      sample_ref=f'generated/c1-local/{old_source.sample.type}-v1',gain=float(rng.uniform(.35,.65)))
+        source['sample']={'type':old_source.sample.type,'seed':46+i,'params':
+            {'duration_seconds':.45,'freq_hz':261.626,'attack_seconds':.005,'release_seconds':.03,'detune_cents':0.,'stereo':False}
+            if i==0 else {'duration_seconds':.45,'freq_hz':261.626,'decay_seconds':.3,'damping':.5}}
+        source['amp']={'attack_ms':float(rng.choice([5,10,20])),'decay_ms':float(rng.choice([20,40])),
+                       'sustain':float(rng.choice([.35,.6,.9])),'release_ms':float(rng.choice([40,60]))}
+        source['pattern']={'step_seconds':.02,'notes':[
+            {'step':int(step),'note':60,'velocity':int(rng.integers(90,116)),'length_steps':int(rng.choice([5,6]))}
+            for step,owner in zip(steps,owners) if owner==i]}
+        sources.append(source)
+    config=config_from_dict({'render':{'sample_id':sample_id,'composition':sample_id,'seed':seed,
+        'sample_rate':44100,'block_size':512,'bpm':100,'duration_seconds':12.,'tail_seconds':1.},'sources':sources})
+    return config,steps*.02,owners
+
+
+def prepare_c1_local(out: str | Path,*,seed=4640,counts=(4,2,2)):
+    out=Path(out)
+    if out.exists() and any(out.iterdir()):raise ValueError('C1-local output must be empty')
+    out.mkdir(parents=True,exist_ok=True)
+    entries=[]
+    for split,count in zip(('train','val','test'),counts):
+        for i in range(count):
+            sample_id=f'c1-local-{split}-{i:02d}'
+            song_seed=seed+len(entries)*101
+            config,onsets,owners=c1_local_config(song_seed,sample_id)
+            directory=out/sample_id
+            rendered=render_sample(config,directory)
+            labels=label_sample(directory)
+            centers=labels.center_times[(labels.center_times>=1-1e-9)&(labels.center_times<=11+1e-9)]
+            waveform=read_wav(directory/'mix.wav')
+            report,arrays=audit_local_context(labels,centers,audio_frames=waveform.frames)
+            ratio=overlap_ratio(labels.rms[labels.valid])
+            if ratio!=0 or not report['passed']:
+                raise ValueError(f'C1-local violates acoustic/local evidence constraints: overlap={ratio}, audit={report}')
+            if any(s['event_count']!=18 or s['bridge_targets_exactly_zero']==0 for s in report['sources']):
+                raise ValueError('C1-local must preserve 18 separate events/source and actual silence')
+            np.savez_compressed(directory/'local-context.npz',**arrays)
+            report['arrays_sha256']=hashlib.sha256((directory/'local-context.npz').read_bytes()).hexdigest()
+            report['envelope_sha256']=hashlib.sha256((directory/'envelope.npz').read_bytes()).hexdigest()
+            dump_json(directory/'local-context.json',report)
+            entries.append({'sample_id':sample_id,'split':split,'directory':sample_id,'seed':song_seed,
+                            'onsets_seconds':onsets.tolist(),'owners':[config.sources[j].source_id for j in owners],
+                            'amp':[s.amp.to_dict() for s in config.sources],'gain':[s.gain for s in config.sources],
+                            'scoring_start_seconds':1.,'scoring_end_seconds':11.,
+                            'acoustic_overlap_ratio':ratio,'local_context':report,
+                            'mix_sha256':hashlib.sha256((directory/'mix.wav').read_bytes()).hexdigest(),
+                            'envelope_sha256':report['envelope_sha256'],'stem_sum':rendered.report['stem_sum']})
+    index={'version':'aat-curriculum-local-v2','stage':'C1-local','constraint_version':CONSTRAINT_VERSION,'seed':seed,
+           'split_policy':'held-out sequence/ADSR/gain; fixed pad/pluck; local note co-occurrence in every scored 2s input; 1..11s absolute scoring range',
            'entries':entries}
     dump_json(out/'index.json',index)
     return index
