@@ -1,4 +1,4 @@
-"""Bounded C0 frozen-Demucs cache and loss-combination experiment runner."""
+"""Bounded C0/C1 frozen-Demucs shape and association experiment runner."""
 from __future__ import annotations
 
 from dataclasses import asdict
@@ -118,6 +118,16 @@ def _track(e,p,association,association_config):
     return result["tracked"],result
 
 
+def eligible_offsets(target,n,*,require_recurrence=False):
+    """C1 spans three complete threshold events, rather than merely being long."""
+    activity=(target.cpu().numpy()>=.002).any(1)
+    edges=np.diff(np.r_[False,activity,False].astype(np.int8))
+    starts=np.flatnonzero(edges==1)
+    ends=np.flatnonzero(edges==-1)-1
+    return [i for i in range(len(target)-n+1) if activity[i:i+n].any() and
+            (not require_recurrence or ((starts>=i)&(ends<i+n)).sum()>=3)]
+
+
 @torch.no_grad()
 def evaluate(model, samples, config, device, *, predictions_out=None,association="index",
              association_config=AssociationConfig(),shuffle_seed=None,cycle_weight=0):
@@ -132,8 +142,10 @@ def evaluate(model, samples, config, device, *, predictions_out=None,association
         valid=torch.ones(len(target),dtype=torch.bool,device=device)
         parts,assignment=segment_shape_components(p,target,valid,config)
         cycle=p.sum()*0
+        cycle_mask=p.new_zeros((len(p)-1,p.shape[1]))
         if associated is not None:
-            cycle=cycle_loss(associated,reference_cycle_mask(target,assignment,p.shape[1]))
+            cycle_mask=reference_cycle_mask(target,assignment,p.shape[1])
+            cycle=cycle_loss(associated,cycle_mask)
         loss=sum(parts.values())+cycle_weight*cycle
         selected=list(assignment.assignments[0])
         matched=p[:,selected].cpu().numpy()
@@ -157,6 +169,7 @@ def evaluate(model, samples, config, device, *, predictions_out=None,association
                                 matched_slots=np.array(selected))
         rows.append({"sample_id":sample["sample_id"],"loss":float(loss),"mae":float(np.abs(matched-truth).mean()),
                      **{key:float(value) for key,value in parts.items()},"cycle":float(cycle),"weighted_cycle":float(cycle_weight*cycle),
+                     "cycle_eligible_fraction":float(cycle_mask.mean()) if cycle_mask.numel() else 0.0,
                      "relative_l1":float(np.abs(matched-truth).sum()/max(1e-8,truth.sum())),
                      "area_iou":float(np.mean([area_iou_numpy(matched[:,s],truth[:,s]) for s in range(truth.shape[1])])),
                      "empty_mean":float(p[:,unused].mean()) if unused else 0.0,
@@ -183,7 +196,7 @@ def train_combinations(cache: str | Path, out: str | Path, *, device="cuda:0", s
                        scales_seconds=(0.0,0.02,0.05,0.10),normalize_huber=True,slots=8,
                        null_weight=None,association="index",cycle_weight=0.0,
                        association_config=AssociationConfig(),shuffle_candidates=False,
-                       tensorboard_root=None,eval_every=0):
+                       tensorboard_root=None,eval_every=0,require_recurrence=None):
     cache,out=Path(cache),Path(out)
     if steps<1 or segment_centers<2 or lr<=0 or not 1<=slots<=8:
         raise ValueError("invalid training budget")
@@ -195,6 +208,8 @@ def train_combinations(cache: str | Path, out: str | Path, *, device="cuda:0", s
         raise ValueError("experiment output must be empty")
     out.mkdir(parents=True,exist_ok=True)
     meta=load_json(cache/"index.json")
+    if require_recurrence is None:
+        require_recurrence=meta["stage"]=="C1"
     samples={split:[] for split in ("train","val","test")}
     for record in meta["entries"]:
         path=cache/record["file"]
@@ -210,12 +225,13 @@ def train_combinations(cache: str | Path, out: str | Path, *, device="cuda:0", s
     if not all(samples.values()):
         raise ValueError("train, val, test splits required")
     git=subprocess.run(["git","rev-parse","HEAD"],capture_output=True,text=True).stdout.strip()
-    result={"version":"aat-c0-loss-sweep-v1","result_kind":"frozen-pretrained-demucs-c0-envelope-experiment",
+    result={"version":"aat-envelope-association-sweep-v2","result_kind":f"frozen-pretrained-demucs-{meta['stage'].lower()}-envelope-experiment",
             "seed":seed,"steps":steps,"lr":lr,"segment_centers":segment_centers,"device":device,"slots":slots,
             "git_commit":git,"torch":torch.__version__,"cache_identity_sha256":hashlib.sha256((cache/"index.json").read_bytes()).hexdigest(),
             "encoder":meta["encoder"],"data_policy":meta["data_policy"],
             "association":association,"stage":meta["stage"],"association_config":asdict(association_config),
             "shuffle_candidates":shuffle_candidates,
+            "require_recurrence":require_recurrence,
             "head_version":EnvelopeVectorHead.VERSION,
             "cycle_weight":cycle_weight,"runs":[]}
     for family in families:
@@ -240,9 +256,9 @@ def train_combinations(cache: str | Path, out: str | Path, *, device="cuda:0", s
             model.train()
             sample=samples["train"][int(rng.integers(len(samples["train"])))]
             n=min(segment_centers,len(sample["target"]))
-            candidates=[i for i in range(len(sample["target"])-n+1) if sample["target"][i:i+n].max()>0.002]
+            candidates=eligible_offsets(sample["target"],n,require_recurrence=require_recurrence)
             if not candidates:
-                raise ValueError("no active training segments")
+                raise ValueError("no eligible training segments; C1 requires three full activity events; increase segment-centers")
             offset=int(rng.choice(candidates))
             features=sample["features"][offset:offset+n].to(device)
             e,p=model(features,sample["relative_times"].to(device).expand(n,-1),sample["mix_rms"][offset:offset+n].to(device))
@@ -253,8 +269,10 @@ def train_combinations(cache: str | Path, out: str | Path, *, device="cuda:0", s
             parts,assignment=segment_shape_components(tracked,target,torch.ones(n,dtype=torch.bool,device=device),config)
             shape_total=sum(parts.values())
             cycle=shape_total*0
+            cycle_mask=target.new_zeros((n-1,slots))
             if associated is not None:
-                cycle=cycle_loss(associated,reference_cycle_mask(target,assignment,slots))
+                cycle_mask=reference_cycle_mask(target,assignment,slots)
+                cycle=cycle_loss(associated,cycle_mask)
             loss=shape_total+cycle_weight*cycle
             if not torch.isfinite(loss):
                 raise ValueError("nonfinite training loss")
@@ -269,6 +287,7 @@ def train_combinations(cache: str | Path, out: str | Path, *, device="cuda:0", s
             row={"step":step+1,"loss":float(loss.detach()),"sample_id":sample["sample_id"],"segment_start":offset,
                  **{key:float(value.detach()) for key,value in parts.items()},"cycle":float(cycle.detach()),
                  "weighted_cycle":float((cycle_weight*cycle).detach()),"shape_descriptor_grad_norm":descriptor_gradient}
+            row.update(cycle_eligible_fraction=float(cycle_mask.mean()),pit_ambiguous=float(not assignment.unique))
             if associated is not None:
                 row.update(association_entropy=float(associated["entropy"].mean().detach()),
                            association_null_mass=float(associated["null_mass"].mean().detach()),
@@ -299,6 +318,7 @@ def train_combinations(cache: str | Path, out: str | Path, *, device="cuda:0", s
                     "slots":slots,
                     "association":association,"association_config":asdict(association_config),"cycle_weight":cycle_weight,
                     "stage":meta["stage"],"label_unit":"linear_rms_full_scale","cache_identity_sha256":result["cache_identity_sha256"],
+                    "require_recurrence":require_recurrence,
                     "in_channels":samples["train"][0]["features"].shape[1],"encoder":meta["encoder"],
                     "seed":seed,"steps":steps},out/f"{family}.pt")
         dump_json(out/f"{family}.json",run)

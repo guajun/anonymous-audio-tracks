@@ -24,7 +24,7 @@ class Telemetry:
     def evaluation(self,prefix,result,step):
         self.scalars(prefix,result,step)
         songs=result['songs']
-        for key in ('extra_active_fraction','mean_extra_active_count','source_count_mae','association_entropy','association_null_mass','association_capacity_residual'):
+        for key in ('extra_active_fraction','mean_extra_active_count','source_count_mae','association_entropy','association_null_mass','association_capacity_residual','cycle_eligible_fraction'):
             values=[s[key] for s in songs if key in s]
             if values:self.scalars(prefix,{key:float(np.mean(values))},step)
         for key in ('onset_mae_seconds','offset_mae_seconds','frame_f1'):
@@ -32,6 +32,7 @@ class Telemetry:
             if values:self.scalars(prefix+'/events',{key:float(np.mean(values))},step)
         for key in ('matched_events','missed_events','extra_events'):
             self.scalars(prefix+'/events',{key:sum(s['events'][key] for s in songs)},step)
+        self.scalars(prefix,{'pit_ambiguous_fraction':float(np.mean([s['assignment_ambiguous'] for s in songs]))},step)
         if self.writer:self.writer.flush()
 
     def close(self):

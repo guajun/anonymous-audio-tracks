@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Issue #46 C0: prepare, cache, and train a frozen-Demucs loss sweep."""
+"""Issue #46 C0/C1: prepare, cache, and train shapes through optional association."""
 from __future__ import annotations
 import argparse
 from pathlib import Path
@@ -43,6 +43,7 @@ def main():
     train.add_argument("--shuffle-candidates",action="store_true")
     train.add_argument("--tensorboard-root")
     train.add_argument("--eval-every",type=int,default=0)
+    train.add_argument("--allow-partial-recurrence",action="store_true",help="reproduce the early C1 wiring probe without the complete-event filter")
     train.add_argument("--raw-huber",action="store_true",help="do not divide Huber by delta; diagnostic legacy scale")
     train.add_argument("--scales-seconds",nargs="+",type=float,default=[0,0.02,0.05,0.10])
     train.add_argument("--families",nargs="+",default=["l1","huber","area_iou","huber_iou","multiscale"])
@@ -66,7 +67,8 @@ def main():
                                   null_weight=args.null_weight,association=args.association,cycle_weight=args.cycle_weight,
                                   association_config=AssociationConfig(temperature=args.association_temperature,
                                       iterations=args.association_iterations,max_gap_frames=args.max_gap_frames),
-                                  shuffle_candidates=args.shuffle_candidates,tensorboard_root=args.tensorboard_root,eval_every=args.eval_every)
+                                  shuffle_candidates=args.shuffle_candidates,tensorboard_root=args.tensorboard_root,eval_every=args.eval_every,
+                                  require_recurrence=False if args.allow_partial_recurrence else None)
     print(f"completed {args.command}: {len(result.get('entries',result.get('runs',[])))} records",flush=True)
 
 

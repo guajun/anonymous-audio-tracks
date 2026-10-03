@@ -4,6 +4,7 @@ torch=pytest.importorskip("torch")
 from aat.envelopes.association import AssociationConfig,rollout,reference_cycle_mask,cycle_loss
 from aat.envelopes.losses import ShapeLossConfig,segment_shape_components
 from aat.envelopes.curriculum import c1_config
+from aat.envelopes.experiment import eligible_offsets
 
 
 def test_per_window_candidate_permutations_do_not_change_tracks():
@@ -79,3 +80,33 @@ def test_c1_contains_recurrence_and_safe_acoustic_gaps():
         assert np.diff(onsets).min()>1.5+max(s.amp.release_ms for s in config.sources)/1000
         starts.add(owners[0])
     assert starts=={0,1}
+
+
+def test_expired_capacity_returns_to_seed_and_can_acquire_new_evidence():
+    e=torch.eye(2)[None].expand(6,-1,-1).clone()
+    e[1]=torch.nn.functional.normalize(torch.tensor([[1.,.4],[.4,1.]]),dim=-1)
+    p=torch.tensor([[.2,.1],[.2,.1],[0.,0.],[0.,0.],[0.,0.],[.2,.1]])
+    result=rollout(e,p,AssociationConfig(max_gap_frames=2,iterations=40))
+    assert (result["prototypes"][1]-e[0]).abs().max()>.01
+    torch.testing.assert_close(result["prototypes"][4],e[0])
+    assert result["birth_mass"][5].sum()>0
+
+
+def test_consistent_wrong_pairing_can_have_small_cycle_but_wrong_shape():
+    e=torch.eye(2)[None].expand(4,-1,-1)
+    p=torch.tensor([[.2,.05],[.2,.05],[.05,.2],[.05,.2]])
+    result=rollout(e,p,AssociationConfig(iterations=40))
+    cycle=cycle_loss(result,torch.ones(3,2))
+    target=torch.tensor([[.2,.05]]*4)
+    parts,_=segment_shape_components(result["tracked"],target,torch.ones(4,dtype=torch.bool),ShapeLossConfig(family="l1"))
+    assert cycle<.005
+    assert parts["shape"]>.05
+
+
+def test_long_segments_must_actually_contain_complete_recurrence_events():
+    target=torch.zeros(40,2)
+    target[2:4,0]=.1;target[12:14,1]=.1;target[22:24,0]=.1;target[32:34,1]=.1
+    offsets=eligible_offsets(target,26,require_recurrence=True)
+    assert 0 in offsets and 8 in offsets
+    assert 3 not in offsets  # truncated first event, despite three active spans
+    assert eligible_offsets(target,10,require_recurrence=True)==[]
