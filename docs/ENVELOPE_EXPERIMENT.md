@@ -28,6 +28,7 @@ python scripts/envelope_experiment.py cache --data runs/envelope/c0 \
   --out runs/envelope/cache --device cuda:0 --hop-seconds 0.04 --batch-windows 4
 python scripts/envelope_experiment.py train --cache runs/envelope/cache \
   --out runs/envelope/sweep --device cuda:0 --steps 100 --seed 46 \
+  --association-backend legacy --magnitude-gate 0 \
   --families l1 huber area_iou huber_iou multiscale
 ```
 
@@ -70,6 +71,8 @@ C1 数据、三组对照与实时 TensorBoard 见 [ENVELOPE_ASSOCIATION.md](ENVE
 旧 C1 的长静音重连超出局部 E 假设；当前新数据使用 `prepare-c1-local`，
 对实际 2 秒输入复核重复事件共现，独立版本与复现步骤见
 [C1-local 报告](reports/issue-46-local-context.md)。
+最新端点/碎片实现和显式归零门见 [局部关联定义](ENVELOPE_LOCAL_ASSOCIATION.md)、
+[正式六组报告](reports/issue-46-endpoint.md)。它有新的 head/关联版本，不能与历史未门控 C0/C1 混合复现。
 
 输出包括每种损失的初始验证、最终验证/测试 MAE、相对 L1、面积 IoU、空槽均值、
 混音 RMS 基线、参数量、日志、耗时及 checkpoint。最终验证/测试同时保存预测曲线 NPZ。

@@ -4,6 +4,11 @@
 原始 C0 结果见 [C0 报告](reports/issue-46-c0.md)，讨论总表见 [设计](ISSUE_46_DESIGN.md)。
 本轮 C1 是接线和机制诊断，不意味着原来 C0 的误报/时序联合门限已经通过。
 
+2026-10-04 后续实现已改为首个有效片段直接锚定、有限非零端点分布和独立轨迹碎片，
+见 [最新局部关联定义](ENVELOPE_LOCAL_ASSOCIATION.md) 与 [新实验报告](reports/issue-46-endpoint.md)。
+下文保留早期原型机制/参数作为历史说明；复现旧实验必须显式设置
+`--association-backend legacy --magnitude-gate 0`。项目目标定义引用 [#48](https://github.com/guajun/anonymous-audio-tracks/issues/48)。
+
 ## 训练链的明确边界
 
 原 C0 没有可学习 Query，但仍有 8 个固定候选输出通道，直接对通道曲线做整段 PIT。
@@ -30,7 +35,7 @@ PIT 是允许匿名编号置换的目标；匈牙利是求离散一对一分配�
 
 ## 新关联器与生命周期
 
-生产实验使用 `aat.envelopes.association.rollout`；早期 `models.associate_soft` 仅保留作旧原型探针，
+早期实验使用 `aat.envelopes.association.rollout`；早期 `models.associate_soft` 仅保留作旧原型探针，
 不是新训练路径。新配置默认 temperature=0.1、similarity gate=0.5、Sinkhorn 12 次迭代。
 
 - K 个匿名轨迹容量与一个 dustbin 行/列，使候选和记忆可不匹配。每轨迹的行容量精确归一为 1；

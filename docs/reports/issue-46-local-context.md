@@ -2,6 +2,8 @@
 
 日期：2026-10-04。分支 `codex/issue-46-envelope-curriculum`，草稿 PR #47。
 本轮纠正局部 E 假设与旧数据的任务错配，保留 [旧 C1 报告](issue-46-association.md) 的数值历史。
+本报告保留输入修正后、未门控长期原型的历史结果。后续依 #48 修正的局部端点/碎片实现见
+[端点实验报告](issue-46-endpoint.md)；复现本报告命令须补 `--association-backend legacy --magnitude-gate 0`。
 设计边界见 [设计文档](../ISSUE_46_DESIGN.md)，上游关联与末端 PIT 的区别见
 [关联说明](../ENVELOPE_ASSOCIATION.md)。
 
