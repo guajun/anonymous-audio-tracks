@@ -247,6 +247,7 @@ def evaluate(model, samples, config, device, *, predictions_out=None,association
                     'maximum_endpoint_distance_seconds':associated['maximum_endpoint_distance_seconds'],
                     'links':[{'frame':l['frame'],'endpoint_frames':l['endpoint_frames'].tolist(),
                               'fragment_ids':l['fragment_ids'].tolist(),'eligible':l['eligible'].cpu().tolist(),
+                              'candidate_nonzero':l['candidate_nonzero'].cpu().tolist(),
                               'forward':l['forward'].cpu().tolist(),'backward':l['backward'].cpu().tolist()} for l in links]})
         rows.append({"sample_id":sample["sample_id"],"loss":float(loss),"mae":float(np.abs(matched-truth).mean()),
                      **{key:float(value) for key,value in parts.items()},"cycle":float(cycle),"weighted_cycle":float(cycle_weight*cycle),

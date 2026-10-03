@@ -128,6 +128,18 @@ def test_closed_gate_has_exact_zero_no_e_but_training_amplitude_gradient():
     a.sum().backward();assert model.vector[-1].weight.grad.abs().sum()>0
 
 
+def test_cycle_excludes_zero_capacity_columns_and_unseeded_rows():
+    e=torch.ones(2,3,4);e[:,2]=0
+    p=torch.tensor([[.1,.1,0.]]*2)
+    result=rollout(e,p)
+    target=torch.tensor([[.2,.05]]*2)
+    _,assignment=segment_shape_components(torch.tensor([[.2,.05,0.]]*2),target,
+                                         torch.ones(2,dtype=torch.bool),ShapeLossConfig(family='l1'))
+    value,fraction=cycle_loss(result,target,assignment)
+    assert value.item()==pytest.approx(np.log(2),abs=1e-5)
+    assert fraction>0 and result['cycle_links'][0]['candidate_nonzero'].tolist()==[True,True,False]
+
+
 def test_whole_segment_pit_penalizes_fragmentation_and_wide_assignment_is_exact():
     truth=torch.zeros(30,1);truth[0]=.2;truth[-1]=.2
     result=rollout(torch.ones(30,1,2),truth)

@@ -10,7 +10,7 @@ import torch
 from torch.nn import functional as F
 from .models import magnitude_gate
 
-VERSION='aat-local-endpoint-fragments-v2'
+VERSION='aat-local-endpoint-fragments-v3'
 
 
 @dataclass(frozen=True)
@@ -133,7 +133,7 @@ def rollout(directions,intensity,config=LocalAssociationConfig(),*,center_times=
                     birth[row]=observed[row].sum()
             direct=False
             links.append({'frame':frame,'endpoint_frames':prior_last,'fragment_ids':prior_fragments,
-                          'eligible':live_tensor,'forward':a,'backward':b})
+                          'eligible':live_tensor,'candidate_nonzero':active,'forward':a,'backward':b})
         for row in range(k):
             if tracked[row].detach()>0:
                 weights=a[row]*active
@@ -168,6 +168,12 @@ def cycle_loss(result,target,assignment,*,threshold=.002):
     selected=assignment.assignments[0]
     for link in result['cycle_links']:
         a,b=link['forward'],link['backward']
+        # Capacity placeholders are not identity states. Condition each
+        # independent direction on the same VALID nonzero endpoint pair set.
+        a=a*link['eligible'][:,None]*link['candidate_nonzero'][None,:]
+        b=b*link['candidate_nonzero'][:,None]*link['eligible'][None,:]
+        a=a/a.sum(1,keepdim=True).clamp_min(1e-12)
+        b=b/b.sum(1,keepdim=True).clamp_min(1e-12)
         diagonal=torch.diagonal(a@b).clamp_min(1e-8)
         mask=torch.zeros_like(diagonal)
         for source,fragment in enumerate(selected):
