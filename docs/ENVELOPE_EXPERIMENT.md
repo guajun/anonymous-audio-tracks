@@ -67,6 +67,9 @@ Gaussian 尺度默认 0/20/50/100 ms，含原尺度；TimeCycle 为 0。
 原 C0 直接比较整段通道包络，不声称验证了 E 的区分能力或跨槽位关联。
 新版本可选择 `--association soft`，在 cycle=0 时也展开可微部分匹配；
 C1 数据、三组对照与实时 TensorBoard 见 [ENVELOPE_ASSOCIATION.md](ENVELOPE_ASSOCIATION.md)。
+旧 C1 的长静音重连超出局部 E 假设；当前新数据使用 `prepare-c1-local`，
+对实际 2 秒输入复核重复事件共现，独立版本与复现步骤见
+[C1-local 报告](reports/issue-46-local-context.md)。
 
 输出包括每种损失的初始验证、最终验证/测试 MAE、相对 L1、面积 IoU、空槽均值、
 混音 RMS 基线、参数量、日志、耗时及 checkpoint。最终验证/测试同时保存预测曲线 NPZ。
