@@ -1,5 +1,24 @@
 # v0 开发任务图
 
+## 当前目标与文档交付
+
+2026-10-04 的项目目标由 [身份活动向量与局部拼接规范](IDENTITY_ACTIVITY_DESIGN.md)
+和 [#48](https://github.com/guajun/anonymous-audio-tracks/issues/48) 固化：身份活动向量 V、
+局部共同事件拼接、关联后 shape 主监督与整段 PIT；严格零无身份。
+下方任务图与派发流程保留为 **v0 E/P 工程的历史计划**，不覆盖新目标。
+当前实现/历史实测与目标迁移边界分别见 README、MODEL_HEAD、TRACKING、TRAINING、
+DATASET、ACTIVITY_LABELS、SCHEMAS 的入口说明。
+
+#48 仅做文档对齐：最新 origin/main、独立 worktree、新 codex/ 分支、target=main PR，
+交用户审核，**不得自行合并**；下文旧派发流程的合并规则不适用于本次交付。
+不导入 [#46](https://github.com/guajun/anonymous-audio-tracks/issues/46) /
+[草稿 #47](https://github.com/guajun/anonymous-audio-tracks/pull/47) 的研究代码或实验资产。
+#46 的局部关联/初始化修正及同预算复跑独立推进，固定 K≥来源数，不涉及容量丢失或回环。
+
+后续实现另行立任务：连续标签/协议单位迁移，可微局部关联与 shape→E 验证，gate 梯度与数值稳定性，
+显著性/部分参考容量评估，以及检索真实事件、裁剪同窗重推理、碎片关系图与原轴映射的离线回环。
+这些均是计划，本 PR 不训练模型或实现调度/回环，验收条件见规范 §10。
+
 父任务：[Epic #1](https://github.com/guajun/anonymous-audio-tracks/issues/1)。GitHub 原生父子及 blocked-by 关系为实时状态来源；本表是初始计划，不替代重新读取 issue/PR。
 
 | Issue | 交付 | 前置任务 |

@@ -1,5 +1,26 @@
 # 轨迹关联与身份评估（issue #9）
 
+## 目标局部拼接与当前 tracker 的边界
+
+[身份活动向量与局部拼接规范](IDENTITY_ACTIVITY_DESIGN.md)（#48）定义新目标。
+本文其余部分保留 **main 当前 v0.1.0 E/P tracker、概率指标及 issue #9 的历史验证**。
+其 EMA 原型、静音记忆、birth/retention 状态不是新目标必要条件。
+
+目标以非零候选两端共同事件证据关联，严格零不参与 E 匹配。短静音 `g<W/2` 可给双向证据，
+还须候选存在、足够事件内容及边缘/步长余量；可在有限局部范围跨多个零中心拼接，
+不能机械限制连续两个中心，也不能靠长期陈旧原型。首窗有效非零候选直接 `C₀=I`，
+零首窗不建身份种子；这与下文基于 birth_threshold 的现有初始化不同。
+
+空匹配仅表示当前候选集合无对应，不能等同真实静音、死亡或 E 下边沿；
+补零记忆点也是旧 tracker 的工程填充。目标须区分真实归零、弱活动未选中、容量挤出与漏识别，
+候选排名不等于 track_id。保存关系可以跨零，零向量本身没有身份。
+长缺口先保留碎片；后续 SLAM 式回环拟检索/裁剪真实事件、同窗重推理、验证关系、
+图聚合并映射回原时间轴，不直接假定旧 E 跨不相交上下文相似。
+
+局部可微关联、连续强度评估、缺测表示、容量策略和回环尚未迁移到 main，验收见规范 §10。
+本文 fake callback 的单元证据不能替代模型研究；后续已合并 E/P 训练接入与真实抽查见
+[TRAINING](TRAINING.md) 和 [集成报告](reports/issue-11-integration.md)。
+
 本文件说明 `src/aat/tracking/`、`src/aat/evaluation/` 与 `scripts/track.py` 的关联算法、配置、协议映射和评估定义。协议仍为 v0.1.0；本模块只读写 `docs/SCHEMAS.md` 已冻结的 `prediction` / `trajectory` / `activity` 文档，不新增字段、不修改依赖。
 
 所有时间都是原曲绝对秒：`trajectory.audio.track_start_seconds` 记录被分析音频 `audio[0]` 的原曲位置，中心时间和边界误差都不换算成切片相对时间。
@@ -16,7 +37,7 @@ associate_sequence(config)                         │
 trajectory.json  ────────────────►  evaluate_trajectory(config) ──► 指标对象
 ```
 
-滑窗模型入口（fake callback 或未来训练好的输出头）：
+滑窗模型入口（fake callback 或已接入的 E/P 输出头）：
 
 ```text
 audio ──extract_windows_at_times──► windows[N, W]
@@ -173,7 +194,7 @@ uv run --no-sync python scripts/track.py \
 
 未验证 / 风险：
 
-- 没有真实训练模型：全部“模型前向”证据来自 fake callback；真实 AuT 输出头（#5/#7/#8）接入后需要重新校准 `match_threshold`、`activity_threshold`、`retention_seconds` 与 `prototype_alpha`；
+- 本节 issue #9 单元证据的“模型前向”来自 fake callback；后续真实 AuT 输出头已接入（见 TRAINING 和集成报告），真实数据上的 `match_threshold`、`activity_threshold`、`retention_seconds` 与 `prototype_alpha` 仍需校准；
 - ID switch 只在“唯一有效活动 GT 来源且唯一活动预测轨迹”的可辨认帧建立 owner；GT 来源重叠或预测轨迹重叠的帧按受影响来源计为 `ambiguous_owner_frames` 而不猜 owner（重叠音乐覆盖有限，需要固定真实音乐抽查 #11 复核）。
 - 合成音频只验证管线正确性，不代表分离或跟踪质量；
 - `slots > max_exact_slots` 且转置后也无法精确求解时退化为贪心一一分配，可能损失基数；默认 K=8 走精确 DP，来源数少而轨迹多时通过转置仍可精确求解。

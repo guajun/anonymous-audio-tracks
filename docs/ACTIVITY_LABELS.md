@@ -1,5 +1,22 @@
 # 活动标签（ACTIVITY_LABELS，issue #4）
 
+## 连续强度目标与旧标签
+
+目标见 [身份活动向量与局部拼接规范](IDENTITY_ACTIVITY_DESIGN.md)（#48）：
+使用实际效果后、进入混音的分轨连续线性 RMS，而非存在概率或 ADSR 控制值。
+应保留真实静音、原时间轴与同一强度尺度，记录能量窗、声道聚合、采样率、增益、效果与延迟；
+不得逐窗峰值归一化或制造持续底音。共享非线性母带处理时，需说明分轨参考生成边界。
+
+本文其余章节记录 **main 当前标签器与 activity-label-v1 / schema v0.1.0**：
+RMS 经 dBFS 阈值、滞回及 release_hold 后产出 0/1 probability 代理；这些值不是连续 RMS。
+`release_hold_seconds` 是旧标签后处理，不是身份活动的 E 下边沿，也不是 ADSR R。
+E 下边沿是进入零的表征事件，严格零不携带身份；弱活动/容量挤出/漏识别的无输出也不是真实零。
+
+未来连续标签需显式版本/单位迁移，不能仅改同名 activity 数组的解释；与
+[SCHEMAS](SCHEMAS.md)、[DATASET](DATASET.md)、[TRAINING](TRAINING.md) 同步。
+连续 RMS 标签的导出/训练消费与新协议尚未实现；现有 RMS 能量计算仍用于旧阈值标签。
+本次不修改阈值或重写历史标签。
+
 本文说明 `src/aat/labels/` 与 `scripts/label_sample.py` 如何从真实分轨音频生成
 协议 v0.1.0 的**中心时刻活动标签**（`activity.json` + `activity.npz`）和可读摘要
 （`activity_summary.json`）。范围只覆盖活动标签；身份跟踪、重复起音检测、对未知歌曲
