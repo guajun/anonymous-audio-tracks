@@ -45,7 +45,7 @@ runs/render/smoke-0001/
 
 `[surge]`（可选）：`probe_duration_seconds`、`note`、`velocity`。**不要提交 `plugin_path`**；插件位置只通过 `--surge-plugin-path` 或本地未跟踪的覆盖文件传入。
 
-`[[sources]]`（2–8 个，冒烟样例 4 个）：
+`[[sources]]`（1–8 个，冒烟样例 4 个；单来源用于 #46 C0 包络课程）：
 
 - `id`：不带乐器语义的来源 ID，也是分轨文件名与 `sources.json` 的键。
 - `sample`：`type ∈ {kick, snare, hat, pluck, pad}`、可覆盖 `seed`、`params`（未知参数报错）。
