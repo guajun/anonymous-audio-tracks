@@ -1,0 +1,165 @@
+{
+  "total_endpoint_pairs": 62,
+  "failed_pairs": 4,
+  "correct_pairs": 58,
+  "records": [
+    {
+      "sample_id": "c3-test-00",
+      "source": 1,
+      "left_frame": 486,
+      "right_frame": 499,
+      "left_time": 10.72,
+      "right_time": 10.98,
+      "gap_seconds": 0.2599999999999998,
+      "teacher_slots": [
+        3,
+        3
+      ],
+      "predicted_rows": [
+        3,
+        5
+      ],
+      "endpoint_gt": [
+        0.000139984957058914,
+        0.036317870020866394
+      ],
+      "endpoint_amplitude": [
+        0.0013890821719542146,
+        0.0370062030851841
+      ],
+      "changes": [
+        {
+          "left_frame": 498,
+          "right_frame": 499,
+          "time": 10.98,
+          "amplitude_left": 0.00035762295010499656,
+          "amplitude_right": 0.0370062030851841,
+          "gt_left": 0.0,
+          "gt_right": 0.036317870020866394,
+          "candidate_cosine": -0.09073580801486969,
+          "row_before": 3,
+          "row_after": 5
+        }
+      ]
+    },
+    {
+      "sample_id": "c3-test-01",
+      "source": 1,
+      "left_frame": 101,
+      "right_frame": 114,
+      "left_time": 3.02,
+      "right_time": 3.2800000000000002,
+      "gap_seconds": 0.26000000000000023,
+      "teacher_slots": [
+        3,
+        3
+      ],
+      "predicted_rows": [
+        3,
+        0
+      ],
+      "endpoint_gt": [
+        0.00020172267977613956,
+        0.050961144268512726
+      ],
+      "endpoint_amplitude": [
+        0.0009726244024932384,
+        0.0433780737221241
+      ],
+      "changes": [
+        {
+          "left_frame": 113,
+          "right_frame": 114,
+          "time": 3.2800000000000002,
+          "amplitude_left": 0.00036658262251876295,
+          "amplitude_right": 0.0433780737221241,
+          "gt_left": 0.0,
+          "gt_right": 0.050961144268512726,
+          "candidate_cosine": -0.37381064891815186,
+          "row_before": 3,
+          "row_after": 0
+        }
+      ]
+    },
+    {
+      "sample_id": "c3-test-01",
+      "source": 1,
+      "left_frame": 134,
+      "right_frame": 146,
+      "left_time": 3.68,
+      "right_time": 3.92,
+      "gap_seconds": 0.23999999999999977,
+      "teacher_slots": [
+        3,
+        3
+      ],
+      "predicted_rows": [
+        0,
+        5
+      ],
+      "endpoint_gt": [
+        0.00019621940737124532,
+        0.04952506348490715
+      ],
+      "endpoint_amplitude": [
+        0.000886733818333596,
+        0.042072594165802
+      ],
+      "changes": [
+        {
+          "left_frame": 145,
+          "right_frame": 146,
+          "time": 3.92,
+          "amplitude_left": 0.00041885735117830336,
+          "amplitude_right": 0.042072594165802,
+          "gt_left": 0.0,
+          "gt_right": 0.04952506348490715,
+          "candidate_cosine": -0.5131217837333679,
+          "row_before": 0,
+          "row_after": 5
+        }
+      ]
+    },
+    {
+      "sample_id": "c3-test-01",
+      "source": 1,
+      "left_frame": 390,
+      "right_frame": 402,
+      "left_time": 8.8,
+      "right_time": 9.040000000000001,
+      "gap_seconds": 0.2400000000000002,
+      "teacher_slots": [
+        3,
+        3
+      ],
+      "predicted_rows": [
+        5,
+        3
+      ],
+      "endpoint_gt": [
+        0.00019994030299130827,
+        0.05167851224541664
+      ],
+      "endpoint_amplitude": [
+        0.0009348414023406804,
+        0.042683206498622894
+      ],
+      "changes": [
+        {
+          "left_frame": 401,
+          "right_frame": 402,
+          "time": 9.040000000000001,
+          "amplitude_left": 0.00035418092738837004,
+          "amplitude_right": 0.042683206498622894,
+          "gt_left": 0.0,
+          "gt_right": 0.05167851224541664,
+          "candidate_cosine": -0.2600793242454529,
+          "row_before": 5,
+          "row_after": 3
+        }
+      ]
+    }
+  ],
+  "definition": "post-selected C3 test, GT exactly nonzero event endpoints <=.9s; diagnostic only, no checkpoint/threshold changes",
+  "limitation": "describes observed low-amplitude association errors; does not isolate a causal fix or validate identity during silence"
+}
