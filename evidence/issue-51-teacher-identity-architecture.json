@@ -1,0 +1,32 @@
+{
+  "architecture": {
+    "depth": 4,
+    "hidden": 128,
+    "k": 8,
+    "e_dim": 128,
+    "parameters": 689920,
+    "convolution_kernel": 3,
+    "convolution_dilations": [
+      1,
+      1,
+      1,
+      1
+    ],
+    "intermediate_local_receptive_tokens": 9,
+    "center_interpolated_local_receptive_tokens": 10,
+    "final_direct_receptive_tokens": 197,
+    "input_seconds": 2.0,
+    "precision": "GPU head bfloat16 autocast; V/amplitude/relations/loss float32; parameters float32",
+    "token_center_span_seconds": 1.96,
+    "readout": "center interpolation + full197-token mean and standard deviation",
+    "depth_comparison": "all depths share full-window readout; depth changes capacity and intermediate local mixing"
+  },
+  "initial": "runs/window-depth/fit-v1/depth4/C1-raw/head.pth",
+  "initial_sha256": "83ff4753abc0c79f006e4d6b6b104f30a80cd907ffb05a9ed05c3cabe81b33c3",
+  "identity_weight": 0.2,
+  "scale_r": 0.2591032087802887,
+  "seed": 46,
+  "pilot": false,
+  "initial_description": "same historical selected depth4 raw C1 head; full frozen SSAST197-token caches",
+  "c0_manifest_sha256": "ea8c098d18e7a95a20652f6fe47623a1ca65ee934444f13b8158df5aab01c762"
+}
