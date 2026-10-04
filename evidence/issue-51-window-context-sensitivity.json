@@ -1,0 +1,341 @@
+{
+  "records": [
+    {
+      "depth": 2,
+      "arm": "raw",
+      "sample_id": "c3-test-00",
+      "intervention": "outside90..107 tokens replaced by per-window mean, central18 inputs and other input unchanged",
+      "normalized_prediction_difference": 0.009721910580992699,
+      "baseline_normalized_mae": 0.015379143878817558,
+      "altered_normalized_mae": 0.04378194361925125,
+      "mae_delta": 0.028402799740433693,
+      "source_iou": [
+        0.7651442885398865,
+        0.8519516587257385
+      ]
+    },
+    {
+      "depth": 2,
+      "arm": "raw",
+      "sample_id": "c3-test-00",
+      "intervention": "outside90..107 rms replaced by per-window mean, central18 inputs and other input unchanged",
+      "normalized_prediction_difference": 0.0003426664334256202,
+      "baseline_normalized_mae": 0.015379143878817558,
+      "altered_normalized_mae": 0.015257714316248894,
+      "mae_delta": -0.00012142956256866455,
+      "source_iou": [
+        0.9375953078269958,
+        0.8499058485031128
+      ]
+    },
+    {
+      "depth": 2,
+      "arm": "raw",
+      "sample_id": "c3-test-01",
+      "intervention": "outside90..107 tokens replaced by per-window mean, central18 inputs and other input unchanged",
+      "normalized_prediction_difference": 0.006425709463655949,
+      "baseline_normalized_mae": 0.01960463635623455,
+      "altered_normalized_mae": 0.03716401010751724,
+      "mae_delta": 0.017559373751282692,
+      "source_iou": [
+        0.6926654577255249,
+        0.8460628390312195
+      ]
+    },
+    {
+      "depth": 2,
+      "arm": "raw",
+      "sample_id": "c3-test-01",
+      "intervention": "outside90..107 rms replaced by per-window mean, central18 inputs and other input unchanged",
+      "normalized_prediction_difference": 0.00010145707346964628,
+      "baseline_normalized_mae": 0.01960463635623455,
+      "altered_normalized_mae": 0.01972120627760887,
+      "mae_delta": 0.00011656992137432098,
+      "source_iou": [
+        0.859120786190033,
+        0.8568565845489502
+      ]
+    },
+    {
+      "depth": 2,
+      "arm": "local",
+      "sample_id": "c3-test-00",
+      "intervention": "outside90..107 tokens replaced by per-window mean, central18 inputs and other input unchanged",
+      "normalized_prediction_difference": 0.11466517299413681,
+      "baseline_normalized_mae": 0.04885171353816986,
+      "altered_normalized_mae": 0.11733818054199219,
+      "mae_delta": 0.06848646700382233,
+      "source_iou": [
+        0.6132842898368835,
+        0.34785792231559753
+      ]
+    },
+    {
+      "depth": 2,
+      "arm": "local",
+      "sample_id": "c3-test-00",
+      "intervention": "outside90..107 rms replaced by per-window mean, central18 inputs and other input unchanged",
+      "normalized_prediction_difference": 0.0007781712338328362,
+      "baseline_normalized_mae": 0.04885171353816986,
+      "altered_normalized_mae": 0.04900866374373436,
+      "mae_delta": 0.0001569502055644989,
+      "source_iou": [
+        0.811639130115509,
+        0.647747278213501
+      ]
+    },
+    {
+      "depth": 2,
+      "arm": "local",
+      "sample_id": "c3-test-01",
+      "intervention": "outside90..107 tokens replaced by per-window mean, central18 inputs and other input unchanged",
+      "normalized_prediction_difference": 0.08063425123691559,
+      "baseline_normalized_mae": 0.06134577840566635,
+      "altered_normalized_mae": 0.07665055990219116,
+      "mae_delta": 0.01530478149652481,
+      "source_iou": [
+        0.5311763286590576,
+        0.5744845271110535
+      ]
+    },
+    {
+      "depth": 2,
+      "arm": "local",
+      "sample_id": "c3-test-01",
+      "intervention": "outside90..107 rms replaced by per-window mean, central18 inputs and other input unchanged",
+      "normalized_prediction_difference": 0.0454544834792614,
+      "baseline_normalized_mae": 0.06134577840566635,
+      "altered_normalized_mae": 0.03928070887923241,
+      "mae_delta": -0.022065069526433945,
+      "source_iou": [
+        0.7795495986938477,
+        0.7118290662765503
+      ]
+    },
+    {
+      "depth": 4,
+      "arm": "raw",
+      "sample_id": "c3-test-00",
+      "intervention": "outside90..107 tokens replaced by per-window mean, central18 inputs and other input unchanged",
+      "normalized_prediction_difference": 0.012864330783486366,
+      "baseline_normalized_mae": 0.015271340496838093,
+      "altered_normalized_mae": 0.05814015492796898,
+      "mae_delta": 0.042868814431130886,
+      "source_iou": [
+        0.6820630431175232,
+        0.8708853125572205
+      ]
+    },
+    {
+      "depth": 4,
+      "arm": "raw",
+      "sample_id": "c3-test-00",
+      "intervention": "outside90..107 rms replaced by per-window mean, central18 inputs and other input unchanged",
+      "normalized_prediction_difference": 0.0006213031592778862,
+      "baseline_normalized_mae": 0.015271340496838093,
+      "altered_normalized_mae": 0.01522290613502264,
+      "mae_delta": -4.8434361815452576e-05,
+      "source_iou": [
+        0.9337800741195679,
+        0.8627234697341919
+      ]
+    },
+    {
+      "depth": 4,
+      "arm": "raw",
+      "sample_id": "c3-test-01",
+      "intervention": "outside90..107 tokens replaced by per-window mean, central18 inputs and other input unchanged",
+      "normalized_prediction_difference": 0.00867545697838068,
+      "baseline_normalized_mae": 0.012291441671550274,
+      "altered_normalized_mae": 0.04278235137462616,
+      "mae_delta": 0.030490909703075886,
+      "source_iou": [
+        0.6327313184738159,
+        0.8864867687225342
+      ]
+    },
+    {
+      "depth": 4,
+      "arm": "raw",
+      "sample_id": "c3-test-01",
+      "intervention": "outside90..107 rms replaced by per-window mean, central18 inputs and other input unchanged",
+      "normalized_prediction_difference": 0.00020103587303310633,
+      "baseline_normalized_mae": 0.012291441671550274,
+      "altered_normalized_mae": 0.01248931884765625,
+      "mae_delta": 0.0001978771761059761,
+      "source_iou": [
+        0.913848876953125,
+        0.9008473753929138
+      ]
+    },
+    {
+      "depth": 4,
+      "arm": "local",
+      "sample_id": "c3-test-00",
+      "intervention": "outside90..107 tokens replaced by per-window mean, central18 inputs and other input unchanged",
+      "normalized_prediction_difference": 0.11440714448690414,
+      "baseline_normalized_mae": 0.07717966288328171,
+      "altered_normalized_mae": 0.06087448075413704,
+      "mae_delta": -0.01630518212914467,
+      "source_iou": [
+        0.7462138533592224,
+        0.6032819151878357
+      ]
+    },
+    {
+      "depth": 4,
+      "arm": "local",
+      "sample_id": "c3-test-00",
+      "intervention": "outside90..107 rms replaced by per-window mean, central18 inputs and other input unchanged",
+      "normalized_prediction_difference": 0.06616023927927017,
+      "baseline_normalized_mae": 0.07717966288328171,
+      "altered_normalized_mae": 0.10204917192459106,
+      "mae_delta": 0.024869509041309357,
+      "source_iou": [
+        0.7603721022605896,
+        0.30078259110450745
+      ]
+    },
+    {
+      "depth": 4,
+      "arm": "local",
+      "sample_id": "c3-test-01",
+      "intervention": "outside90..107 tokens replaced by per-window mean, central18 inputs and other input unchanged",
+      "normalized_prediction_difference": 0.08074180781841278,
+      "baseline_normalized_mae": 0.03688177838921547,
+      "altered_normalized_mae": 0.05385054275393486,
+      "mae_delta": 0.01696876436471939,
+      "source_iou": [
+        0.6229254603385925,
+        0.6802284121513367
+      ]
+    },
+    {
+      "depth": 4,
+      "arm": "local",
+      "sample_id": "c3-test-01",
+      "intervention": "outside90..107 rms replaced by per-window mean, central18 inputs and other input unchanged",
+      "normalized_prediction_difference": 0.008500096388161182,
+      "baseline_normalized_mae": 0.03688177838921547,
+      "altered_normalized_mae": 0.040015045553445816,
+      "mae_delta": 0.0031332671642303467,
+      "source_iou": [
+        0.7572998404502869,
+        0.6769854426383972
+      ]
+    },
+    {
+      "depth": 8,
+      "arm": "raw",
+      "sample_id": "c3-test-00",
+      "intervention": "outside90..107 tokens replaced by per-window mean, central18 inputs and other input unchanged",
+      "normalized_prediction_difference": 0.015582817606627941,
+      "baseline_normalized_mae": 0.015610701404511929,
+      "altered_normalized_mae": 0.07271929830312729,
+      "mae_delta": 0.05710859689861536,
+      "source_iou": [
+        0.5963989496231079,
+        0.8453385829925537
+      ]
+    },
+    {
+      "depth": 8,
+      "arm": "raw",
+      "sample_id": "c3-test-00",
+      "intervention": "outside90..107 rms replaced by per-window mean, central18 inputs and other input unchanged",
+      "normalized_prediction_difference": 0.0007483992958441377,
+      "baseline_normalized_mae": 0.015610701404511929,
+      "altered_normalized_mae": 0.017417917028069496,
+      "mae_delta": 0.0018072156235575676,
+      "source_iou": [
+        0.9112325310707092,
+        0.8882923722267151
+      ]
+    },
+    {
+      "depth": 8,
+      "arm": "raw",
+      "sample_id": "c3-test-01",
+      "intervention": "outside90..107 tokens replaced by per-window mean, central18 inputs and other input unchanged",
+      "normalized_prediction_difference": 0.012826324440538883,
+      "baseline_normalized_mae": 0.014157334342598915,
+      "altered_normalized_mae": 0.055497340857982635,
+      "mae_delta": 0.04134000651538372,
+      "source_iou": [
+        0.5219991207122803,
+        0.8647533655166626
+      ]
+    },
+    {
+      "depth": 8,
+      "arm": "raw",
+      "sample_id": "c3-test-01",
+      "intervention": "outside90..107 rms replaced by per-window mean, central18 inputs and other input unchanged",
+      "normalized_prediction_difference": 0.00031223890255205333,
+      "baseline_normalized_mae": 0.014157334342598915,
+      "altered_normalized_mae": 0.014644438400864601,
+      "mae_delta": 0.00048710405826568604,
+      "source_iou": [
+        0.9226107597351074,
+        0.8397166728973389
+      ]
+    },
+    {
+      "depth": 8,
+      "arm": "local",
+      "sample_id": "c3-test-00",
+      "intervention": "outside90..107 tokens replaced by per-window mean, central18 inputs and other input unchanged",
+      "normalized_prediction_difference": 0.10513202846050262,
+      "baseline_normalized_mae": 0.03334662318229675,
+      "altered_normalized_mae": 0.053371530026197433,
+      "mae_delta": 0.02002490684390068,
+      "source_iou": [
+        0.7174437642097473,
+        0.759529173374176
+      ]
+    },
+    {
+      "depth": 8,
+      "arm": "local",
+      "sample_id": "c3-test-00",
+      "intervention": "outside90..107 rms replaced by per-window mean, central18 inputs and other input unchanged",
+      "normalized_prediction_difference": 0.0005261697224341333,
+      "baseline_normalized_mae": 0.03334662318229675,
+      "altered_normalized_mae": 0.03331458568572998,
+      "mae_delta": -3.203749656677246e-05,
+      "source_iou": [
+        0.8464911580085754,
+        0.7790646553039551
+      ]
+    },
+    {
+      "depth": 8,
+      "arm": "local",
+      "sample_id": "c3-test-01",
+      "intervention": "outside90..107 tokens replaced by per-window mean, central18 inputs and other input unchanged",
+      "normalized_prediction_difference": 0.05209175869822502,
+      "baseline_normalized_mae": 0.04484522342681885,
+      "altered_normalized_mae": 0.031081372871994972,
+      "mae_delta": -0.013763850554823875,
+      "source_iou": [
+        0.8048079013824463,
+        0.7729949355125427
+      ]
+    },
+    {
+      "depth": 8,
+      "arm": "local",
+      "sample_id": "c3-test-01",
+      "intervention": "outside90..107 rms replaced by per-window mean, central18 inputs and other input unchanged",
+      "normalized_prediction_difference": 0.001263165264390409,
+      "baseline_normalized_mae": 0.04484522342681885,
+      "altered_normalized_mae": 0.044094864279031754,
+      "mae_delta": -0.0007503591477870941,
+      "source_iou": [
+        0.7385560274124146,
+        0.7453996539115906
+      ]
+    }
+  ],
+  "limitation": "off-distribution counterfactual; sensitivity is not evidence of timbre identity, SSAST gain or generalization"
+}

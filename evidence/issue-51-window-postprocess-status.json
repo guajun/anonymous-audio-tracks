@@ -1,0 +1,25 @@
+{
+  "complete": true,
+  "completed": [
+    {
+      "script": "evaluate_window_depth.py",
+      "returncode": 0,
+      "seconds": 85.47351870406419
+    },
+    {
+      "script": "audit_trained_association.py",
+      "returncode": 0,
+      "seconds": 15.648334271740168
+    },
+    {
+      "script": "inspect_window_context.py",
+      "returncode": 0,
+      "seconds": 10.528143840841949
+    },
+    {
+      "script": "summarize_window_depth.py",
+      "returncode": 0,
+      "seconds": 2.5359647730365396
+    }
+  ]
+}

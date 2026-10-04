@@ -23,6 +23,20 @@ class WindowDepthTests(unittest.TestCase):
     def test_batched_transport_and_gradients_match_reference(self):
         self.check_transport('cpu')
 
+    def test_far_intervention_preserves_center_path_at_every_depth(self):
+        torch.manual_seed(5154)
+        original=torch.randn(1,197,769)
+        altered=original.clone()
+        altered[:,:90]=original.mean(1,keepdim=True)
+        altered[:,108:]=original.mean(1,keepdim=True)
+        for depth in (2,4,8):
+            model=WindowVHead(depth)
+            with torch.no_grad():
+                a=model.temporal(model.project(original).transpose(1,2))
+                b=model.temporal(model.project(altered).transpose(1,2))
+            torch.testing.assert_close(a[:,:,98:100],b[:,:,98:100],rtol=0,atol=0)
+            self.assertGreater(float((a.mean(-1)-b.mean(-1)).abs().sum()),0.)
+
     @unittest.skipUnless(torch.cuda.is_available(),'CUDA equivalence checked on experiment GPU')
     def test_batched_cuda_transport_and_gradients_match_reference(self):
         self.check_transport('cuda')

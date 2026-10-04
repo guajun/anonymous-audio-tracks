@@ -1,0 +1,77 @@
+{
+  "started_unix": 1791107580.158194,
+  "elapsed_seconds": 2437.1904397010803,
+  "gpu": 0,
+  "concurrent_processes": 3,
+  "processes": [
+    {
+      "depth": 2,
+      "pid": 3486710,
+      "returncode": 0,
+      "command": [
+        "/mnt/ssd/user/lgy/issue-51-ssast/.venv-p0/bin/python",
+        "research/issue_51_ssast/train_window_depth.py",
+        "--depth",
+        "2",
+        "--cache",
+        "runs/window-depth/cache",
+        "--c0-cache",
+        "runs/p1/frame-c0-cache",
+        "--out",
+        "runs/window-depth/fit-v1/depth2",
+        "--steps",
+        "1000",
+        "--c0-steps",
+        "2000",
+        "--seconds",
+        "7200"
+      ]
+    },
+    {
+      "depth": 4,
+      "pid": 3486711,
+      "returncode": 0,
+      "command": [
+        "/mnt/ssd/user/lgy/issue-51-ssast/.venv-p0/bin/python",
+        "research/issue_51_ssast/train_window_depth.py",
+        "--depth",
+        "4",
+        "--cache",
+        "runs/window-depth/cache",
+        "--c0-cache",
+        "runs/p1/frame-c0-cache",
+        "--out",
+        "runs/window-depth/fit-v1/depth4",
+        "--steps",
+        "1000",
+        "--c0-steps",
+        "2000",
+        "--seconds",
+        "7200"
+      ]
+    },
+    {
+      "depth": 8,
+      "pid": 3486712,
+      "returncode": 0,
+      "command": [
+        "/mnt/ssd/user/lgy/issue-51-ssast/.venv-p0/bin/python",
+        "research/issue_51_ssast/train_window_depth.py",
+        "--depth",
+        "8",
+        "--cache",
+        "runs/window-depth/cache",
+        "--c0-cache",
+        "runs/p1/frame-c0-cache",
+        "--out",
+        "runs/window-depth/fit-v1/depth8",
+        "--steps",
+        "1000",
+        "--c0-steps",
+        "2000",
+        "--seconds",
+        "7200"
+      ]
+    }
+  ]
+}

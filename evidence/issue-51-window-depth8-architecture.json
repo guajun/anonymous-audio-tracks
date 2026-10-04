@@ -1,0 +1,31 @@
+{
+  "depth": 8,
+  "hidden": 128,
+  "k": 8,
+  "e_dim": 128,
+  "parameters": 887040,
+  "convolution_kernel": 3,
+  "convolution_dilations": [
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1
+  ],
+  "intermediate_local_receptive_tokens": 17,
+  "final_direct_receptive_tokens": 197,
+  "input_seconds": 2.0,
+  "precision": "GPU head bfloat16 autocast; V/amplitude/relations/loss float32; parameters float32",
+  "token_center_span_seconds": 1.96,
+  "readout": "center interpolation + full197-token mean and standard deviation",
+  "depth_comparison": "all depths share full-window readout; depth changes capacity and intermediate local mixing",
+  "training_seed": 46,
+  "scale_r": 0.2591032087802887,
+  "tf32_enabled": true,
+  "c0_cache_manifest_sha256": "ea8c098d18e7a95a20652f6fe47623a1ca65ee934444f13b8158df5aab01c762",
+  "protocol": "same full-window197-token inputs, same loss/optimizer/replay and sample schedule across depths",
+  "center_interpolated_local_receptive_tokens": 18
+}

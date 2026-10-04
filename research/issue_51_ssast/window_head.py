@@ -39,6 +39,7 @@ class WindowVHead(nn.Module):
             parameters=sum(p.numel() for p in self.parameters()),
             convolution_kernel=3,convolution_dilations=[1]*self.depth,
             intermediate_local_receptive_tokens=1+2*self.depth,
+            center_interpolated_local_receptive_tokens=2+2*self.depth,
             final_direct_receptive_tokens=197,input_seconds=2.,
             precision='GPU head bfloat16 autocast; V/amplitude/relations/loss float32; parameters float32',
             token_center_span_seconds=1.96,

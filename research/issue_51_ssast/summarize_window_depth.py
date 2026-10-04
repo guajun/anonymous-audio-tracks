@@ -21,6 +21,7 @@ def main():
         if [r['stage'] for r in full]!=stages:raise ValueError('incomplete course sequence')
         (args.fit/f'depth{depth}-full.json.gz').write_bytes(gzip.compress((d/'summary.json').read_bytes(),mtime=0))
         architecture=json.loads((d/'architecture.json').read_text())
+        architecture['center_interpolated_local_receptive_tokens']=2+2*depth
         courses=[]
         for record in full:
             current=record['stage'];item=dict(stage=current,actual_overlap=record['actual_overlap'])
@@ -46,6 +47,29 @@ def main():
         historical_comparison_limit='window readout, numerical execution and update budgets changed; no isolated receptive-field causal claim',
         seed_count=1,unseen_timbre_generalization_claimed=False,C4_started=False)
     (args.fit/'compact.json').write_text(json.dumps(summary,indent=2)+'\n')
+    tables=['# Full-window depth result tables','',
+        'All rows use the selected fixed-val checkpoint. Test metrics average two current-course samples.',
+        'Every head reads197 tokens; intermediate convolution support is5/9/17 tokens. One training seed.', '',
+        '|Depth|Parameters|Stage|Arm|Test source IoU|Full-scale source MAE|Unused FP|Copy blocks|Count MAE|Correct endpoints|',
+        '|---|---:|---|---|---|---|---:|---:|---:|---|']
+    for record in all_records:
+        for course in record['courses']:
+            for arm in ('raw','local'):
+                if arm not in course:continue
+                r=course[arm]['current']['test'];m=r['transported']
+                fmt=lambda values:'/'.join(f'{v:.4f}' for v in values)
+                endpoint=fmt(r['endpoint_correct_fraction_per_source']) if 'endpoint_correct_fraction_per_source' in r else 'n/a'
+                tables.append(f"|{record['depth']}|{record['architecture']['parameters']}|{course['stage']}|{arm}|{fmt(m['per_source_iou'])}|{fmt(m['per_source_mae'])}|{m['unused_false_positive_fraction']:.3%}|{m['candidate_copy_window_fraction']:.3%}|{m['source_count_mae']:.4f}|{endpoint}|")
+    tables+=['','|Depth|Stage|Arm|Updates|Selected update|Stop|Total seconds|',
+        '|---|---|---|---:|---:|---|---:|']
+    for record in all_records:
+        for course in record['courses']:
+            for arm in ('raw','local'):
+                if arm not in course:continue
+                r=course[arm]
+                tables.append(f"|{record['depth']}|{course['stage']}|{arm}|{r['updates']}|{r['selected_update']}|{r['stop_reason']}|{r['seconds']:.2f}|")
+    tables+=['','Walltime includes training-time validation/final evaluation and concurrent resource contention; it is not isolated throughput.','']
+    (args.fit/'tables.md').write_text('\n'.join(tables))
     colors={2:'#2379bd',4:'#d77820',8:'#3f9653'}
     fig,axes=plt.subplots(2,2,figsize=(12,8),constrained_layout=True)
     for record in all_records:
@@ -61,6 +85,7 @@ def main():
         axes[0,col].set_title(arm);axes[0,col].set_ylim(0,1)
         axes[0,col].set_ylabel('Mean source area IoU');axes[0,col].legend()
         axes[1,col].set_ylabel('Source-count MAE');axes[1,col].set_xlabel('Current course test')
+        axes[1,col].set_ylim(0,8)
     fig.savefig(args.fit/'depth-course-comparison.png',dpi=160);plt.close(fig)
     fig,axes=plt.subplots(2,5,figsize=(18,7),constrained_layout=True)
     for col,stage in enumerate(stages):

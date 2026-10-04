@@ -37,14 +37,16 @@ def main():
                         key='tokens' if kind=='tokens' else 'rms'
                         value=row[key].clone()
                         mean=value.float().mean(1,keepdim=True).to(value.dtype)
-                        value[:,:96]=mean.expand_as(value)[:,:96]
-                        value[:,102:]=mean.expand_as(value)[:,102:]
+                        # Common protected range covers both98/99 centers +/-8
+                        # at the deepest CNN; only statistical readout sees changes.
+                        value[:,:90]=mean.expand_as(value)[:,:90]
+                        value[:,108:]=mean.expand_as(value)[:,108:]
                         altered[key]=value
                         _,pred,_,_,_=shared.forward(model,altered,scale,association)
                         pred=pred.cpu().numpy()
                         metric=shared.measure(pred,row['target'].cpu().numpy(),row['times'],scale)
                         records.append(dict(depth=depth,arm=arm,sample_id=row['entry']['sample_id'],
-                            intervention=f'outside96..101 {kind} replaced by per-window mean, other input unchanged',
+                            intervention=f'outside90..107 {kind} replaced by per-window mean, central18 inputs and other input unchanged',
                             normalized_prediction_difference=float(np.abs(pred-original).mean()/scale),
                             baseline_normalized_mae=base['normalized_mae'],
                             altered_normalized_mae=metric['normalized_mae'],
