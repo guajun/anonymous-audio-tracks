@@ -1,5 +1,22 @@
 # E/P 输出头与排列无关训练损失（issue #7）
 
+## 目标设计与本文范围
+
+项目目标以 [身份活动向量与局部拼接规范](IDENTITY_ACTIVITY_DESIGN.md)（#48）为准。
+本文其余章节记录 **main 当前 Query / E/P probability 实现及 issue #7 历史验证**，
+不是新目标已实现的声明；最初 fake features 验证与后续真实训练应区分，后者见 [TRAINING](TRAINING.md)。
+
+目标非零 V 的 `A=||V||₂` 是连续强度，`E=V/A` 是局部可匹配方向；严格零没有身份，
+不需要持久静音 E 或额外 Q。当前 epsilon/退化单位向量、静音有效 E 与 sigmoid P 是旧协议行为，
+不得直接移作 V 的零身份语义或把 `P·E` 当校准 RMS 输出。gate 到零与关闭区间梯度方案仍待验证。
+E 下边沿是进入零活动性的表征事件，未选定额外事件头，也不是 ADSR release。
+
+目标主链是可微局部关联、同权重搬运 A、整段一次 PIT 与连续 shape；同形状可暂时 E 接近，
+分岔后由 shape 反传，不要求同来源在互不相交上下文自然接近。下文的同源/异源原型对比损失
+是现有算法，不是新目标必要条件。cosine、soft/hard 权重和 TimeCycle 辅助 loss 职责不同；
+仅 hard argmax 搬运不能让配对选择承担 shape→E 梯度。无 Query 只是研究候选，槽位不等于身份。
+具体迁移须另行实现/验收，不能将工程过拟合结果当作局部关联成功证据。
+
 本文件固化 `aat.models`、`aat.losses`、`tests/models/` 的结构、公式与训练取舍。协议仍为 `docs/SCHEMAS.md` v0.1.0：`E[N,K,128]`、`P[N,K]`，K 可配置、embedding 维度固定 128；`P[n,k]` 是窗口中心时刻的活动概率，不是“整个窗口曾活动”。本模块只用 fake features，不加载 AuT、不做完整训练脚本、不做乐器分类或灯光。
 
 ## 1. 输出头（`aat.models.SourceQueryHead`）
