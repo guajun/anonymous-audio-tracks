@@ -14,11 +14,13 @@ def curve(a,b,mask):
         per_source_mae=np.abs(x-y).mean(0).tolist())
 
 
-def measure(a,b,times,scale):
+def measure(a,b,times,scale, *, order_override=None):
     aa=torch.tensor(a/scale)
     bb=torch.tensor(b/scale)
     order,_,gap=pit(aa,bb)
     order=order.numpy()
+    if order_override is not None:
+        order=np.asarray(order_override,dtype=np.int64)
     x=a[:,order]
     active=b>.001
     overlap=active.sum(1)>=2
@@ -55,7 +57,7 @@ def measure(a,b,times,scale):
                 median_abs_seconds=float(np.median(np.abs(times[pred]-times[ref]))) if len(pred)==len(ref) and len(ref) else None)
         onset_offset.append(edge)
     all_mask=np.ones(len(b),dtype=bool)
-    return dict(order=order.tolist(),all=curve(x,b,all_mask),
+    return dict(order=order.tolist(),assignment='whole-sequence PIT' if order_override is None else 'supplied teacher source rows',all=curve(x,b,all_mask),
         nonoverlap=curve(x,b,~overlap),overlap=curve(x,b,overlap),
         normalized_mae=float(np.abs(x-b).mean()/scale),
         per_source_missed_fraction=per_source_miss,
