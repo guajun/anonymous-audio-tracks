@@ -55,4 +55,3 @@ def test_c0_render_config_has_one_source_and_safe_note_spacing():
     assert len(config.sources)==1
     assert len(events)==3
     assert min(b.start_seconds-a.start_seconds for a,b in zip(events,events[1:]))>1.5+config.sources[0].amp.release_ms/1000
-

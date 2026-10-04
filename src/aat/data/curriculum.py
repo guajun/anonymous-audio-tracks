@@ -218,4 +218,3 @@ def prepare_c1_local(out: str | Path,*,seed=4640,counts=(4,2,2)):
            'entries':entries}
     dump_json(out/'index.json',index)
     return index
-

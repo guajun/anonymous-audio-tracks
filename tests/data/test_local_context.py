@@ -80,4 +80,3 @@ def test_new_config_retains_alternation_and_distinct_events():
 def test_centers_must_belong_to_valid_label_grid():
     with pytest.raises(ValueError,match='label grid'):
         audit_local_context(dense_labels(),np.array([1.001]),audio_frames=13000)
-
