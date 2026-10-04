@@ -9,7 +9,7 @@ import torch
 from head import TemporalVHead
 from local_association import transport
 from course_loss import loss
-from course_metrics import measure, endpoint_evidence
+from course_metrics import measure, endpoint_evidence, curve
 from features import sha256
 
 
@@ -54,6 +54,17 @@ def evaluate(model,rows,scale,association,out=None):
         cosine=unit@unit.transpose(1,2)
         pair_mask=active[:,:,None]&active[:,None,:]&~torch.eye(8,device=v.device,dtype=torch.bool)[None]
         record['raw_active_E_pair_cosine_mean']=float(cosine[pair_mask].mean()) if pair_mask.any() else None
+        if 'context_valid_fraction' in row:
+            boundary=row['context_valid_fraction']<1
+            record['input_context']=dict(padded_centers=int(boundary.sum()),complete_centers=int((~boundary).sum()))
+            for variant,amplitude in [('raw',raw),('transported',ta),
+                    ('raw_gated',np.where(raw>.001,raw,0)),('transported_gated',np.where(ta>.001,ta,0))]:
+                matched=amplitude[:,record[variant]['order']]
+                record[variant]['input_boundary']={}
+                for name,mask in [('padded',boundary),('complete',~boundary)]:
+                    evidence=curve(matched,b,mask)
+                    evidence['normalized_mae']=float(np.abs(matched[mask]-b[mask]).mean()/scale) if mask.any() else None
+                    record[variant]['input_boundary'][name]=evidence
         if association:
             cc=c.cpu().numpy()
             record['endpoints']=endpoint_evidence(raw,ta,cc,b,row['times'],scale)
@@ -80,7 +91,7 @@ def score(records):
     return np.mean([r['transported']['normalized_mae']+.1*(1-np.mean(r['transported']['all']['per_source_iou'])) for r in records])
 
 
-def fit(model,all_rows,current,scale,association,steps,seconds,out):
+def fit(model,all_rows,current,scale,association,steps,seconds,out, *, validation_interval=None):
     out.mkdir(parents=True,exist_ok=True)
     train=[r for r in all_rows if r['entry']['split']=='train']
     new=[r for r in train if r['stage']==current]
@@ -92,7 +103,7 @@ def fit(model,all_rows,current,scale,association,steps,seconds,out):
     for step in range(1,steps+1):
         if time.monotonic()-start>=seconds:
             reason='wall_clock_budget';break
-        selected=[random.choice(old),random.choice(new)]
+        selected=[random.choice(old or new),random.choice(new)]
         optimizer.zero_grad(set_to_none=True)
         parts=[]
         for row in selected:
@@ -118,7 +129,7 @@ def fit(model,all_rows,current,scale,association,steps,seconds,out):
                 reason='nonfinite gradient; optimizer step refused',parts=parts),indent=2)+'\n')
             raise ValueError('nonfinite gradient')
         optimizer.step();update=step
-        interval=10 if association else 100
+        interval=validation_interval or (10 if association else 100)
         if step==1 or step%interval==0 or step==steps:
             results=evaluate(model,val,scale,association)
             current_score=float(score(results))
@@ -142,7 +153,7 @@ def fit(model,all_rows,current,scale,association,steps,seconds,out):
     report=dict(stage=current,association_enabled=association,cycle_enabled=False,
         seed=46,updates=update,stop_reason=reason,seconds=time.monotonic()-start,
         budget=dict(updates=steps,seconds=seconds),scale_r=scale,replay_old_fraction=.5,
-        validation_interval_updates=10 if association else 100,
+        validation_interval_updates=validation_interval or (10 if association else 100),
         selection='equal-sample mean val normalized MAE + .1*(1-mean source IoU), whole-PIT assignment, all seen stages; no test tuning',
         loss='Huber(delta.1)/.1 + .1areaIoU + .1silence + .1unused, whole-sequence PIT',
         history=history,validation=validation,test=test)

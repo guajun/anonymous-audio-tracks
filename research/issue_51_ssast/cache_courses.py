@@ -21,6 +21,7 @@ def main():
     p.add_argument('--checkpoint', required=True)
     p.add_argument('--data', type=Path, required=True)
     p.add_argument('--out', type=Path, required=True)
+    p.add_argument('--full-window', action='store_true')
     args = p.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
     torch.set_num_threads(4)
@@ -56,21 +57,22 @@ def main():
                     raise ValueError('scored course window padding')
                 fb = torch.stack([log_fbank(w) for w, _ in crops])
                 # Head-receptive-field subset, with full-window encoder attention.
-                features.append(enc(fb).mean(1)[:, 96:102].cpu().numpy().astype(np.float16))
+                indices = np.arange(197) if args.full_window else np.arange(96,102)
+                features.append(enc(fb).mean(1)[:, indices].cpu().numpy().astype(np.float16))
                 for c in cc:
-                    pos = np.floor((c-1+enc.grid[2][96:102])*wav.sample_rate+.5).astype(np.int64)
+                    pos = np.floor((c-1+enc.grid[2][indices])*wav.sample_rate+.5).astype(np.int64)
                     bypass.append(np.sqrt(mean_square_at_samples(wav.samples, wav.sample_rate, .02, pos)))
             mix = np.sqrt(mean_square_at_samples(wav.samples, wav.sample_rate, .02,
                 np.floor(centers*wav.sample_rate+.5).astype(np.int64)))
             np.savez(dest, tokens=np.concatenate(features), token_rms=np.array(bypass,dtype=np.float32),
                 center_times=centers, targets=labels.rms[valid], mix_rms_oracle=mix.astype(np.float32))
             row = dict(**entry, cache=dest.name, cache_sha256=sha256(dest),
-                actual_center_audit=audit, head_token_indices=[96,97,98,99,100,101])
+                actual_center_audit=audit, head_token_indices=indices.tolist())
             rows.append(row)
             print(stage, entry['sample_id'], flush=True)
         manifest = dict(stage=stage, encoder=enc.manifest, data_index=index,
             elapsed_seconds=time.monotonic()-start, entries=rows,
-            head_receptive_field_only=True, global_encoder_attention_seconds=2.)
+            head_receptive_field_only=not args.full_window, global_encoder_attention_seconds=2.)
         (out/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
 
 

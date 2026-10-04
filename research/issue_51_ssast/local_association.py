@@ -10,7 +10,7 @@ def sinkhorn(scores, iterations=8):
     return z.exp()
 
 
-def transport(v, times, *, gate=.001, horizon=.9, temperature=.1):
+def transport(v, times, *, gate=.001, horizon=.9, temperature=.1, record_selection=False):
     # v[T,K,D] in full-scale units. E strictly exists only where A>gate.
     # Gate selects reliable nonzero evidence, not a persistent silence identity.
     a = torch.linalg.vector_norm(v, dim=-1)
@@ -19,6 +19,8 @@ def transport(v, times, *, gate=.001, horizon=.9, temperature=.1):
     t, k, d = v.shape
     tracks = [None] * k  # latest genuine candidate descriptor within horizon
     latest = [-1] * k
+    candidates = [-1] * k
+    selection = []
     fragment_ids = [-1] * k
     next_fragment = 0
     fragment_history = []
@@ -32,6 +34,12 @@ def transport(v, times, *, gate=.001, horizon=.9, temperature=.1):
                 fragment_ids[j] = -1
                 fragments.append([i, j])
         current = torch.nonzero(valid[i], as_tuple=False).flatten().tolist()
+        if record_selection:
+            order = ref_rows + [j for j in range(k) if j not in ref_rows]
+            selection.append(dict(rows=order,
+                columns=current+[j for j in range(k) if j not in current],
+                references=[[latest[j],candidates[j]] if j in ref_rows else [-1,-1] for j in order],
+                direct=not ref_rows,empty=not current))
         c = torch.zeros(k, k, device=v.device, dtype=v.dtype)
         if not current:
             amplitudes.append(a[i] * 0)
@@ -43,6 +51,7 @@ def transport(v, times, *, gate=.001, horizon=.9, temperature=.1):
             c[current, current] = 1.
             for j in current:
                 tracks[j], latest[j] = e[i, j], i
+                candidates[j] = j
                 fragment_ids[j] = next_fragment
                 next_fragment += 1
                 anchors.append([i, j])
@@ -75,11 +84,13 @@ def transport(v, times, *, gate=.001, horizon=.9, temperature=.1):
                     picked = int(c[j].detach().argmax())
                     tracks[j] = e[i, picked]
                     latest[j] = i
+                    candidates[j] = picked
         amplitudes.append(c @ a[i])
         matrices.append(c)
         fragment_history.append(fragment_ids.copy())
     return torch.stack(amplitudes), torch.stack(matrices), dict(
         anchors=anchors, expired_fragments=fragments, fragment_ids_by_frame=fragment_history,
+        **({'selection':selection} if record_selection else {}),
         fragment_count=next_fragment, horizon_seconds=horizon,
         temperature=temperature, gate=gate, sinkhorn_iterations=8,
         memory='latest actual nonzero candidate, dominant-match reference selection; expires after horizon; no EMA/recursive mixture',
