@@ -1,0 +1,10 @@
+# Tested feature runtime; kept separate from main project dependencies.
+# Install torch/torchaudio/torchvision from the cu128 wheel index on this host.
+torch==2.9.1
+torchaudio==2.9.1
+torchvision==0.24.1
+timm==0.4.5
+matplotlib==3.10.7
+numpy>=2,<3
+# P0 real-audio smoke reuses the main renderer extra.
+dawdreamer>=0.9,<0.10
