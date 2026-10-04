@@ -1,0 +1,33 @@
+{
+  "date_local": "2026-10-04",
+  "timezone": "UTC+8",
+  "user_authorization_source_thread": "01a105ed-cdf2-7f61-9651-b8386ace4f42",
+  "remote_checkout": "/mnt/ssd/user/lgy/issue-51-ssast",
+  "render_counts_per_stage": [4, 2, 2],
+  "training_seed": 46,
+  "stage_render_seeds": {"C1": 4640, "C2-low": 51520, "C2-high": 51540, "C3": 51560},
+  "attempts": [
+    {
+      "run": "runs/courses/fit-v1",
+      "result": "Raw C1 completed2000 updates; recursive soft-mixture reference local training raised nonfinite loss before first100-update checkpoint. Traceback retained. No valid local results claimed."
+    },
+    {
+      "run": "runs/courses/fit-v2",
+      "result": "Latest genuine-candidate reference avoids recursive mixtures. C1 local reached61 updates in180-second budget;100-update validation interval selected only first-update checkpoint. Stopped this owned run during C2-low to correct validation cadence; partial artifacts retained. Not final curriculum evidence."
+    },
+    {
+      "run": "runs/courses/fit-v3",
+      "result": "Final stage sequence with local validation every10 updates and120-second update-loop budget; raw validation every100 and2000-update/300-second cap. Actual updates/results stored in course summary. Final/checkpoint states both retained."
+    }
+  ],
+  "C3_data_revision": {
+    "initial": "Extending note duration while keeping fast-decaying pluck produced only about8percent overlap; not used for course training.",
+    "revised": "Same fixed pluck sample retriggered within ONE source every40ms10times with increasing velocities, sustaining B while A decays; actual scored overlap about34-35percent. Two anonymous sources throughout."
+  },
+  "cycle_enabled": false,
+  "C0_original_collection_gate_passed": false,
+  "C4_started": false,
+  "unseen_timbre_generalization_claimed": false,
+  "SSAST_vs_RMS_bypass_gain_claimed": false,
+  "ablation_limit": "Removal of recursive descriptor mixture and additional gradient guards were numerical engineering changes; no controlled causal proof of the original nonfinite failure mechanism."
+}

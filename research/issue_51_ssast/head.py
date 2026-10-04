@@ -16,14 +16,16 @@ class TemporalVHead(nn.Module):
 
     def forward(self, tokens, rms):
         # [windows,197,768], bypass in common train-only RMS scale.
-        if tokens.ndim != 3 or tokens.shape[1:] != (197, 768) or rms.shape != tokens.shape[:2]:
-            raise ValueError("head requires the audited frame stride1 grid [N,197,768] and matching RMS")
+        if tokens.ndim != 3 or tokens.shape[1] not in (197, 6) or tokens.shape[2] != 768 or rms.shape != tokens.shape[:2]:
+            raise ValueError("head requires audited197-token frame grid or its exact96..101 subset")
         # Two kernel3 convolutions have radius2. The two interpolated center
         # states need exactly input tokens96..101; these encoder tokens already
         # attend to the full 2s window. This equals the full-sequence head at
         # the center and avoids computing discarded output positions.
-        tokens = tokens[:, 96:102].float()
-        rms = rms[:, 96:102]
+        if tokens.shape[1] == 197:
+            tokens = tokens[:, 96:102]
+            rms = rms[:, 96:102]
+        tokens = tokens.float()
         h = self.project(torch.cat([tokens, rms.unsqueeze(-1)], dim=-1))
         h = self.temporal(h.transpose(1, 2)).transpose(1, 2)
         # frame stride1 centers: 0.0175+.01*j -> 1s at j=98.25.
