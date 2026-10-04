@@ -83,7 +83,7 @@ def test_config_to_dict_is_json_serialisable_and_path_free() -> None:
         (lambda d: d["render"].update({"unknown": 1}), "unknown key"),
         (lambda d: d["render"].update({"sample_rate": 100}), "sample_rate"),
         (lambda d: d["render"].update({"duration_seconds": 0.5}), "duration_seconds"),
-        (lambda d: d["sources"].pop(), "expected 2..8"),
+        (lambda d: d.update({"sources": []}), "expected 1..8"),
         (lambda d: d["sources"][0].update({"id": "s02"}), "duplicate id"),
         (lambda d: d["sources"][0]["sample"].update({"type": "piano"}), "unsupported sample type"),
         (lambda d: d["sources"][0]["sample"]["params"].update({"bogus": 1}), "unknown key"),

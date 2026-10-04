@@ -600,9 +600,9 @@ def config_from_dict(data: Mapping[str, Any], *, origin: str = "<config>") -> Re
     raw_sources = _require_key(table, "sources", origin)
     if not isinstance(raw_sources, list):
         raise RenderConfigError("sources: expected an array of source tables")
-    if not 2 <= len(raw_sources) <= 8:
+    if not 1 <= len(raw_sources) <= 8:
         raise RenderConfigError(
-            f"sources: expected 2..8 independently controlled sources, got {len(raw_sources)}"
+            f"sources: expected 1..8 independently controlled sources, got {len(raw_sources)}"
         )
     sources = tuple(
         _parse_source(

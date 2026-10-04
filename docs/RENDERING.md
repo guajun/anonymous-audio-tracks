@@ -2,6 +2,8 @@
 
 本文说明 `src/aat/render/`、`scripts/render_sample.py` 和 `configs/render/` 的用法与证据语义。范围是**生成一首音乐内部的 2–4 个可独立控制声音层，并导出混音与分轨**；不做大规模数据生成、训练、活动阈值定义，也不购买或下载任何商业插件。
 
+连续分轨包络与确定性课程语料的独立入口见 [合成课程管线](SYNTHETIC_CURRICULUM.md)。
+
 ## 1. 快速开始
 
 ```sh
@@ -45,7 +47,7 @@ runs/render/smoke-0001/
 
 `[surge]`（可选）：`probe_duration_seconds`、`note`、`velocity`。**不要提交 `plugin_path`**；插件位置只通过 `--surge-plugin-path` 或本地未跟踪的覆盖文件传入。
 
-`[[sources]]`（2–8 个，冒烟样例 4 个）：
+`[[sources]]`（1–8 个，冒烟样例 4 个；支持单来源课程）：
 
 - `id`：不带乐器语义的来源 ID，也是分轨文件名与 `sources.json` 的键。
 - `sample`：`type ∈ {kick, snare, hat, pluck, pad}`、可覆盖 `seed`、`params`（未知参数报错）。
