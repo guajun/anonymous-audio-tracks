@@ -1,0 +1,1021 @@
+{
+  "cases": [
+    {
+      "name": "identity_swap",
+      "coordinate": {
+        "teacher": "full amplitude + same direct bidirectional ID; frozen GT/directional reliability; no index continuity",
+        "block_frames": 1,
+        "block_source_orders": [
+          [
+            0,
+            1
+          ],
+          [
+            1,
+            0
+          ],
+          [
+            0,
+            1
+          ],
+          [
+            0,
+            1
+          ]
+        ],
+        "sweeps": 1,
+        "exhaustive": false,
+        "search_scope": "all one-to-one block states; coordinate descent, NOT global optimum",
+        "amplitude_slack": 0.02,
+        "amplitude_cap": 0.020001415610313416,
+        "objective_before": 0.10495748370885849,
+        "objective_after": 0.07013455602806161,
+        "amplitude_before": 1.4156103134155273e-06,
+        "amplitude_after": 0.0003391933767134925,
+        "identity_before": 0.5247803330421448,
+        "identity_after": 0.3489767909049988,
+        "objective_history": [
+          0.10495748370885849,
+          0.07013454857748101
+        ],
+        "accepted_moves": 1,
+        "changed_blocks": 1,
+        "conditional_state_gaps": [
+          0.004227767910452707,
+          0.03482293513137748,
+          0.035497390707044996,
+          0.020280699457617624
+        ],
+        "confidence_definition": "frozen GT envelope distinctness times prediction direction spread; reliability, not posterior label correctness",
+        "confidence_mean": 0.8360655903816223,
+        "zero_rows": "undefined identity; original norms still supervised"
+      },
+      "exhaustive": {
+        "teacher": "full amplitude + same direct bidirectional ID; frozen GT/directional reliability; no index continuity",
+        "block_frames": 1,
+        "block_source_orders": [
+          [
+            0,
+            1
+          ],
+          [
+            0,
+            1
+          ],
+          [
+            1,
+            0
+          ],
+          [
+            2,
+            1
+          ]
+        ],
+        "sweeps": 1,
+        "exhaustive": true,
+        "search_scope": "all one-to-one block states; coordinate descent, NOT global optimum",
+        "amplitude_slack": 0.02,
+        "amplitude_cap": 0.020001415610313416,
+        "objective_before": 0.10495748370885849,
+        "objective_after": 0.05828170351265823,
+        "amplitude_before": 1.4156103134155273e-06,
+        "amplitude_after": 0.01739154628991043,
+        "identity_before": 0.5247803330421448,
+        "identity_after": 0.204450786113739,
+        "objective_history": [
+          0.10495748370885849,
+          0.05828170351265823
+        ],
+        "accepted_moves": 2,
+        "changed_blocks": 2,
+        "conditional_state_gaps": [],
+        "confidence_definition": "frozen GT envelope distinctness times prediction direction spread; reliability, not posterior label correctness",
+        "confidence_mean": 0.8360655903816223,
+        "zero_rows": "undefined identity; original norms still supervised"
+      },
+      "order": [
+        [
+          0,
+          1,
+          2
+        ],
+        [
+          1,
+          0,
+          2
+        ],
+        [
+          0,
+          1,
+          2
+        ],
+        [
+          0,
+          1,
+          2
+        ]
+      ],
+      "exhaustive_order": [
+        [
+          0,
+          1,
+          2
+        ],
+        [
+          0,
+          1,
+          2
+        ],
+        [
+          1,
+          0,
+          2
+        ],
+        [
+          2,
+          1,
+          0
+        ]
+      ],
+      "optimality_gap": 0.011852852515403377,
+      "torch_full_cost": 0.07013455033302307,
+      "full_cost_abs_error": 5.69503853797837e-09
+    },
+    {
+      "name": "stable_identity",
+      "coordinate": {
+        "teacher": "full amplitude + same direct bidirectional ID; frozen GT/directional reliability; no index continuity",
+        "block_frames": 1,
+        "block_source_orders": [
+          [
+            0,
+            1
+          ],
+          [
+            0,
+            1
+          ],
+          [
+            0,
+            1
+          ],
+          [
+            0,
+            1
+          ]
+        ],
+        "sweeps": 1,
+        "exhaustive": false,
+        "search_scope": "all one-to-one block states; coordinate descent, NOT global optimum",
+        "amplitude_slack": 0.02,
+        "amplitude_cap": 0.020001415610313416,
+        "objective_before": 1.4156103134155273e-06,
+        "objective_after": 1.4156103134155273e-06,
+        "amplitude_before": 1.4156103134155273e-06,
+        "amplitude_after": 1.4156103134155273e-06,
+        "identity_before": 0.0,
+        "identity_after": 0.0,
+        "objective_history": [
+          1.4156103134155273e-06
+        ],
+        "accepted_moves": 0,
+        "changed_blocks": 0,
+        "conditional_state_gaps": [
+          0.020280700156109555,
+          0.10529384586494515,
+          0.10529384586494515,
+          0.020280700156109555
+        ],
+        "confidence_definition": "frozen GT envelope distinctness times prediction direction spread; reliability, not posterior label correctness",
+        "confidence_mean": 0.8360655903816223,
+        "zero_rows": "undefined identity; original norms still supervised"
+      },
+      "exhaustive": {
+        "teacher": "full amplitude + same direct bidirectional ID; frozen GT/directional reliability; no index continuity",
+        "block_frames": 1,
+        "block_source_orders": [
+          [
+            0,
+            1
+          ],
+          [
+            0,
+            1
+          ],
+          [
+            0,
+            1
+          ],
+          [
+            0,
+            1
+          ]
+        ],
+        "sweeps": 1,
+        "exhaustive": true,
+        "search_scope": "all one-to-one block states; coordinate descent, NOT global optimum",
+        "amplitude_slack": 0.02,
+        "amplitude_cap": 0.020001415610313416,
+        "objective_before": 1.4156103134155273e-06,
+        "objective_after": 1.4156103134155273e-06,
+        "amplitude_before": 1.4156103134155273e-06,
+        "amplitude_after": 1.4156103134155273e-06,
+        "identity_before": 0.0,
+        "identity_after": 0.0,
+        "objective_history": [
+          1.4156103134155273e-06,
+          1.4156103134155273e-06
+        ],
+        "accepted_moves": 0,
+        "changed_blocks": 0,
+        "conditional_state_gaps": [],
+        "confidence_definition": "frozen GT envelope distinctness times prediction direction spread; reliability, not posterior label correctness",
+        "confidence_mean": 0.8360655903816223,
+        "zero_rows": "undefined identity; original norms still supervised"
+      },
+      "order": [
+        [
+          0,
+          1,
+          2
+        ],
+        [
+          0,
+          1,
+          2
+        ],
+        [
+          0,
+          1,
+          2
+        ],
+        [
+          0,
+          1,
+          2
+        ]
+      ],
+      "exhaustive_order": [
+        [
+          0,
+          1,
+          2
+        ],
+        [
+          0,
+          1,
+          2
+        ],
+        [
+          0,
+          1,
+          2
+        ],
+        [
+          0,
+          1,
+          2
+        ]
+      ],
+      "optimality_gap": 0.0,
+      "torch_full_cost": 1.4142135569272796e-06,
+      "full_cost_abs_error": 1.3967564882477745e-09
+    },
+    {
+      "name": "strong_conflict",
+      "coordinate": {
+        "teacher": "full amplitude + same direct bidirectional ID; frozen GT/directional reliability; no index continuity",
+        "block_frames": 1,
+        "block_source_orders": [
+          [
+            0,
+            1
+          ],
+          [
+            1,
+            0
+          ],
+          [
+            0,
+            1
+          ],
+          [
+            0,
+            1
+          ]
+        ],
+        "sweeps": 1,
+        "exhaustive": false,
+        "search_scope": "all one-to-one block states; coordinate descent, NOT global optimum",
+        "amplitude_slack": 0.02,
+        "amplitude_cap": 0.020007069110779412,
+        "objective_before": 0.1389301329850241,
+        "objective_after": 0.09302986312855788,
+        "amplitude_before": 7.069110779411858e-06,
+        "amplitude_after": 0.00046484817017622974,
+        "identity_before": 0.6946153044700623,
+        "identity_after": 0.46282505989074707,
+        "objective_history": [
+          0.1389301329850241,
+          0.09302986312855788
+        ],
+        "accepted_moves": 1,
+        "changed_blocks": 1,
+        "conditional_state_gaps": [
+          null,
+          0.045900269856466225,
+          0.04681472055765651,
+          null
+        ],
+        "confidence_definition": "frozen GT envelope distinctness times prediction direction spread; reliability, not posterior label correctness",
+        "confidence_mean": 0.9622641205787659,
+        "zero_rows": "undefined identity; original norms still supervised"
+      },
+      "exhaustive": {
+        "teacher": "full amplitude + same direct bidirectional ID; frozen GT/directional reliability; no index continuity",
+        "block_frames": 1,
+        "block_source_orders": [
+          [
+            0,
+            1
+          ],
+          [
+            1,
+            0
+          ],
+          [
+            0,
+            1
+          ],
+          [
+            0,
+            1
+          ]
+        ],
+        "sweeps": 1,
+        "exhaustive": true,
+        "search_scope": "all one-to-one block states; coordinate descent, NOT global optimum",
+        "amplitude_slack": 0.02,
+        "amplitude_cap": 0.020007069110779412,
+        "objective_before": 0.1389301329850241,
+        "objective_after": 0.09302986312855788,
+        "amplitude_before": 7.069110779411858e-06,
+        "amplitude_after": 0.00046484817017622974,
+        "identity_before": 0.6946153044700623,
+        "identity_after": 0.46282505989074707,
+        "objective_history": [
+          0.1389301329850241,
+          0.09302986312855788
+        ],
+        "accepted_moves": 1,
+        "changed_blocks": 1,
+        "conditional_state_gaps": [],
+        "confidence_definition": "frozen GT envelope distinctness times prediction direction spread; reliability, not posterior label correctness",
+        "confidence_mean": 0.9622641205787659,
+        "zero_rows": "undefined identity; original norms still supervised"
+      },
+      "order": [
+        [
+          0,
+          1,
+          2
+        ],
+        [
+          1,
+          0,
+          2
+        ],
+        [
+          0,
+          1,
+          2
+        ],
+        [
+          0,
+          1,
+          2
+        ]
+      ],
+      "exhaustive_order": [
+        [
+          0,
+          1,
+          2
+        ],
+        [
+          1,
+          0,
+          2
+        ],
+        [
+          0,
+          1,
+          2
+        ],
+        [
+          0,
+          1,
+          2
+        ]
+      ],
+      "optimality_gap": 0.0,
+      "torch_full_cost": 0.09302985668182373,
+      "full_cost_abs_error": 6.446734146514643e-09
+    },
+    {
+      "name": "all_zero_gt",
+      "coordinate": {
+        "teacher": "full amplitude + same direct bidirectional ID; frozen GT/directional reliability; no index continuity",
+        "block_frames": 1,
+        "block_source_orders": [
+          [
+            1,
+            2
+          ],
+          [
+            1,
+            2
+          ],
+          [
+            0,
+            2
+          ],
+          [
+            0,
+            2
+          ]
+        ],
+        "sweeps": 1,
+        "exhaustive": false,
+        "search_scope": "all one-to-one block states; coordinate descent, NOT global optimum",
+        "amplitude_slack": 0.02,
+        "amplitude_cap": 0.0810257126390934,
+        "objective_before": 0.0610257126390934,
+        "objective_after": 0.0610257126390934,
+        "amplitude_before": 0.0610257126390934,
+        "amplitude_after": 0.0610257126390934,
+        "identity_before": 0.0,
+        "identity_after": 0.0,
+        "objective_history": [
+          0.0610257126390934
+        ],
+        "accepted_moves": 0,
+        "changed_blocks": 0,
+        "conditional_state_gaps": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "confidence_definition": "frozen GT envelope distinctness times prediction direction spread; reliability, not posterior label correctness",
+        "confidence_mean": 0.0,
+        "zero_rows": "undefined identity; original norms still supervised"
+      },
+      "exhaustive": {
+        "teacher": "full amplitude + same direct bidirectional ID; frozen GT/directional reliability; no index continuity",
+        "block_frames": 1,
+        "block_source_orders": [
+          [
+            1,
+            2
+          ],
+          [
+            1,
+            2
+          ],
+          [
+            0,
+            2
+          ],
+          [
+            0,
+            2
+          ]
+        ],
+        "sweeps": 1,
+        "exhaustive": true,
+        "search_scope": "all one-to-one block states; coordinate descent, NOT global optimum",
+        "amplitude_slack": 0.02,
+        "amplitude_cap": 0.0810257126390934,
+        "objective_before": 0.0610257126390934,
+        "objective_after": 0.0610257126390934,
+        "amplitude_before": 0.0610257126390934,
+        "amplitude_after": 0.0610257126390934,
+        "identity_before": 0.0,
+        "identity_after": 0.0,
+        "objective_history": [
+          0.0610257126390934,
+          0.0610257126390934
+        ],
+        "accepted_moves": 0,
+        "changed_blocks": 0,
+        "conditional_state_gaps": [],
+        "confidence_definition": "frozen GT envelope distinctness times prediction direction spread; reliability, not posterior label correctness",
+        "confidence_mean": 0.0,
+        "zero_rows": "undefined identity; original norms still supervised"
+      },
+      "order": [
+        [
+          1,
+          2,
+          0
+        ],
+        [
+          1,
+          2,
+          0
+        ],
+        [
+          0,
+          2,
+          1
+        ],
+        [
+          0,
+          2,
+          1
+        ]
+      ],
+      "exhaustive_order": [
+        [
+          1,
+          2,
+          0
+        ],
+        [
+          1,
+          2,
+          0
+        ],
+        [
+          0,
+          2,
+          1
+        ],
+        [
+          0,
+          2,
+          1
+        ]
+      ],
+      "optimality_gap": 0.0,
+      "torch_full_cost": 0.0610257126390934,
+      "full_cost_abs_error": 0.0
+    },
+    {
+      "name": "near_zero_gt",
+      "coordinate": {
+        "teacher": "full amplitude + same direct bidirectional ID; frozen GT/directional reliability; no index continuity",
+        "block_frames": 1,
+        "block_source_orders": [
+          [
+            0,
+            1
+          ],
+          [
+            0,
+            1
+          ],
+          [
+            0,
+            1
+          ],
+          [
+            0,
+            1
+          ]
+        ],
+        "sweeps": 1,
+        "exhaustive": false,
+        "search_scope": "all one-to-one block states; coordinate descent, NOT global optimum",
+        "amplitude_slack": 0.02,
+        "amplitude_cap": 0.020000000014142642,
+        "objective_before": 4.0736895540877116e-10,
+        "objective_after": 4.0736895540877116e-10,
+        "amplitude_before": 1.4142642786041382e-11,
+        "amplitude_after": 1.4142642786041382e-11,
+        "identity_before": 1.966131479846922e-09,
+        "identity_after": 1.966131479846922e-09,
+        "objective_history": [
+          4.0736895540877116e-10
+        ],
+        "accepted_moves": 0,
+        "changed_blocks": 0,
+        "conditional_state_gaps": [
+          0.008332179780348104,
+          0.0003327778631020022,
+          0.0003327778631020022,
+          0.008332179780348104
+        ],
+        "confidence_definition": "frozen GT envelope distinctness times prediction direction spread; reliability, not posterior label correctness",
+        "confidence_mean": 5.0997394282603636e-05,
+        "zero_rows": "undefined identity; original norms still supervised"
+      },
+      "exhaustive": {
+        "teacher": "full amplitude + same direct bidirectional ID; frozen GT/directional reliability; no index continuity",
+        "block_frames": 1,
+        "block_source_orders": [
+          [
+            0,
+            1
+          ],
+          [
+            0,
+            1
+          ],
+          [
+            0,
+            1
+          ],
+          [
+            0,
+            1
+          ]
+        ],
+        "sweeps": 1,
+        "exhaustive": true,
+        "search_scope": "all one-to-one block states; coordinate descent, NOT global optimum",
+        "amplitude_slack": 0.02,
+        "amplitude_cap": 0.020000000014142642,
+        "objective_before": 4.0736895540877116e-10,
+        "objective_after": 4.0736895540877116e-10,
+        "amplitude_before": 1.4142642786041382e-11,
+        "amplitude_after": 1.4142642786041382e-11,
+        "identity_before": 1.966131479846922e-09,
+        "identity_after": 1.966131479846922e-09,
+        "objective_history": [
+          4.0736895540877116e-10,
+          4.0736895540877116e-10
+        ],
+        "accepted_moves": 0,
+        "changed_blocks": 0,
+        "conditional_state_gaps": [],
+        "confidence_definition": "frozen GT envelope distinctness times prediction direction spread; reliability, not posterior label correctness",
+        "confidence_mean": 5.0997394282603636e-05,
+        "zero_rows": "undefined identity; original norms still supervised"
+      },
+      "order": [
+        [
+          0,
+          1,
+          2
+        ],
+        [
+          0,
+          1,
+          2
+        ],
+        [
+          0,
+          1,
+          2
+        ],
+        [
+          0,
+          1,
+          2
+        ]
+      ],
+      "exhaustive_order": [
+        [
+          0,
+          1,
+          2
+        ],
+        [
+          0,
+          1,
+          2
+        ],
+        [
+          0,
+          1,
+          2
+        ],
+        [
+          0,
+          1,
+          2
+        ]
+      ],
+      "optimality_gap": 0.0,
+      "torch_full_cost": 4.073684445327075e-10,
+      "full_cost_abs_error": 5.108760636751697e-16
+    },
+    {
+      "name": "copied_outputs",
+      "coordinate": {
+        "teacher": "full amplitude + same direct bidirectional ID; frozen GT/directional reliability; no index continuity",
+        "block_frames": 1,
+        "block_source_orders": [
+          [
+            0,
+            1
+          ],
+          [
+            0,
+            1
+          ],
+          [
+            0,
+            1
+          ],
+          [
+            0,
+            1
+          ]
+        ],
+        "sweeps": 1,
+        "exhaustive": false,
+        "search_scope": "all one-to-one block states; coordinate descent, NOT global optimum",
+        "amplitude_slack": 0.02,
+        "amplitude_cap": 0.06203491394727603,
+        "objective_before": 0.04203491394727603,
+        "objective_after": 0.04203491394727603,
+        "amplitude_before": 0.04203491394727603,
+        "amplitude_after": 0.04203491394727603,
+        "identity_before": 0.0,
+        "identity_after": 0.0,
+        "objective_history": [
+          0.04203491394727603
+        ],
+        "accepted_moves": 0,
+        "changed_blocks": 0,
+        "conditional_state_gaps": [
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "confidence_definition": "frozen GT envelope distinctness times prediction direction spread; reliability, not posterior label correctness",
+        "confidence_mean": 0.0,
+        "zero_rows": "undefined identity; original norms still supervised"
+      },
+      "exhaustive": {
+        "teacher": "full amplitude + same direct bidirectional ID; frozen GT/directional reliability; no index continuity",
+        "block_frames": 1,
+        "block_source_orders": [
+          [
+            0,
+            1
+          ],
+          [
+            0,
+            1
+          ],
+          [
+            0,
+            1
+          ],
+          [
+            0,
+            1
+          ]
+        ],
+        "sweeps": 1,
+        "exhaustive": true,
+        "search_scope": "all one-to-one block states; coordinate descent, NOT global optimum",
+        "amplitude_slack": 0.02,
+        "amplitude_cap": 0.06203491394727603,
+        "objective_before": 0.04203491394727603,
+        "objective_after": 0.04203491394727603,
+        "amplitude_before": 0.04203491394727603,
+        "amplitude_after": 0.04203491394727603,
+        "identity_before": 0.0,
+        "identity_after": 0.0,
+        "objective_history": [
+          0.04203491394727603,
+          0.04203491394727603
+        ],
+        "accepted_moves": 0,
+        "changed_blocks": 0,
+        "conditional_state_gaps": [],
+        "confidence_definition": "frozen GT envelope distinctness times prediction direction spread; reliability, not posterior label correctness",
+        "confidence_mean": 0.0,
+        "zero_rows": "undefined identity; original norms still supervised"
+      },
+      "order": [
+        [
+          0,
+          1,
+          2
+        ],
+        [
+          0,
+          1,
+          2
+        ],
+        [
+          0,
+          1,
+          2
+        ],
+        [
+          0,
+          1,
+          2
+        ]
+      ],
+      "exhaustive_order": [
+        [
+          0,
+          1,
+          2
+        ],
+        [
+          0,
+          1,
+          2
+        ],
+        [
+          0,
+          1,
+          2
+        ],
+        [
+          0,
+          1,
+          2
+        ]
+      ],
+      "optimality_gap": 0.0,
+      "torch_full_cost": 0.04203491657972336,
+      "full_cost_abs_error": 2.632447329564691e-09
+    }
+  ],
+  "random_scope": "24 seed5152 four-frame 3P2, all 6^4 combinations within amplitude trust region",
+  "random": [
+    {
+      "index": 0,
+      "before": 0.18124974068375865,
+      "coordinate": 0.1627104639534753,
+      "exact": 0.1389273709660743,
+      "gap": 0.023783092987401
+    },
+    {
+      "index": 1,
+      "before": 0.14582797647924192,
+      "coordinate": 0.13343013223150624,
+      "exact": 0.12438809417728938,
+      "gap": 0.009042038054216855
+    },
+    {
+      "index": 2,
+      "before": 0.1624205154475907,
+      "coordinate": 0.14137794013018862,
+      "exact": 0.14137794013018862,
+      "gap": 0.0
+    },
+    {
+      "index": 3,
+      "before": 0.17374736536927018,
+      "coordinate": 0.15772016738312644,
+      "exact": 0.15772016738312644,
+      "gap": 0.0
+    },
+    {
+      "index": 4,
+      "before": 0.12847881720511695,
+      "coordinate": 0.08822722778676434,
+      "exact": 0.08822722778676434,
+      "gap": 0.0
+    },
+    {
+      "index": 5,
+      "before": 0.19944764691715636,
+      "coordinate": 0.1546516812494721,
+      "exact": 0.15331455501607466,
+      "gap": 0.0013371262333974343
+    },
+    {
+      "index": 6,
+      "before": 0.12386251006886131,
+      "coordinate": 0.09153642799015724,
+      "exact": 0.0887586477781399,
+      "gap": 0.0027777802120173417
+    },
+    {
+      "index": 7,
+      "before": 0.15170271510949954,
+      "coordinate": 0.13560130038874701,
+      "exact": 0.13560130038874701,
+      "gap": 0.0
+    },
+    {
+      "index": 8,
+      "before": 0.24522871355421472,
+      "coordinate": 0.20657065697050822,
+      "exact": 0.16090031410660693,
+      "gap": 0.045670342863901287
+    },
+    {
+      "index": 9,
+      "before": 0.11530243988652285,
+      "coordinate": 0.07846209976347145,
+      "exact": 0.07846209976347145,
+      "gap": 0.0
+    },
+    {
+      "index": 10,
+      "before": 0.09430229105341392,
+      "coordinate": 0.07382086648480955,
+      "exact": 0.06169605299695392,
+      "gap": 0.012124813487855629
+    },
+    {
+      "index": 11,
+      "before": 0.2242853748693165,
+      "coordinate": 0.20712363466255607,
+      "exact": 0.17961793528593425,
+      "gap": 0.02750569937662181
+    },
+    {
+      "index": 12,
+      "before": 0.19962018168786697,
+      "coordinate": 0.1790775052764106,
+      "exact": 0.1742185172535044,
+      "gap": 0.0048589880229061855
+    },
+    {
+      "index": 13,
+      "before": 0.21855611923000845,
+      "coordinate": 0.21049007861414576,
+      "exact": 0.1330350193543706,
+      "gap": 0.07745505925977517
+    },
+    {
+      "index": 14,
+      "before": 0.17771934545430595,
+      "coordinate": 0.16654384792763377,
+      "exact": 0.16654384792763377,
+      "gap": 0.0
+    },
+    {
+      "index": 15,
+      "before": 0.16510562816421015,
+      "coordinate": 0.09508214623859687,
+      "exact": 0.09508214623859687,
+      "gap": 0.0
+    },
+    {
+      "index": 16,
+      "before": 0.2426621341022979,
+      "coordinate": 0.1826476446923243,
+      "exact": 0.1492598396019593,
+      "gap": 0.033387805090365014
+    },
+    {
+      "index": 17,
+      "before": 0.1964089494201113,
+      "coordinate": 0.16778056183040244,
+      "exact": 0.13893085920747342,
+      "gap": 0.02884970262292902
+    },
+    {
+      "index": 18,
+      "before": 0.16400615488260015,
+      "coordinate": 0.11944504450862732,
+      "exact": 0.11944504450862732,
+      "gap": 0.0
+    },
+    {
+      "index": 19,
+      "before": 0.1817890898743112,
+      "coordinate": 0.1786889302148802,
+      "exact": 0.1786889302148802,
+      "gap": 0.0
+    },
+    {
+      "index": 20,
+      "before": 0.10603038263585149,
+      "coordinate": 0.1020336636490545,
+      "exact": 0.1020336636490545,
+      "gap": 0.0
+    },
+    {
+      "index": 21,
+      "before": 0.13053600068349455,
+      "coordinate": 0.10650195588598398,
+      "exact": 0.10650195588598398,
+      "gap": 0.0
+    },
+    {
+      "index": 22,
+      "before": 0.12922581972704744,
+      "coordinate": 0.12016971155330797,
+      "exact": 0.12016971155330797,
+      "gap": 0.0
+    },
+    {
+      "index": 23,
+      "before": 0.13438054065689872,
+      "coordinate": 0.13058833656226232,
+      "exact": 0.13058833656226232,
+      "gap": 0.0
+    }
+  ],
+  "max_coordinate_optimality_gap": 0.07745505925977517,
+  "cases_with_nonzero_gap": 11,
+  "tests": "35 passed",
+  "inference": "unchanged prediction-only; teacher exhaustive scope is diagnostic, not deployed"
+}

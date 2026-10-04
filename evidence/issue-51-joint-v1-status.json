@@ -1,0 +1,52 @@
+{
+  "start_epoch": 1791134693.5848515,
+  "elapsed_seconds": 510.0348582267761,
+  "gpu": 0,
+  "jobs": [
+    {
+      "name": "envelope-id",
+      "pid": 358269,
+      "command": [
+        "/mnt/ssd/user/lgy/issue-51-ssast/.venv-p0/bin/python",
+        "research/issue_51_ssast/train_joint_teacher.py",
+        "--cache",
+        "runs/window-depth/cache",
+        "--c0-cache",
+        "runs/p1/frame-c0-cache",
+        "--initial",
+        "runs/window-depth/fit-v1/depth4/C1-raw/head.pth",
+        "--out",
+        "runs/joint-teacher/fit-v1/envelope-id",
+        "--identity-weight",
+        ".2",
+        "--teacher-mode",
+        "envelope"
+      ],
+      "log": "runs/joint-teacher/fit-v1/envelope-id.log",
+      "exit_code": 0
+    },
+    {
+      "name": "joint-id",
+      "pid": 358270,
+      "command": [
+        "/mnt/ssd/user/lgy/issue-51-ssast/.venv-p0/bin/python",
+        "research/issue_51_ssast/train_joint_teacher.py",
+        "--cache",
+        "runs/window-depth/cache",
+        "--c0-cache",
+        "runs/p1/frame-c0-cache",
+        "--initial",
+        "runs/window-depth/fit-v1/depth4/C1-raw/head.pth",
+        "--out",
+        "runs/joint-teacher/fit-v1/joint-id",
+        "--identity-weight",
+        ".2",
+        "--teacher-mode",
+        "joint"
+      ],
+      "log": "runs/joint-teacher/fit-v1/joint-id.log",
+      "exit_code": 0
+    }
+  ],
+  "complete": true
+}

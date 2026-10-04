@@ -1,5 +1,8 @@
 # #51 真值教师对应与直接身份监督执行方案
 
+历史执行协议：以下教师不读取预测 E。后续模长 + 身份联合求对应的修正方案见
+[联合教师协议](issue-51-joint-teacher.md)，不能将此版结果解释为联合方案已失败。
+
 用户选择及修正见[授权评论](https://github.com/guajun/anonymous-audio-tracks/issues/51#issuecomment-5981435673)。
 本轮直接实现和实验，不再请求重复确认。旧证据、C0失败和draft PR保留，不合并。
 
