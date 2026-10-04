@@ -19,6 +19,7 @@ main 当前 AuT/Query/E/P probability、静音原型记忆及历史结果是既�
 | 环节 | 现状 | 入口 / 证据 |
 |---|---|---|
 | 数据渲染与标签 | DawDreamer 合成语料 + 中心活动标签；Surge 仅探针未训练 | `scripts/render_sample.py`、`scripts/label_sample.py`、[docs/RENDERING.md](docs/RENDERING.md)、[docs/ACTIVITY_LABELS.md](docs/ACTIVITY_LABELS.md) |
+| 连续包络课程数据 | 单来源、双来源交错与局部事件共现；效果后分轨 RMS，独立于模型 | `scripts/prepare_curriculum.py`、[docs/SYNTHETIC_CURRICULUM.md](docs/SYNTHETIC_CURRICULUM.md) |
 | 数据集索引 | 分组切分、泄漏安全、多窗口采样 | `scripts/build_dataset_index.py`、[docs/DATASET.md](docs/DATASET.md) |
 | 冻结 AuT | 独立 Qwen3-Omni AuT 编码器，固定 revision 与 block-diagonal 注意力 | `scripts/probe_aut.py`、[docs/AUT_PROBE.md](docs/AUT_PROBE.md) |
 | E/P 头与训练 | K 查询输出头、排列无关损失、checkpoint/恢复、fake 与 real 两条链 | `scripts/train.py`、[docs/TRAINING.md](docs/TRAINING.md) |
