@@ -1,7 +1,9 @@
 # #51 SSAST 连续匿名包络：最小验证草案
 
 状态：草案建档后，用户于2026-10-04授权开工；
-执行进展见 [P0报告](../reports/issue-51-p0.md)。下文保留原草案阶段与预算，
+执行进展见 [初始P0报告](../reports/issue-51-p0.md) 与
+[frame P0 / P1报告](../reports/issue-51-frame-c0.md)。P1包络拟合良好，但余槽误报门槛未通过，P2未启动。
+下文保留原草案阶段与预算，
 其中“本轮仅建档/不执行”指最初建档轮，不覆盖后续用户授权。日期：2026-10-04（UTC+8）。
 研究 [issue #51](https://github.com/guajun/anonymous-audio-tracks/issues/51)，
 分支 `codex/issue-51-ssast-envelope`，

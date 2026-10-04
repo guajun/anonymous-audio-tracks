@@ -1,0 +1,311 @@
+{
+  "seed": 46,
+  "diagnostic": true,
+  "steps": 1000,
+  "stop_reason": "max_steps",
+  "elapsed_seconds": 3.2826819298788905,
+  "scale_r": 0.2591032087802887,
+  "scale_policy": "train-only active RMS P95",
+  "loss": "Huber(delta=.1)/.1 + .1 areaIoU; .1 silence + .1 unused",
+  "train_gate": "raw norm differentiable; threshold1e-3 only in evaluation",
+  "architecture": "frozen frame197x768 -> Linear128 -> 2 temporal conv3 -> center interpolation98.25 -> K8 V128",
+  "history": [
+    {
+      "step": 100,
+      "train_loss": 0.010155551135540009,
+      "components": [
+        {
+          "slot": 3,
+          "shape": 0.00968491192907095,
+          "silence": 0.0014374922029674053,
+          "unused": 0.003268892876803875
+        }
+      ],
+      "val": {
+        "normalized_mae": 0.004396902397274971,
+        "active_normalized_mae": 0.016362354159355164,
+        "area_iou": 0.9182834029197693,
+        "silence_false_positive_fraction": 0.0,
+        "unused_false_positive_fraction": 0.2671428571428571,
+        "source_count_mae": 1.87,
+        "gate_normalized_mae": 0.0027161508332937956,
+        "onset_median_abs_seconds": 0.0,
+        "offset_median_abs_seconds": 0.0
+      },
+      "gradient_norm_before_clip": 1.9562723636627197,
+      "elapsed_seconds": 0.8205715049989522
+    },
+    {
+      "step": 200,
+      "train_loss": 0.007684752345085144,
+      "components": [
+        {
+          "slot": 3,
+          "shape": 0.007495207712054253,
+          "silence": 0.0007393773412331939,
+          "unused": 0.0011560701532289386
+        }
+      ],
+      "val": {
+        "normalized_mae": 0.0035877726040780544,
+        "active_normalized_mae": 0.018165143206715584,
+        "area_iou": 0.9325966835021973,
+        "silence_false_positive_fraction": 0.0,
+        "unused_false_positive_fraction": 0.08028571428571428,
+        "source_count_mae": 0.562,
+        "gate_normalized_mae": 0.0030154134146869183,
+        "onset_median_abs_seconds": 0.0,
+        "offset_median_abs_seconds": 0.0
+      },
+      "gradient_norm_before_clip": 1.7960212230682373,
+      "elapsed_seconds": 1.0827115210704505
+    },
+    {
+      "step": 300,
+      "train_loss": 0.007375591434538364,
+      "components": [
+        {
+          "slot": 3,
+          "shape": 0.00711959321051836,
+          "silence": 0.0010086937109008431,
+          "unused": 0.0015512912068516016
+        }
+      ],
+      "val": {
+        "normalized_mae": 0.0023552507627755404,
+        "active_normalized_mae": 0.007896342314779758,
+        "area_iou": 0.9539023041725159,
+        "silence_false_positive_fraction": 0.0,
+        "unused_false_positive_fraction": 0.08314285714285714,
+        "source_count_mae": 0.582,
+        "gate_normalized_mae": 0.001310792868025601,
+        "onset_median_abs_seconds": 0.0,
+        "offset_median_abs_seconds": 0.0
+      },
+      "gradient_norm_before_clip": 1.713942289352417,
+      "elapsed_seconds": 1.340679656714201
+    },
+    {
+      "step": 400,
+      "train_loss": 0.0034235112834721804,
+      "components": [
+        {
+          "slot": 3,
+          "shape": 0.003236127085983753,
+          "silence": 0.0007383484044112265,
+          "unused": 0.001135493628680706
+        }
+      ],
+      "val": {
+        "normalized_mae": 0.004990055225789547,
+        "active_normalized_mae": 0.02503342740237713,
+        "area_iou": 0.9087573885917664,
+        "silence_false_positive_fraction": 0.0,
+        "unused_false_positive_fraction": 0.026285714285714287,
+        "source_count_mae": 0.184,
+        "gate_normalized_mae": 0.004155548755079508,
+        "onset_median_abs_seconds": 0.0,
+        "offset_median_abs_seconds": 0.0
+      },
+      "gradient_norm_before_clip": 1.771207332611084,
+      "elapsed_seconds": 1.5938705867156386
+    },
+    {
+      "step": 500,
+      "train_loss": 0.006988807115703821,
+      "components": [
+        {
+          "slot": 3,
+          "shape": 0.006805611774325371,
+          "silence": 0.0008368822745978832,
+          "unused": 0.0009950720705091953
+        }
+      ],
+      "val": {
+        "normalized_mae": 0.001538785407319665,
+        "active_normalized_mae": 0.005701648537069559,
+        "area_iou": 0.9698079228401184,
+        "silence_false_positive_fraction": 0.0,
+        "unused_false_positive_fraction": 0.03857142857142857,
+        "source_count_mae": 0.27,
+        "gate_normalized_mae": 0.0009464737377129495,
+        "onset_median_abs_seconds": 0.0,
+        "offset_median_abs_seconds": 0.0
+      },
+      "gradient_norm_before_clip": 1.6486998796463013,
+      "elapsed_seconds": 1.8465958978049457
+    },
+    {
+      "step": 600,
+      "train_loss": 0.003036854090169072,
+      "components": [
+        {
+          "slot": 3,
+          "shape": 0.002862366382032633,
+          "silence": 0.000809055520221591,
+          "unused": 0.0009358205134049058
+        }
+      ],
+      "val": {
+        "normalized_mae": 0.002136891707777977,
+        "active_normalized_mae": 0.009445630945265293,
+        "area_iou": 0.9587615132331848,
+        "silence_false_positive_fraction": 0.0,
+        "unused_false_positive_fraction": 0.036571428571428574,
+        "source_count_mae": 0.256,
+        "gate_normalized_mae": 0.0015679748030379415,
+        "onset_median_abs_seconds": 0.0,
+        "offset_median_abs_seconds": 0.0
+      },
+      "gradient_norm_before_clip": 1.708469271659851,
+      "elapsed_seconds": 2.121082874946296
+    },
+    {
+      "step": 700,
+      "train_loss": 0.005700419656932354,
+      "components": [
+        {
+          "slot": 3,
+          "shape": 0.005467435345053673,
+          "silence": 0.0011524106375873089,
+          "unused": 0.001177435740828514
+        }
+      ],
+      "val": {
+        "normalized_mae": 0.0024702823720872402,
+        "active_normalized_mae": 0.009486262686550617,
+        "area_iou": 0.9526237845420837,
+        "silence_false_positive_fraction": 0.0,
+        "unused_false_positive_fraction": 0.021142857142857144,
+        "source_count_mae": 0.148,
+        "gate_normalized_mae": 0.0015747195575386286,
+        "onset_median_abs_seconds": 0.0,
+        "offset_median_abs_seconds": 0.0
+      },
+      "gradient_norm_before_clip": 1.874935269355774,
+      "elapsed_seconds": 2.373516459017992
+    },
+    {
+      "step": 800,
+      "train_loss": 0.006783250719308853,
+      "components": [
+        {
+          "slot": 3,
+          "shape": 0.006475651171058416,
+          "silence": 0.0012583815259858966,
+          "unused": 0.0018176166340708733
+        }
+      ],
+      "val": {
+        "normalized_mae": 0.002630531555041671,
+        "active_normalized_mae": 0.00925551075488329,
+        "area_iou": 0.9482218623161316,
+        "silence_false_positive_fraction": 0.0,
+        "unused_false_positive_fraction": 0.10114285714285715,
+        "source_count_mae": 0.708,
+        "gate_normalized_mae": 0.001536414842121303,
+        "onset_median_abs_seconds": 0.0,
+        "offset_median_abs_seconds": 0.0
+      },
+      "gradient_norm_before_clip": 1.8746622800827026,
+      "elapsed_seconds": 2.6237128619104624
+    },
+    {
+      "step": 900,
+      "train_loss": 0.0019901390187442303,
+      "components": [
+        {
+          "slot": 3,
+          "shape": 0.0018558501033112407,
+          "silence": 0.00046821022988297045,
+          "unused": 0.0008746773819439113
+        }
+      ],
+      "val": {
+        "normalized_mae": 0.0020647288765758276,
+        "active_normalized_mae": 0.0083702327683568,
+        "area_iou": 0.9601160287857056,
+        "silence_false_positive_fraction": 0.0,
+        "unused_false_positive_fraction": 0.047714285714285716,
+        "source_count_mae": 0.334,
+        "gate_normalized_mae": 0.0013894586591050029,
+        "onset_median_abs_seconds": 0.0,
+        "offset_median_abs_seconds": 0.0
+      },
+      "gradient_norm_before_clip": 1.6739627122879028,
+      "elapsed_seconds": 2.899598889052868
+    },
+    {
+      "step": 1000,
+      "train_loss": 0.005086928140372038,
+      "components": [
+        {
+          "slot": 3,
+          "shape": 0.004896398633718491,
+          "silence": 0.0009690751321613789,
+          "unused": 0.0009362195851281285
+        }
+      ],
+      "val": {
+        "normalized_mae": 0.0020135731901973486,
+        "active_normalized_mae": 0.00839703157544136,
+        "area_iou": 0.9599950313568115,
+        "silence_false_positive_fraction": 0.0,
+        "unused_false_positive_fraction": 0.040285714285714286,
+        "source_count_mae": 0.282,
+        "gate_normalized_mae": 0.0013939073542132974,
+        "onset_median_abs_seconds": 0.0,
+        "offset_median_abs_seconds": 0.0
+      },
+      "gradient_norm_before_clip": 1.7845314741134644,
+      "elapsed_seconds": 3.2517181038856506
+    }
+  ],
+  "splits": {
+    "train": {
+      "aggregate": {
+        "normalized_mae": 0.001538785407319665,
+        "active_normalized_mae": 0.005701648537069559,
+        "area_iou": 0.9698079228401184,
+        "silence_false_positive_fraction": 0.0,
+        "unused_false_positive_fraction": 0.03857142857142857,
+        "source_count_mae": 0.27,
+        "gate_normalized_mae": 0.0009464737377129495,
+        "onset_median_abs_seconds": 0.0,
+        "offset_median_abs_seconds": 0.0
+      },
+      "samples": [
+        {
+          "slot": 3,
+          "full_scale_mae": 0.00039870422915555537,
+          "normalized_mae": 0.001538785407319665,
+          "active_normalized_mae": 0.005701648537069559,
+          "area_iou": 0.9698079228401184,
+          "silence_false_positive_fraction": 0.0,
+          "unused_false_positive_fraction": 0.03857142857142857,
+          "source_count_mae": 0.27,
+          "raw_unused_area": 0.8810126781463623,
+          "gate_unused_area": 0.18069198727607727,
+          "gate_normalized_mae": 0.0009464737377129495,
+          "pit_best_second_gap": 0.1367490142583847,
+          "pit_tied": false,
+          "boundaries": {
+            "onset": {
+              "pred_count": 3,
+              "reference_count": 3,
+              "median_abs_seconds": 0.0
+            },
+            "offset": {
+              "pred_count": 3,
+              "reference_count": 3,
+              "median_abs_seconds": 0.0
+            }
+          },
+          "sample_id": "c0-train-00",
+          "interior_normalized_mae": 0.0017467867583036423,
+          "boundary_normalized_mae": 0.0006962766055949032
+        }
+      ]
+    }
+  }
+}

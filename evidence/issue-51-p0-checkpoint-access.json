@@ -2,8 +2,21 @@
   "date_local": "2026-10-04",
   "host": "vlmdemo-hkclr-server",
   "remote_checkout": "/mnt/ssd/user/lgy/issue-51-ssast",
-  "frame_stage_gate_passed": false,
-  "training_started": false,
+  "initial_frame_stage_gate_passed": false,
+  "initial_training_started": false,
+  "follow_up_user_frame": {
+    "local_path": "F:/LED/SSAST-Base-Frame-400.pth",
+    "remote_path": "/mnt/ssd/user/lgy/issue-51-ssast/runs/p0/user-frame.pth",
+    "sha256_local_and_remote": "b82b0714d92ddfd9de2c535b459ad900dea85a50c810dc43086fc6ac7047f689",
+    "origin": "user-provided; original download endpoint unspecified",
+    "strict_checkpoint_keys": 166,
+    "kernel": [128, 2],
+    "missing_keys": [],
+    "unexpected_keys": [],
+    "frame_stage_gate_passed": true,
+    "p1_training_started": true,
+    "note": "Accepted user-supplied checkpoint after transfer hash and full official-architecture loading checks; not independent authentication of the author's original file."
+  },
   "attempts": [
     {
       "url": "https://www.dropbox.com/s/nx6nl4d4bl71sm8/SSAST-Base-Frame-400.pth?dl=1",

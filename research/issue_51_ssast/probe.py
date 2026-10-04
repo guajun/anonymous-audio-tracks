@@ -24,6 +24,7 @@ def main():
     parser.add_argument("--source", required=True)
     parser.add_argument("--checkpoint", required=True)
     parser.add_argument("--model-type", choices=["frame", "patch"], required=True)
+    parser.add_argument("--checkpoint-origin", choices=["unverified", "user-provided", "official-download"], default="unverified")
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
@@ -118,8 +119,9 @@ def main():
         original_sample_rate=wave.sample_rate,
         bypass_rms_unit="linear_rms_full_scale; original channel power average",
         minute_track_estimate_seconds_at_hop_20ms=3000 * costs["4"]["per_window_seconds"],
-        # Feature compatibility alone never establishes checkpoint provenance.
-        frame_stage_gate_passed=False)
+        checkpoint_origin=args.checkpoint_origin,
+        provenance_note="origin is declared and recorded; a supplied file is not independently authenticated as the author's original download",
+        frame_stage_gate_passed=args.model_type == "frame" and args.checkpoint_origin != "unverified")
     (args.out / "probe.json").write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps({k: report[k] for k in ("model_type", "token_shape",
           "coordinate_error_seconds", "repeat_max_error", "costs", "frame_stage_gate_passed")}), flush=True)
