@@ -2,7 +2,8 @@
 
 状态：**等待用户草案反馈；本轮仅建档**。日期：2026-10-04（UTC+8）。
 研究 [issue #51](https://github.com/guajun/anonymous-audio-tracks/issues/51)，
-分支 `codex/issue-51-ssast-envelope`，draft PR 链接见 issue 的建档记录。
+分支 `codex/issue-51-ssast-envelope`，
+[draft PR #52](https://github.com/guajun/anonymous-audio-tracks/pull/52)。
 [本研究主会话](codex://threads/01a1057b-fc7c-7612-91ba-ec3b9af45e41)；
 [发起会话](codex://threads/01a1052d-03e2-7a40-817b-81e1baab0756)。
 
@@ -247,4 +248,3 @@ Demucs预训练是4类别stem重建，旧提取点是冻结cross-transformer瓶�
 建立研究issue与仅文档draft PR。核查diff、文档相对链接和提交范围。
 未验证：权重下载/加载、真实特征shape、成本、数据重新审计、任何训练/指标。
 下一步是用户对checkpoint、阶段门槛/预算、头/匹配候选的草案反馈。
-
