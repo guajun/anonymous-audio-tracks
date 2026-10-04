@@ -286,7 +286,7 @@
   "gpu": 0,
   "tests": "36 passed",
   "new_inference_has_truth_input": false,
-  "implementation_commit": "recorded in git research branch",
+  "implementation_commit": "7fb747e2d3b8eab42a2c32ed1c147aefccebd398",
   "source_sha256": {
     "train_joint_teacher.py": "6678f9fa868a111c6ee48f67715a6e1776b4c7b4a49d90292b0fbdb7a9ff75c3",
     "joint_teacher.py": "0efd51faba6ced8cd3916ea1fbb58fe60a3461ce2a6646e9c3c392b7457a2c00",
@@ -312,5 +312,160 @@
     "run_joint_suite.py": "6699e1d35a4810b765c493a855f179c315f95c13b65e1e22cdae4852b9117cea",
     "joint_teacher.py": "05e29bd4db695f393bdd47111d4c1753247a93d1718cf93c9b598445190cad53",
     "train_joint_teacher.py": "6678f9fa868a111c6ee48f67715a6e1776b4c7b4a49d90292b0fbdb7a9ff75c3"
-  }
+  },
+  "executed_vs_committed_source": [
+    {
+      "name": "train_joint_teacher.py",
+      "executed_bytes_sha256": "6678f9fa868a111c6ee48f67715a6e1776b4c7b4a49d90292b0fbdb7a9ff75c3",
+      "committed_text_sha256": "6678f9fa868a111c6ee48f67715a6e1776b4c7b4a49d90292b0fbdb7a9ff75c3",
+      "identical_text_after_CRLF_LF_normalization": true
+    },
+    {
+      "name": "joint_teacher.py",
+      "executed_bytes_sha256": "0efd51faba6ced8cd3916ea1fbb58fe60a3461ce2a6646e9c3c392b7457a2c00",
+      "committed_text_sha256": "0efd51faba6ced8cd3916ea1fbb58fe60a3461ce2a6646e9c3c392b7457a2c00",
+      "identical_text_after_CRLF_LF_normalization": true
+    },
+    {
+      "name": "teacher_assignment.py",
+      "executed_bytes_sha256": "59677320dc460dfcdf69f2d9a3ab2d71ec1b4acb8c5bc1ff86796c7188aac3f1",
+      "committed_text_sha256": "59677320dc460dfcdf69f2d9a3ab2d71ec1b4acb8c5bc1ff86796c7188aac3f1",
+      "identical_text_after_CRLF_LF_normalization": true
+    },
+    {
+      "name": "identity_supervision.py",
+      "executed_bytes_sha256": "4302f961bc4cd511328daeaa7db39e7151b1cfc2235d7efa87b645252a9c54bd",
+      "committed_text_sha256": "4302f961bc4cd511328daeaa7db39e7151b1cfc2235d7efa87b645252a9c54bd",
+      "identical_text_after_CRLF_LF_normalization": true
+    },
+    {
+      "name": "hard_identity_inference.py",
+      "executed_bytes_sha256": "2b083e5e89a5405ccf9bd89bbb4268d4fe74a125f204df6a459df594ce2a9855",
+      "committed_text_sha256": "2b083e5e89a5405ccf9bd89bbb4268d4fe74a125f204df6a459df594ce2a9855",
+      "identical_text_after_CRLF_LF_normalization": true
+    },
+    {
+      "name": "run_joint_suite.py",
+      "executed_bytes_sha256": "da5101eb8fcba99d0af647fe33fc2508ee377e31cdc1feacc90ce1522d6d8a2d",
+      "committed_text_sha256": "da5101eb8fcba99d0af647fe33fc2508ee377e31cdc1feacc90ce1522d6d8a2d",
+      "identical_text_after_CRLF_LF_normalization": true
+    },
+    {
+      "name": "course_metrics.py",
+      "executed_bytes_sha256": "97c0d5d5085db928cbb53d9bc9b03994fa5c1f01d3701c48337d0b48eff0836e",
+      "committed_text_sha256": "97c0d5d5085db928cbb53d9bc9b03994fa5c1f01d3701c48337d0b48eff0836e",
+      "identical_text_after_CRLF_LF_normalization": true
+    },
+    {
+      "name": "window_head.py",
+      "executed_bytes_sha256": "4965ad029515b3826dfa1389f3f295d2df8991bc2298d603594a865afec16eab",
+      "committed_text_sha256": "4965ad029515b3826dfa1389f3f295d2df8991bc2298d603594a865afec16eab",
+      "identical_text_after_CRLF_LF_normalization": true
+    }
+  ],
+  "reconstruction_sample_schedules": {
+    "C1": {
+      "seed": 4650,
+      "sha256": "2e61f06e825e9dd5a25873401b7b9d328afde14e78cd7998106097bebafd2156",
+      "samples": 2000,
+      "first": [
+        [
+          "C0",
+          "c0-train-02"
+        ],
+        [
+          "C1",
+          "c1-local-train-02"
+        ]
+      ],
+      "last": [
+        [
+          "C0",
+          "c0-train-00"
+        ],
+        [
+          "C1",
+          "c1-local-train-03"
+        ]
+      ]
+    },
+    "C2-low": {
+      "seed": 4651,
+      "sha256": "c20b2843d5372b0fb1a033feff19d69dc50219b1dd5c860081f5d256dd3a2666",
+      "samples": 2000,
+      "first": [
+        [
+          "C0",
+          "c0-train-03"
+        ],
+        [
+          "C2-low",
+          "c2-low-train-03"
+        ]
+      ],
+      "last": [
+        [
+          "C0",
+          "c0-train-02"
+        ],
+        [
+          "C2-low",
+          "c2-low-train-02"
+        ]
+      ]
+    },
+    "C2-high": {
+      "seed": 4652,
+      "sha256": "d21b7cd9f61e33a8faf6bebdf81a25685f2765ac078cf283770bdf735b7c4297",
+      "samples": 2000,
+      "first": [
+        [
+          "C0",
+          "c0-train-03"
+        ],
+        [
+          "C2-high",
+          "c2-high-train-01"
+        ]
+      ],
+      "last": [
+        [
+          "C0",
+          "c0-train-00"
+        ],
+        [
+          "C2-high",
+          "c2-high-train-02"
+        ]
+      ]
+    },
+    "C3": {
+      "seed": 4653,
+      "sha256": "bf6ffc16894a1fc832e171d4cfa5c6848d9326afe6beee71ea71040448367ea1",
+      "samples": 2000,
+      "first": [
+        [
+          "C1",
+          "c1-local-train-03"
+        ],
+        [
+          "C3",
+          "c3-train-03"
+        ]
+      ],
+      "last": [
+        [
+          "C1",
+          "c1-local-train-03"
+        ],
+        [
+          "C3",
+          "c3-train-03"
+        ]
+      ]
+    }
+  },
+  "schedule_note": "reconstructed from same manifests/seeds and code; not a per-step live trace",
+  "initial_sha256": "83ff4753abc0c79f006e4d6b6b104f30a80cd907ffb05a9ed05c3cabe81b33c3",
+  "source_snapshot": "runs/joint-teacher/fit-v2/source"
 }
