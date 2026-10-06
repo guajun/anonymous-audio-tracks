@@ -1,0 +1,174 @@
+{
+  "method": "direct old A train-only ridge1e-6 then 1000 cached-feature Adam MSE; abs scalar output; shared/Z frozen",
+  "training_samples": [
+    [
+      "C0",
+      "c0-train-00"
+    ],
+    [
+      "C0",
+      "c0-train-01"
+    ],
+    [
+      "C0",
+      "c0-train-02"
+    ],
+    [
+      "C0",
+      "c0-train-03"
+    ],
+    [
+      "C1",
+      "c1-local-train-00"
+    ],
+    [
+      "C1",
+      "c1-local-train-01"
+    ],
+    [
+      "C1",
+      "c1-local-train-02"
+    ],
+    [
+      "C1",
+      "c1-local-train-03"
+    ]
+  ],
+  "data_used": "C0/C1 train only, target old A, no GT/val/test",
+  "steps_per_arm": 1000,
+  "coupled_control": "same cached readout forward count, zero-residual control; no parameter updates",
+  "initialization_budget_limitation": "equal pass budget, different wall time and optimizer work; scalar abs affine cannot exactly represent norm of 128D affine output",
+  "split_seconds": 1.603300231974572,
+  "coupled_seconds": 0.15143832191824913,
+  "history": [
+    {
+      "step": 0,
+      "train_mse": 2.3723002584574715e-07
+    },
+    {
+      "step": 100,
+      "train_mse": 2.5056058916561597e-07
+    },
+    {
+      "step": 200,
+      "train_mse": 2.440219475374761e-07
+    },
+    {
+      "step": 300,
+      "train_mse": 2.4208529225688835e-07
+    },
+    {
+      "step": 400,
+      "train_mse": 2.4124668129843485e-07
+    },
+    {
+      "step": 500,
+      "train_mse": 2.390003999153123e-07
+    },
+    {
+      "step": 600,
+      "train_mse": 2.4186226710298797e-07
+    },
+    {
+      "step": 700,
+      "train_mse": 2.401231995463604e-07
+    },
+    {
+      "step": 800,
+      "train_mse": 2.418767621747975e-07
+    },
+    {
+      "step": 900,
+      "train_mse": 2.3672383520079165e-07
+    }
+  ],
+  "differences": [
+    {
+      "stage": "C0",
+      "sample_id": "c0-train-00",
+      "z_max_error": 0.0,
+      "amplitude_mae": 9.214798046741635e-05,
+      "amplitude_max_error": 0.003787461668252945,
+      "mean_reference_amplitude": 0.007188031915575266,
+      "relative_mae": 0.012819639407098293,
+      "count_mae": 0.004000000189989805
+    },
+    {
+      "stage": "C0",
+      "sample_id": "c0-train-01",
+      "z_max_error": 0.0,
+      "amplitude_mae": 9.499603766016662e-05,
+      "amplitude_max_error": 0.004075482487678528,
+      "mean_reference_amplitude": 0.003545682178810239,
+      "relative_mae": 0.02679203450679779,
+      "count_mae": 0.00800000037997961
+    },
+    {
+      "stage": "C0",
+      "sample_id": "c0-train-02",
+      "z_max_error": 0.0,
+      "amplitude_mae": 0.00011767231626436114,
+      "amplitude_max_error": 0.0069094691425561905,
+      "mean_reference_amplitude": 0.010442680679261684,
+      "relative_mae": 0.011268401518464088,
+      "count_mae": 0.03800000250339508
+    },
+    {
+      "stage": "C0",
+      "sample_id": "c0-train-03",
+      "z_max_error": 0.0,
+      "amplitude_mae": 0.00017609221686143428,
+      "amplitude_max_error": 0.00888072606176138,
+      "mean_reference_amplitude": 0.018110955134034157,
+      "relative_mae": 0.009722966700792313,
+      "count_mae": 0.09200000762939453
+    },
+    {
+      "stage": "C1",
+      "sample_id": "c1-local-train-00",
+      "z_max_error": 0.0,
+      "amplitude_mae": 0.0002221591566922143,
+      "amplitude_max_error": 0.006000093184411526,
+      "mean_reference_amplitude": 0.012932201847434044,
+      "relative_mae": 0.01717875711619854,
+      "count_mae": 0.1497005969285965
+    },
+    {
+      "stage": "C1",
+      "sample_id": "c1-local-train-01",
+      "z_max_error": 0.0,
+      "amplitude_mae": 0.00017777438915800303,
+      "amplitude_max_error": 0.006631091237068176,
+      "mean_reference_amplitude": 0.011807319708168507,
+      "relative_mae": 0.015056286938488483,
+      "count_mae": 0.06187624856829643
+    },
+    {
+      "stage": "C1",
+      "sample_id": "c1-local-train-02",
+      "z_max_error": 0.0,
+      "amplitude_mae": 0.00020180491264909506,
+      "amplitude_max_error": 0.008285189047455788,
+      "mean_reference_amplitude": 0.01402136031538248,
+      "relative_mae": 0.014392676763236523,
+      "count_mae": 0.12774451076984406
+    },
+    {
+      "stage": "C1",
+      "sample_id": "c1-local-train-03",
+      "z_max_error": 0.0,
+      "amplitude_mae": 0.00025225512217730284,
+      "amplitude_max_error": 0.007961572147905827,
+      "mean_reference_amplitude": 0.016979724168777466,
+      "relative_mae": 0.014856255613267422,
+      "count_mae": 0.19960080087184906
+    }
+  ],
+  "amplitude_transform": "abs",
+  "amplitude_weight_norm": 23.26076316833496,
+  "original_sha256": "83ff4753abc0c79f006e4d6b6b104f30a80cd907ffb05a9ed05c3cabe81b33c3",
+  "coupled_sha256": "8cfec2f5aa52658d86f567e537f164814a76ccb9de689431ef864858a3fa34ee",
+  "split_sha256": "1ef2b4ba6d35307ec2b95af2b90cfe898a13fb1349793c3d3909006a249c8485",
+  "shared_and_identity_exactly_equal": true,
+  "scale_r": 0.2591032087802887
+}

@@ -1,0 +1,66 @@
+{
+  "start_epoch": 1791277978.2213528,
+  "elapsed_seconds": 550.0343687534332,
+  "runner_pid": 1377163,
+  "phase": "formal",
+  "gpu": 0,
+  "jobs": [
+    {
+      "name": "coupled",
+      "pid": 1377164,
+      "command": [
+        "/mnt/ssd/user/lgy/issue-51-ssast/.venv-p0/bin/python",
+        "research/issue_51_ssast/train_joint_teacher.py",
+        "--cache",
+        "runs/window-depth/cache",
+        "--c0-cache",
+        "runs/p1/frame-c0-cache",
+        "--initial",
+        "runs/split-head/fit-v3/coupled-initial.pth",
+        "--amplitude-transform",
+        "abs",
+        "--out",
+        "runs/split-head/fit-v3/coupled",
+        "--identity-weight",
+        ".2",
+        "--teacher-mode",
+        "joint",
+        "--head-mode",
+        "coupled"
+      ],
+      "start_epoch": 1791277978.2220838,
+      "exit_code": 0,
+      "seconds": 550.0335245132446
+    },
+    {
+      "name": "split",
+      "pid": 1377165,
+      "command": [
+        "/mnt/ssd/user/lgy/issue-51-ssast/.venv-p0/bin/python",
+        "research/issue_51_ssast/train_joint_teacher.py",
+        "--cache",
+        "runs/window-depth/cache",
+        "--c0-cache",
+        "runs/p1/frame-c0-cache",
+        "--initial",
+        "runs/split-head/fit-v3/split-initial.pth",
+        "--amplitude-transform",
+        "abs",
+        "--out",
+        "runs/split-head/fit-v3/split",
+        "--identity-weight",
+        ".2",
+        "--teacher-mode",
+        "joint",
+        "--head-mode",
+        "split"
+      ],
+      "start_epoch": 1791277978.222513,
+      "exit_code": 0,
+      "seconds": 550.0331964492798
+    }
+  ],
+  "complete": true,
+  "pilot_status": "runs/split-head/fit-v3/pilot-status.json",
+  "concurrent_arms": true
+}
