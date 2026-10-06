@@ -9,7 +9,7 @@ from pathlib import Path
 def digest(x):return hashlib.sha256(x).hexdigest()
 def main():
     out=Path('runs/split-head/evidence');path=out/'issue-51-split-execution-audit.json'
-    audit=json.loads(path.read_text());source=Path('runs/split-head/fit-v1/source')
+    audit=json.loads(path.read_text());source=Path('runs/split-head/fit-v3/source')
     import argparse
     parser=argparse.ArgumentParser();parser.add_argument('--commit',default='HEAD');args=parser.parse_args()
     commit=subprocess.check_output(['git','rev-parse',args.commit],text=True).strip()
@@ -23,14 +23,14 @@ def main():
         checks.append(dict(name=name,executed_bytes_sha256=expected,committed_text_sha256=digest(normalized),
             identical_text_after_CRLF_LF_normalization=True))
     initial=Path('runs/window-depth/fit-v1/depth4/C1-raw/head.pth')
-    arms=[json.loads((Path('runs/split-head/fit-v1')/a/'architecture.json').read_text()) for a in ('coupled','split')]
-    init=json.loads(Path('runs/split-head/fit-v1/initialization.json').read_text())
+    arms=[json.loads((Path('runs/split-head/fit-v3')/a/'architecture.json').read_text()) for a in ('coupled','split')]
+    init=json.loads(Path('runs/split-head/fit-v3/initialization.json').read_text())
     if init['original_sha256']!=digest(initial.read_bytes()):raise ValueError('original checkpoint mismatch')
     import torch
     original=torch.load(initial,weights_only=True,map_location='cpu')
     initial_states=[]
     for arm,meta in zip(('coupled','split'),arms):
-        path=Path('runs/split-head/fit-v1')/(arm+'-initial.pth')
+        path=Path('runs/split-head/fit-v3')/(arm+'-initial.pth')
         if meta['initial_sha256']!=digest(path.read_bytes()):raise ValueError('initial checkpoint mismatch')
         state=torch.load(path,weights_only=True,map_location='cpu')
         if not all(torch.equal(value,state[name]) for name,value in original.items()):raise ValueError('shared/identity mismatch')
@@ -53,7 +53,7 @@ def main():
             samples=2000,first=pairs[0],last=pairs[-1])
     audit.update(implementation_commit=commit,executed_vs_committed_source=checks,
         reconstruction_sample_schedules=schedules,schedule_note='reconstructed from same manifests/seeds and code; not a per-step live trace',
-        initial_sha256=digest(initial.read_bytes()),source_snapshot='runs/split-head/fit-v1/source')
+        initial_sha256=digest(initial.read_bytes()),source_snapshot='runs/split-head/fit-v3/source')
     path.write_text(json.dumps(audit,indent=2)+'\n');print(json.dumps(dict(commit=commit,source_files=len(checks),initial_verified=True)))
 
 

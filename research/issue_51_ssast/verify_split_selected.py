@@ -29,13 +29,13 @@ def endpoints(z,source_rows):
 
 def main():
     torch.set_num_threads(4);torch.backends.cuda.matmul.allow_tf32=True;torch.backends.cudnn.allow_tf32=True;seed(46)
-    root=Path('runs/split-head/fit-v1');out=Path('runs/split-head/evidence');out.mkdir(parents=True,exist_ok=True)
+    root=Path('runs/split-head/fit-v3');out=Path('runs/split-head/evidence');out.mkdir(parents=True,exist_ok=True)
     rows,_=read(Path('runs/p1/frame-c0-cache'),'C0')
     for stage in ('C1','C2-low','C2-high','C3'):
         new,_=read(Path('runs/window-depth/cache')/stage,stage);rows+=new
     prepare(rows);by_id={(r['stage'],r['entry']['sample_id']):r for r in rows};model=WindowVHead(4).cuda();records=[];start=time.monotonic()
     for arm in ('coupled','split'):
-        model=(WindowSplitHead(4) if arm=='split' else WindowVHead(4)).cuda()
+        model=(WindowSplitHead(4,amplitude_transform='abs') if arm=='split' else WindowVHead(4)).cuda()
         scale=json.loads((root/arm/'architecture.json').read_text())['scale_r']
         summary=json.loads((root/arm/'summary.json').read_text())
         for result in summary:
@@ -71,7 +71,7 @@ def main():
     sensitivity=[];evidence_reactions=[]
     row=next(r for r in rows if r['stage']=='C3' and r['entry']['split']=='train')
     for arm in ('coupled','split'):
-        model=(WindowSplitHead(4) if arm=='split' else WindowVHead(4)).cuda()
+        model=(WindowSplitHead(4,amplitude_transform='abs') if arm=='split' else WindowVHead(4)).cuda()
         model.load_state_dict(torch.load(root/arm/'C3'/'head.pth',weights_only=True))
         with torch.no_grad():v,a=model(row['tokens'],row['rms']/scale)
         yy=(row['target']/scale).cpu().numpy();base_order=None

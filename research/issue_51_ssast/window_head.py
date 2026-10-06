@@ -34,7 +34,9 @@ class WindowVHead(nn.Module):
         features = torch.cat((center,mean,deviation),-1)
         v = self.output(features).float().reshape(-1,self.k,self.e_dim)
         if hasattr(self, 'amplitude_output'):
-            return v, torch.nn.functional.softplus(self.amplitude_output(features).float())
+            logits = self.amplitude_output(features).float()
+            a = logits.abs() if self.amplitude_transform == 'abs' else torch.nn.functional.softplus(logits)
+            return v, a
         return v, torch.linalg.vector_norm(v,dim=-1)
 
     def architecture(self):
@@ -52,15 +54,19 @@ class WindowVHead(nn.Module):
 
 class WindowSplitHead(WindowVHead):
     """Independent scalar softplus loudness and unchanged 128D identity output."""
-    def __init__(self, depth=4, hidden=128, k=8, e_dim=128):
+    def __init__(self, depth=4, hidden=128, k=8, e_dim=128, amplitude_transform='softplus'):
         super().__init__(depth, hidden, k, e_dim)
+        if amplitude_transform not in ('abs', 'softplus'):
+            raise ValueError('amplitude transform must be abs or softplus')
+        self.amplitude_transform = amplitude_transform
         self.amplitude_output = nn.Linear(3*hidden, k)
         nn.init.zeros_(self.amplitude_output.weight)
         nn.init.constant_(self.amplitude_output.bias, -4.)
 
     def architecture(self):
         result = super().architecture()
-        result.update(amplitude='softplus(Linear(384,8)); independent of Z norm',
+        result.update(amplitude=self.amplitude_transform+'(Linear(384,8)); independent of Z norm',
+                      amplitude_transform=self.amplitude_transform,
                       identity='normalize(Z), original Linear(384,8*128)',
                       additional_parameters=3080)
         return result

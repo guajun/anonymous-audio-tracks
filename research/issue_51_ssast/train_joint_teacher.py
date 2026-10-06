@@ -215,12 +215,13 @@ def main():
     p=argparse.ArgumentParser();p.add_argument('--teacher-mode',choices=('joint','envelope'),default='joint');p.add_argument('--cache',type=Path,required=True);p.add_argument('--c0-cache',type=Path,required=True)
     p.add_argument('--initial',type=Path,required=True);p.add_argument('--out',type=Path,required=True)
     p.add_argument('--identity-weight',type=float,choices=(0.,.2),required=True);p.add_argument('--steps',type=int,default=1000)
+    p.add_argument('--amplitude-transform',choices=('abs','softplus'),default='softplus')
     p.add_argument('--head-mode',choices=('coupled','split'),default='coupled');p.add_argument('--seconds',type=int,default=7200);p.add_argument('--pilot',action='store_true');args=p.parse_args()
     global TEACHER_MODE;TEACHER_MODE=args.teacher_mode
     torch.set_num_threads(4);torch.backends.cuda.matmul.allow_tf32=True;torch.backends.cudnn.allow_tf32=True;seed(46)
     args.out.mkdir(parents=True,exist_ok=True);rows,manifest=read(args.c0_cache,'C0');prepare(rows)
     active=torch.cat([r['target'][r['target']>.001] for r in rows if r['entry']['split']=='train']);scale=float(torch.quantile(active,.95))
-    model=(WindowSplitHead(4) if args.head_mode=='split' else WindowVHead(4)).cuda();model.load_state_dict(torch.load(args.initial,weights_only=True))
+    model=(WindowSplitHead(4,amplitude_transform=args.amplitude_transform) if args.head_mode=='split' else WindowVHead(4)).cuda();model.load_state_dict(torch.load(args.initial,weights_only=True))
     metadata=dict(architecture=model.architecture(),initial=str(args.initial),initial_sha256=sha256(args.initial),
         head_mode=args.head_mode,teacher_mode=args.teacher_mode,identity_weight=args.identity_weight,scale_r=scale,seed=46,pilot=args.pilot,
         initial_description='same historical selected depth4 raw C1 head; full frozen SSAST197-token caches',c0_manifest_sha256=sha256(args.c0_cache/'manifest.json'))

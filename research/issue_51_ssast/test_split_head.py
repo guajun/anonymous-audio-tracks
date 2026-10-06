@@ -35,9 +35,9 @@ class SplitTests(unittest.TestCase):
             np.testing.assert_array_equal(arr.sum(1),1);np.testing.assert_array_equal(arr.sum(2),1)
 
     def test_output_paths_disjoint_but_shared_features_receive_both_gradients(self):
-        torch.manual_seed(51);model=WindowSplitHead();x=torch.randn(5,384,requires_grad=True)
+        torch.manual_seed(51);model=WindowSplitHead(amplitude_transform='abs');x=torch.randn(5,384,requires_grad=True)
         with torch.no_grad():model.amplitude_output.weight.normal_(std=.01)
-        z=model.output(x).reshape(5,8,128);a=torch.nn.functional.softplus(model.amplitude_output(x))
+        z=model.output(x).reshape(5,8,128);a=model.amplitude_output(x).abs()
         amp=a.mean();unit=torch.nn.functional.normalize(z,dim=-1)
         lid=(unit[:,0]*unit[:,1]).sum(-1).mean()
         self.assertIsNone(torch.autograd.grad(lid,model.amplitude_output.weight,allow_unused=True,retain_graph=True)[0])
@@ -46,8 +46,16 @@ class SplitTests(unittest.TestCase):
         self.assertGreater(float(torch.autograd.grad(lid,x)[0].norm()),0)
         before=a.detach().clone()
         with torch.no_grad():model.output.weight.mul_(7);model.output.bias.mul_(7)
-        torch.testing.assert_close(before,torch.nn.functional.softplus(model.amplitude_output(x)))
+        torch.testing.assert_close(before,model.amplitude_output(x).abs())
         self.assertEqual(sum(p.numel() for p in model.parameters()),693000)
+
+    def test_actual_full_window_abs_scalar_output(self):
+        torch.set_num_threads(4)
+        model=WindowSplitHead(amplitude_transform='abs')
+        with torch.no_grad():model.amplitude_output.bias.fill_(-2.)
+        z,a=model(torch.zeros(1,197,768),torch.zeros(1,197))
+        self.assertEqual(z.shape,(1,8,128));torch.testing.assert_close(a,torch.full((1,8),2.))
+        self.assertGreater(float((a-z.norm(dim=-1)).abs().max()),1.)
 
     def test_GT_zero_has_no_ID_but_independent_amplitude_is_supervised(self):
         z,y=example();y*=0;a=torch.full((4,3),1e-6,requires_grad=True)

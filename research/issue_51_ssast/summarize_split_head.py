@@ -41,7 +41,7 @@ def relations(records):
 
 
 def main():
-    root=Path('runs/split-head/fit-v1');out=Path('runs/split-head/evidence');out.mkdir(parents=True,exist_ok=True)
+    root=Path('runs/split-head/fit-v3');out=Path('runs/split-head/evidence');out.mkdir(parents=True,exist_ok=True)
     status=json.loads((root/'status.json').read_text())
     if not status['complete'] or any(j['exit_code']!=0 for j in status['jobs']):raise ValueError('suite incomplete/failed')
     result=dict(status=status,arms=[],definitions=dict(primary='actual prediction-only hard adjacent identity association',
@@ -92,6 +92,8 @@ def main():
         result['arms'].append(arm)
     (out/'issue-51-split-id-summary.json').write_text(json.dumps(result,indent=2)+'\n')
     (out/'issue-51-split-suite-status.json').write_text(json.dumps(status,indent=2)+'\n')
+    result['pilot_status']=json.loads((root/'pilot-status.json').read_text())
+    (out/'issue-51-split-id-summary.json').write_text(json.dumps(result,indent=2)+'\n')
     pilot={a:json.loads((root/(a+'-pilot')/'pilot.json').read_text()) for a in ('coupled','split')}
     (out/'issue-51-split-pilot.json').write_text(json.dumps(pilot,indent=1)+'\n')
     initial={name:json.loads((root/name/'initial-train-diagnostics.json').read_text()) for name in full}
@@ -156,14 +158,28 @@ def main():
             audit['files'].append(dict(path=str(path),sha256=sha256(path),total_amplitude_max_error=error));archive.write(path,str(path.relative_to(root)))
     audit['npz_count']=len(audit['files']);audit['zip_sha256']=sha256('runs/split-head/predictions.zip')
     (out/'issue-51-split-tests.log').write_text((root/'tests.log').read_text())
-    audit['gpu']=0;audit['tests']='40 passed; issue-51-split-tests.log';audit['new_inference_has_truth_input']=False
+    audit['gpu']=0;audit['tests']='41 passed; issue-51-split-tests.log';audit['new_inference_has_truth_input']=False
     audit['implementation_commit']='recorded in git research branch'
     audit['source_sha256']={name:sha256(Path('research/issue_51_ssast')/name) for name in
-        ('train_joint_teacher.py','joint_teacher.py','teacher_assignment.py','identity_supervision.py','hard_identity_inference.py','run_split_suite.py','initialize_split_head.py','test_split_head.py','summarize_split_head.py','verify_split_selected.py','verify_split_execution.py','course_metrics.py','window_head.py')}
+        ('train_joint_teacher.py','joint_teacher.py','teacher_assignment.py','identity_supervision.py','hard_identity_inference.py','run_split_suite.py','initialize_split_final.py','test_split_head.py','summarize_split_head.py','verify_split_selected.py','verify_split_execution.py','audit_split_parameterization.py','audit_split_small.py','train_window_depth.py','features.py','course_loss.py','course_metrics.py','window_head.py')}
     audit['identical_initial_checkpoint']=result['arms'][0]['architecture']['initial_sha256']==result['arms'][1]['architecture']['initial_sha256']
     audit['checkpoint_sha256']={str(path):sha256(path) for path in root.glob('*/*/head.pth')}
     (out/'issue-51-split-execution-audit.json').write_text(json.dumps(audit,indent=2)+'\n')
     (out/'issue-51-split-initialization.json').write_text((root/'initialization.json').read_text())
+    first=Path('runs/split-head/fit-v1');second=Path('runs/split-head/fit-v2')
+    attempts=dict(fit_v1_status=json.loads((first/'status.json').read_text()),
+        fit_v1_initialization=json.loads((first/'initialization.json').read_text()),
+        fit_v2_initialization=json.loads((second/'initialization.json').read_text()),
+        fit_v2_pilot_status=json.loads((second/'pilot-status.json').read_text()),
+        pilots={version:{a:json.loads((directory/(a+'-pilot')/'pilot.json').read_text()) for a in ('coupled','split')}
+            for version,directory in [('fit-v1',first),('fit-v2',second)]},
+        first_source_sha256={p.name:sha256(p) for p in (first/'source').glob('*.py')},
+        total_formal_updates_including_preserved=16000,total_pilot_updates=120,
+        note='fit-v1 ill-conditioned softplus initialization failed; fit-v2 train-only calibration/pilots only; final fit-v3 abs chosen by train matching/conditioning')
+    if not attempts['fit_v1_status']['complete'] or any(j['exit_code'] for j in attempts['fit_v1_status']['jobs']):raise ValueError('precursor not complete')
+    with gzip.open(out/'issue-51-split-v1-preserved-full.json.gz','wt',encoding='utf-8') as f:
+        json.dump({a:json.loads((first/a/'summary.json').read_text()) for a in ('coupled','split')},f)
+    (out/'issue-51-split-preserved-attempts.json').write_text(json.dumps(attempts,indent=2)+'\n')
     print('EVIDENCE COMPLETE',out,flush=True)
 
 if __name__=='__main__':main()
