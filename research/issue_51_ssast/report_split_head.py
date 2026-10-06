@@ -2,7 +2,6 @@
 import gzip
 import json
 from pathlib import Path
-import numpy as np
 
 def main():
     out=Path('evidence');load=lambda name:json.loads((out/name).read_text())
@@ -78,8 +77,8 @@ def main():
         '| Arm | Course | Updates | Selected update | Stop | 秒 |','|---|---|---:|---:|---|---:|']
     for arm in summary['arms']:
         for c in arm['courses']:lines.append(f"| {arm['name']} | {c['stage']} | {c['updates']} | {c['selected_update']} | {c['stop_reason']} | {c['seconds']:.2f} |")
-    lines+=['',f"正式课程共{sum(c['updates'] for arm in summary['arms'] for c in arm['courses'])}次更新。durable runner墙钟{summary['status']['elapsed_seconds']:.2f}s，含并发加载/完整评估及轮询，pilot单独记录；初始化另计。所有阶段达到更新上限，不称收敛。仅缓存后head训练成本，不冒充SSAST特征提取成本；无云账单，不虚构金额。只使用GPU0，不管理GPU1及外部进程。",'',
-        f"41 tests passed。重载selected全部已见val/test共{selected['npz_rechecks']} NPZ，Z最大差{selected['max_v_error']:.2e}、A最大差{selected['max_a_error']:.2e}、数量差{selected['count_conservation_max_error']}，教师/torch完整F最大差{selected['max_objective_error']:.2e}。完整预测ZIP SHA256 `{audit['zip_sha256']}`；每文件SHA、执行源快照、共同初始化tensor、抽样schedule重建hash已保存。抽样hash是根据相同manifest/seed/代码重建，不冒充逐步现场轨迹。",'',
+    lines+=['',f"正式课程共{sum(c['updates'] for arm in summary['arms'] for c in arm['courses'])}次更新。durable runner墙钟{summary['status']['elapsed_seconds']:.2f}s，含并发加载/完整评估及轮询，pilot单独记录；初始化另计。所有阶段达到更新上限，不称收敛。两臂并发，各阶段wall秒可重叠；仅缓存后head训练成本，不冒充SSAST特征提取成本；无云账单，不虚构金额。只使用GPU0，不管理GPU1及外部进程。",'',
+        f"41 tests passed。重载selected全部已见val/test共{selected['npz_rechecks']} NPZ，Z最大差{selected['max_v_error']:.2e}、A最大差{selected['max_a_error']:.2e}、数量差{selected['count_conservation_max_error']}，教师/torch完整F最大差{selected['max_objective_error']:.2e}。NPZ的v字段沿用旧兼容命名：拆头存Z*r，raw_a才是独立A*r，不能从norm(v)重建响度。完整预测ZIP SHA256 `{audit['zip_sha256']}`；每文件SHA、执行源快照、共同初始化tensor、抽样schedule重建hash已保存。抽样hash是根据相同manifest/seed/代码重建，不冒充逐步现场轨迹。",'',
         '[具体协议](../research/issue-51-split-head.md) · [汇总](../../evidence/issue-51-split-id-summary.json) · [selected验证](../../evidence/issue-51-split-selected-verification.json) · [初始化](../../evidence/issue-51-split-initialization.json) · [执行SHA审计](../../evidence/issue-51-split-execution-audit.json) · [耦合完整结果](../../evidence/issue-51-split-coupled-full.json.gz) · [拆头完整结果](../../evidence/issue-51-split-split-full.json.gz)。', '',
         '![当前课程](../../evidence/issue-51-split-comparison.png)','',
         '![C3原轴两test](../../evidence/issue-51-split-c3-curves.png)','',
@@ -94,7 +93,10 @@ def main():
     lines.insert(4,conclusion)
     lines.insert(5,'')
     attempts=load('issue-51-split-preserved-attempts.json')
-    lines += ['', '## 保留的初始化失败与额外成本', '', f"fit-v1软plus的弱ridge校准A层权重norm4943，共享训练后A塌缩；完整两臂额外8000更新保留，runner {attempts['fit_v1_status']['elapsed_seconds']:.2f}s。不能用其低空轨FP宣称拆头成功，也不能将病态初始化失败归因于所有拆头结构。", '', 'fit-v2只有训练集更强正则校准与两臂各20次pilot，未运行正式课程；初始相对幅度误差约32%–67%，因此最终选用train匹配更好的abs标量非负参数化。此选择依据为train-only数值条件/初始化匹配，不读取val/test选择参数化。早期正式fit-v1提前启动是执行缺陷，额外成本明确保留。', '', f"最终fit-v3初始化A层权重norm {init['amplitude_weight_norm']:.4f}。abs在精确零处取零次梯度（原向量norm在精确零处同样没有径向恢复梯度），非零近零A有直接梯度，不增加训练gate。两臂pilot各20更新，runner {summary['pilot_status']['elapsed_seconds']:.2f}s，独立于正式runner；每job墙钟包括加载/评估与至多10秒轮询误差。", '', '[首版完整失败](../../evidence/issue-51-split-v1-preserved-full.json.gz) · [初始化探索记录](../../evidence/issue-51-split-preserved-attempts.json) · [标量参数化审计](../../evidence/issue-51-split-parameterization.json)。']
+    lines += ['', '## 保留的初始化失败与额外成本', '', f"fit-v1软plus的弱ridge校准A层权重norm4943，共享训练后A塌缩；完整两臂额外8000更新保留，runner {attempts['fit_v1_status']['elapsed_seconds']:.2f}s。不能用其低空轨FP宣称拆头成功，也不能将病态初始化失败归因于所有拆头结构。", '', 'fit-v2只有训练集更强正则校准与两臂各20次pilot，未运行正式课程；初始相对幅度误差约32%–67%，因此最终选用train匹配更好的abs标量非负参数化。此选择依据为train-only数值条件/初始化匹配，未使用val/test指标选择最终参数化。早期正式fit-v1提前启动是执行缺陷，额外成本明确保留。', '', f"最终fit-v3初始化A层权重norm {init['amplitude_weight_norm']:.4f}。abs在精确零处取零次梯度（原向量norm在精确零处同样没有径向恢复梯度），非零近零A有直接梯度，不增加训练gate。两臂pilot各20更新，runner {summary['pilot_status']['elapsed_seconds']:.2f}s，独立于正式runner；每job墙钟包括加载/评估与至多10秒轮询误差。", '', '[首版完整失败](../../evidence/issue-51-split-v1-preserved-full.json.gz) · [初始化探索记录](../../evidence/issue-51-split-preserved-attempts.json) · [标量参数化审计](../../evidence/issue-51-split-parameterization.json)。']
+    repair=load('issue-51-split-initialization-repair.json')
+    rec=repair['recomputed_initialization']
+    lines += ['', f"执行审计曾因路径变量遮蔽将审计JSON误写到split-initial.pth。训练/selected/112个NPZ均未改变；修正路径命名和写后SHA保护后，按同一确定性初始化恢复，耦合/拆头初始化SHA均与训练前逐字节一致。原初始化记录保留，恢复额外缓存校准每臂1000pass，拆头{rec['split_seconds']:.3f}s、耦合控制{rec['coupled_seconds']:.3f}s，不计作新的正式训练。见[修复记录](../../evidence/issue-51-split-initialization-repair.json)。"]
     Path('docs/reports/issue-51-split-head.md').write_text('\n'.join(lines)+'\n',encoding='utf-8')
 
 if __name__=='__main__':main()

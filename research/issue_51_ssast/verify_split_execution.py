@@ -8,8 +8,8 @@ from pathlib import Path
 
 def digest(x):return hashlib.sha256(x).hexdigest()
 def main():
-    out=Path('runs/split-head/evidence');path=out/'issue-51-split-execution-audit.json'
-    audit=json.loads(path.read_text());source=Path('runs/split-head/fit-v3/source')
+    out=Path('runs/split-head/evidence');audit_path=out/'issue-51-split-execution-audit.json'
+    audit=json.loads(audit_path.read_text());source=Path('runs/split-head/fit-v3/source')
     import argparse
     parser=argparse.ArgumentParser();parser.add_argument('--commit',default='HEAD');args=parser.parse_args()
     commit=subprocess.check_output(['git','rev-parse',args.commit],text=True).strip()
@@ -30,9 +30,9 @@ def main():
     original=torch.load(initial,weights_only=True,map_location='cpu')
     initial_states=[]
     for arm,meta in zip(('coupled','split'),arms):
-        path=Path('runs/split-head/fit-v3')/(arm+'-initial.pth')
-        if meta['initial_sha256']!=digest(path.read_bytes()):raise ValueError('initial checkpoint mismatch')
-        state=torch.load(path,weights_only=True,map_location='cpu')
+        initial_path=Path('runs/split-head/fit-v3')/(arm+'-initial.pth')
+        if meta['initial_sha256']!=digest(initial_path.read_bytes()):raise ValueError('initial checkpoint mismatch')
+        state=torch.load(initial_path,weights_only=True,map_location='cpu')
         if not all(torch.equal(value,state[name]) for name,value in original.items()):raise ValueError('shared/identity mismatch')
         initial_states.append(state)
     user_weight=Path('runs/p0/user-frame.pth')
@@ -54,7 +54,11 @@ def main():
     audit.update(implementation_commit=commit,executed_vs_committed_source=checks,
         reconstruction_sample_schedules=schedules,schedule_note='reconstructed from same manifests/seeds and code; not a per-step live trace',
         initial_sha256=digest(initial.read_bytes()),source_snapshot='runs/split-head/fit-v3/source')
-    path.write_text(json.dumps(audit,indent=2)+'\n');print(json.dumps(dict(commit=commit,source_files=len(checks),initial_verified=True)))
+    audit_path.write_text(json.dumps(audit,indent=2)+'\n')
+    for arm,meta in zip(('coupled','split'),arms):
+        if digest((Path('runs/split-head/fit-v3')/(arm+'-initial.pth')).read_bytes())!=meta['initial_sha256']:
+            raise ValueError('audit must not mutate initial checkpoints')
+    print(json.dumps(dict(commit=commit,source_files=len(checks),initial_verified=True)))
 
 
 if __name__=='__main__':main()
