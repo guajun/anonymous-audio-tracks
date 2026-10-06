@@ -120,7 +120,7 @@ def main():
         ax.set_title(title);ax.set_xticks(np.arange(4),['C1','C2-low','C2-high','C3']);ax.grid(alpha=.2);ax.legend(fontsize=7)
     for ax in axes[0]:ax.set_ylim(0,1)
     for ax in axes[1]:ax.set_ylim(0,100)
-    fig.suptitle('One seed, fixed 4/2/2 data; new arms share init/data/budget; teacher is not inference')
+    fig.suptitle('One seed, fixed 4/2/2; identical shared/Z init, calibrated split A; teacher is diagnostic')
     fig.tight_layout();fig.savefig(out/'issue-51-split-comparison.png',dpi=150);plt.close(fig)
     fig,axes=plt.subplots(4,4,figsize=(18,13),sharex=True,sharey=True)
     for idx,name in enumerate(full):
