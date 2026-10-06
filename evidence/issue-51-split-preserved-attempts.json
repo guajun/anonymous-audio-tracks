@@ -1,0 +1,4907 @@
+{
+  "fit_v1_status": {
+    "start_epoch": 1791276621.1769414,
+    "elapsed_seconds": 1100.381873369217,
+    "gpu": 0,
+    "jobs": [
+      {
+        "name": "coupled-pilot",
+        "pid": 1284783,
+        "command": [
+          "/mnt/ssd/user/lgy/issue-51-ssast/.venv-p0/bin/python",
+          "research/issue_51_ssast/train_joint_teacher.py",
+          "--cache",
+          "runs/window-depth/cache",
+          "--c0-cache",
+          "runs/p1/frame-c0-cache",
+          "--initial",
+          "runs/split-head/fit-v1/coupled-initial.pth",
+          "--out",
+          "runs/split-head/fit-v1/coupled-pilot",
+          "--identity-weight",
+          ".2",
+          "--teacher-mode",
+          "joint",
+          "--head-mode",
+          "coupled",
+          "--pilot",
+          "--steps",
+          "20"
+        ],
+        "exit_code": 0
+      },
+      {
+        "name": "split-pilot",
+        "pid": 1287017,
+        "command": [
+          "/mnt/ssd/user/lgy/issue-51-ssast/.venv-p0/bin/python",
+          "research/issue_51_ssast/train_joint_teacher.py",
+          "--cache",
+          "runs/window-depth/cache",
+          "--c0-cache",
+          "runs/p1/frame-c0-cache",
+          "--initial",
+          "runs/split-head/fit-v1/split-initial.pth",
+          "--out",
+          "runs/split-head/fit-v1/split-pilot",
+          "--identity-weight",
+          ".2",
+          "--teacher-mode",
+          "joint",
+          "--head-mode",
+          "split",
+          "--pilot",
+          "--steps",
+          "20"
+        ],
+        "exit_code": 0
+      },
+      {
+        "name": "coupled",
+        "pid": 1289085,
+        "command": [
+          "/mnt/ssd/user/lgy/issue-51-ssast/.venv-p0/bin/python",
+          "research/issue_51_ssast/train_joint_teacher.py",
+          "--cache",
+          "runs/window-depth/cache",
+          "--c0-cache",
+          "runs/p1/frame-c0-cache",
+          "--initial",
+          "runs/split-head/fit-v1/coupled-initial.pth",
+          "--out",
+          "runs/split-head/fit-v1/coupled",
+          "--identity-weight",
+          ".2",
+          "--teacher-mode",
+          "joint",
+          "--head-mode",
+          "coupled"
+        ],
+        "exit_code": 0
+      },
+      {
+        "name": "split",
+        "pid": 1324550,
+        "command": [
+          "/mnt/ssd/user/lgy/issue-51-ssast/.venv-p0/bin/python",
+          "research/issue_51_ssast/train_joint_teacher.py",
+          "--cache",
+          "runs/window-depth/cache",
+          "--c0-cache",
+          "runs/p1/frame-c0-cache",
+          "--initial",
+          "runs/split-head/fit-v1/split-initial.pth",
+          "--out",
+          "runs/split-head/fit-v1/split",
+          "--identity-weight",
+          ".2",
+          "--teacher-mode",
+          "joint",
+          "--head-mode",
+          "split"
+        ],
+        "exit_code": 0
+      }
+    ],
+    "complete": true
+  },
+  "fit_v1_initialization": {
+    "method": "inverse-softplus train-only ridge then 1000 cached-feature Adam MSE steps; shared/Z frozen",
+    "training_samples": [
+      [
+        "C0",
+        "c0-train-00"
+      ],
+      [
+        "C0",
+        "c0-train-01"
+      ],
+      [
+        "C0",
+        "c0-train-02"
+      ],
+      [
+        "C0",
+        "c0-train-03"
+      ],
+      [
+        "C1",
+        "c1-local-train-00"
+      ],
+      [
+        "C1",
+        "c1-local-train-01"
+      ],
+      [
+        "C1",
+        "c1-local-train-02"
+      ],
+      [
+        "C1",
+        "c1-local-train-03"
+      ]
+    ],
+    "data_used": "C0/C1 train only, target old A, no GT/val/test",
+    "steps_per_arm": 1000,
+    "coupled_control": "same cached readout forward count, zero-residual control; no parameter updates",
+    "initialization_budget_limitation": "equal pass budget, different wall time and optimizer work; scalar linear softplus cannot exactly represent norm of 128D affine output",
+    "split_seconds": 7.965001123957336,
+    "coupled_seconds": 0.15037811920046806,
+    "history": [
+      {
+        "step": 0,
+        "train_mse": 0.0002039983228314668
+      },
+      {
+        "step": 100,
+        "train_mse": 0.0001838559692259878
+      },
+      {
+        "step": 200,
+        "train_mse": 0.0001835853763623163
+      },
+      {
+        "step": 300,
+        "train_mse": 0.0001804946077754721
+      },
+      {
+        "step": 400,
+        "train_mse": 0.0001809316163416952
+      },
+      {
+        "step": 500,
+        "train_mse": 0.00018245578394271433
+      },
+      {
+        "step": 600,
+        "train_mse": 0.00018103508045896888
+      },
+      {
+        "step": 700,
+        "train_mse": 0.00017761207709554583
+      },
+      {
+        "step": 800,
+        "train_mse": 0.00017739253235049546
+      },
+      {
+        "step": 900,
+        "train_mse": 0.0001824144128477201
+      }
+    ],
+    "differences": [
+      {
+        "stage": "C0",
+        "sample_id": "c0-train-00",
+        "z_max_error": 0.0,
+        "amplitude_mae": 0.0007775180274620652,
+        "amplitude_max_error": 0.18308871984481812,
+        "mean_reference_amplitude": 0.007188031915575266,
+        "relative_mae": 0.10816841572523117,
+        "count_mae": 0.0020000000949949026
+      },
+      {
+        "stage": "C0",
+        "sample_id": "c0-train-01",
+        "z_max_error": 0.0,
+        "amplitude_mae": 0.0005819976795464754,
+        "amplitude_max_error": 0.18842348456382751,
+        "mean_reference_amplitude": 0.003545682178810239,
+        "relative_mae": 0.1641426533460617,
+        "count_mae": 0.00800000037997961
+      },
+      {
+        "stage": "C0",
+        "sample_id": "c0-train-02",
+        "z_max_error": 0.0,
+        "amplitude_mae": 0.0013571210438385606,
+        "amplitude_max_error": 0.2010655701160431,
+        "mean_reference_amplitude": 0.010442680679261684,
+        "relative_mae": 0.12995906174182892,
+        "count_mae": 0.014000000432133675
+      },
+      {
+        "stage": "C0",
+        "sample_id": "c0-train-03",
+        "z_max_error": 0.0,
+        "amplitude_mae": 0.0028554238379001617,
+        "amplitude_max_error": 0.6482160091400146,
+        "mean_reference_amplitude": 0.018110955134034157,
+        "relative_mae": 0.1576627939939499,
+        "count_mae": 0.06800000369548798
+      },
+      {
+        "stage": "C1",
+        "sample_id": "c1-local-train-00",
+        "z_max_error": 0.0,
+        "amplitude_mae": 0.0015171682462096214,
+        "amplitude_max_error": 0.21810472011566162,
+        "mean_reference_amplitude": 0.012932201847434044,
+        "relative_mae": 0.1173170879483223,
+        "count_mae": 0.1457085758447647
+      },
+      {
+        "stage": "C1",
+        "sample_id": "c1-local-train-01",
+        "z_max_error": 0.0,
+        "amplitude_mae": 0.0015227410476654768,
+        "amplitude_max_error": 0.24239632487297058,
+        "mean_reference_amplitude": 0.011807319708168507,
+        "relative_mae": 0.1289658546447754,
+        "count_mae": 0.06786426901817322
+      },
+      {
+        "stage": "C1",
+        "sample_id": "c1-local-train-02",
+        "z_max_error": 0.0,
+        "amplitude_mae": 0.001629117876291275,
+        "amplitude_max_error": 0.17243289947509766,
+        "mean_reference_amplitude": 0.01402136031538248,
+        "relative_mae": 0.11618828773498535,
+        "count_mae": 0.06586826592683792
+      },
+      {
+        "stage": "C1",
+        "sample_id": "c1-local-train-03",
+        "z_max_error": 0.0,
+        "amplitude_mae": 0.002159545896574855,
+        "amplitude_max_error": 0.37533271312713623,
+        "mean_reference_amplitude": 0.016979724168777466,
+        "relative_mae": 0.12718380987644196,
+        "count_mae": 0.16566866636276245
+      }
+    ],
+    "original_sha256": "83ff4753abc0c79f006e4d6b6b104f30a80cd907ffb05a9ed05c3cabe81b33c3",
+    "coupled_sha256": "8cfec2f5aa52658d86f567e537f164814a76ccb9de689431ef864858a3fa34ee",
+    "split_sha256": "4690f714ba06d360c734de4e9a0fdb233953ea41830762d4b5bceb20c8c86736",
+    "shared_and_identity_exactly_equal": true,
+    "scale_r": 0.2591032087802887
+  },
+  "fit_v2_initialization": {
+    "method": "train-only ridge chosen by MSE subject to amplitude weight norm<=100; 1000 projected Adam steps; shared/Z frozen",
+    "ridge_candidates": [
+      {
+        "ridge": 0.01,
+        "weight_norm": 225.58413155968023,
+        "train_mse": 0.002185834338888526,
+        "train_mae": 0.005296769086271524
+      },
+      {
+        "ridge": 0.1,
+        "weight_norm": 96.71702057432265,
+        "train_mse": 0.00379772437736392,
+        "train_mae": 0.007325780112296343
+      },
+      {
+        "ridge": 1.0,
+        "weight_norm": 37.460033442490015,
+        "train_mse": 0.015190670266747475,
+        "train_mae": 0.011063393205404282
+      },
+      {
+        "ridge": 10.0,
+        "weight_norm": 17.462888845023286,
+        "train_mse": 0.01024735439568758,
+        "train_mae": 0.010171281173825264
+      },
+      {
+        "ridge": 100.0,
+        "weight_norm": 6.5306975547311845,
+        "train_mse": 0.004681851249188185,
+        "train_mae": 0.010659674182534218
+      }
+    ],
+    "chosen_ridge": 0.1,
+    "amplitude_weight_norm_cap": 100.0,
+    "training_samples": [
+      [
+        "C0",
+        "c0-train-00"
+      ],
+      [
+        "C0",
+        "c0-train-01"
+      ],
+      [
+        "C0",
+        "c0-train-02"
+      ],
+      [
+        "C0",
+        "c0-train-03"
+      ],
+      [
+        "C1",
+        "c1-local-train-00"
+      ],
+      [
+        "C1",
+        "c1-local-train-01"
+      ],
+      [
+        "C1",
+        "c1-local-train-02"
+      ],
+      [
+        "C1",
+        "c1-local-train-03"
+      ]
+    ],
+    "data_used": "C0/C1 train only, target old A, no GT/val/test",
+    "steps_per_arm": 1000,
+    "coupled_control": "same cached readout forward count, zero-residual control; no parameter updates",
+    "initialization_budget_limitation": "equal pass budget, different wall time and optimizer work; scalar linear softplus cannot exactly represent norm of 128D affine output; added initialization norm cap, not a formal-training constraint",
+    "split_seconds": 1.9332564640790224,
+    "coupled_seconds": 0.18431647028774023,
+    "history": [
+      {
+        "step": 0,
+        "train_mse": 0.0036638008896261454
+      },
+      {
+        "step": 100,
+        "train_mse": 0.0022656088694930077
+      },
+      {
+        "step": 200,
+        "train_mse": 0.0016740217106416821
+      },
+      {
+        "step": 300,
+        "train_mse": 0.001462546642869711
+      },
+      {
+        "step": 400,
+        "train_mse": 0.0014136825921013951
+      },
+      {
+        "step": 500,
+        "train_mse": 0.0013766176998615265
+      },
+      {
+        "step": 600,
+        "train_mse": 0.0013631978072226048
+      },
+      {
+        "step": 700,
+        "train_mse": 0.0013522200752049685
+      },
+      {
+        "step": 800,
+        "train_mse": 0.0013409629464149475
+      },
+      {
+        "step": 900,
+        "train_mse": 0.001327692298218608
+      }
+    ],
+    "differences": [
+      {
+        "stage": "C0",
+        "sample_id": "c0-train-00",
+        "z_max_error": 0.0,
+        "amplitude_mae": 0.004156343638896942,
+        "amplitude_max_error": 0.2588430941104889,
+        "mean_reference_amplitude": 0.007188031915575266,
+        "relative_mae": 0.5782310962677002,
+        "count_mae": 0.020000001415610313
+      },
+      {
+        "stage": "C0",
+        "sample_id": "c0-train-01",
+        "z_max_error": 0.0,
+        "amplitude_mae": 0.0023922319523990154,
+        "amplitude_max_error": 0.28431352972984314,
+        "mean_reference_amplitude": 0.003545682178810239,
+        "relative_mae": 0.6746887564659119,
+        "count_mae": 0.04200000315904617
+      },
+      {
+        "stage": "C0",
+        "sample_id": "c0-train-02",
+        "z_max_error": 0.0,
+        "amplitude_mae": 0.006613824050873518,
+        "amplitude_max_error": 0.27752161026000977,
+        "mean_reference_amplitude": 0.010442680679261684,
+        "relative_mae": 0.6333454251289368,
+        "count_mae": 0.036000002175569534
+      },
+      {
+        "stage": "C0",
+        "sample_id": "c0-train-03",
+        "z_max_error": 0.0,
+        "amplitude_mae": 0.008012190461158752,
+        "amplitude_max_error": 0.8385219573974609,
+        "mean_reference_amplitude": 0.018110955134034157,
+        "relative_mae": 0.4423947036266327,
+        "count_mae": 0.14000000059604645
+      },
+      {
+        "stage": "C1",
+        "sample_id": "c1-local-train-00",
+        "z_max_error": 0.0,
+        "amplitude_mae": 0.006421955302357674,
+        "amplitude_max_error": 0.2834749221801758,
+        "mean_reference_amplitude": 0.012932201847434044,
+        "relative_mae": 0.4965863823890686,
+        "count_mae": 0.21556885540485382
+      },
+      {
+        "stage": "C1",
+        "sample_id": "c1-local-train-01",
+        "z_max_error": 0.0,
+        "amplitude_mae": 0.005954796448349953,
+        "amplitude_max_error": 0.23475201427936554,
+        "mean_reference_amplitude": 0.011807319708168507,
+        "relative_mae": 0.5043309330940247,
+        "count_mae": 0.08982036262750626
+      },
+      {
+        "stage": "C1",
+        "sample_id": "c1-local-train-02",
+        "z_max_error": 0.0,
+        "amplitude_mae": 0.005301851313561201,
+        "amplitude_max_error": 0.22591771185398102,
+        "mean_reference_amplitude": 0.01402136031538248,
+        "relative_mae": 0.37812674045562744,
+        "count_mae": 0.10179640352725983
+      },
+      {
+        "stage": "C1",
+        "sample_id": "c1-local-train-03",
+        "z_max_error": 0.0,
+        "amplitude_mae": 0.005400130990892649,
+        "amplitude_max_error": 0.4386243224143982,
+        "mean_reference_amplitude": 0.016979724168777466,
+        "relative_mae": 0.3180340826511383,
+        "count_mae": 0.1896207630634308
+      }
+    ],
+    "original_sha256": "83ff4753abc0c79f006e4d6b6b104f30a80cd907ffb05a9ed05c3cabe81b33c3",
+    "coupled_sha256": "8cfec2f5aa52658d86f567e537f164814a76ccb9de689431ef864858a3fa34ee",
+    "split_sha256": "80ca960f3ba81605abe1b5ec74d9d6310368e00ad1449ed507a8fada40e9e99e",
+    "shared_and_identity_exactly_equal": true,
+    "scale_r": 0.2591032087802887
+  },
+  "fit_v2_pilot_status": {
+    "start_epoch": 1791277614.2494648,
+    "elapsed_seconds": 40.00250601768494,
+    "runner_pid": 1351657,
+    "phase": "pilot",
+    "gpu": 0,
+    "jobs": [
+      {
+        "name": "coupled-pilot",
+        "pid": 1351658,
+        "command": [
+          "/mnt/ssd/user/lgy/issue-51-ssast/.venv-p0/bin/python",
+          "research/issue_51_ssast/train_joint_teacher.py",
+          "--cache",
+          "runs/window-depth/cache",
+          "--c0-cache",
+          "runs/p1/frame-c0-cache",
+          "--initial",
+          "runs/split-head/fit-v2/coupled-initial.pth",
+          "--out",
+          "runs/split-head/fit-v2/coupled-pilot",
+          "--identity-weight",
+          ".2",
+          "--teacher-mode",
+          "joint",
+          "--head-mode",
+          "coupled",
+          "--pilot",
+          "--steps",
+          "20"
+        ],
+        "start_epoch": 1791277614.2498813,
+        "exit_code": 0,
+        "seconds": 20.00068426132202
+      },
+      {
+        "name": "split-pilot",
+        "pid": 1352623,
+        "command": [
+          "/mnt/ssd/user/lgy/issue-51-ssast/.venv-p0/bin/python",
+          "research/issue_51_ssast/train_joint_teacher.py",
+          "--cache",
+          "runs/window-depth/cache",
+          "--c0-cache",
+          "runs/p1/frame-c0-cache",
+          "--initial",
+          "runs/split-head/fit-v2/split-initial.pth",
+          "--out",
+          "runs/split-head/fit-v2/split-pilot",
+          "--identity-weight",
+          ".2",
+          "--teacher-mode",
+          "joint",
+          "--head-mode",
+          "split",
+          "--pilot",
+          "--steps",
+          "20"
+        ],
+        "start_epoch": 1791277634.2510502,
+        "exit_code": 0,
+        "seconds": 20.000892877578735
+      }
+    ],
+    "complete": true
+  },
+  "pilots": {
+    "fit-v1": {
+      "coupled": {
+        "history": [
+          {
+            "update": 1,
+            "amplitude_loss": 0.014336287043988705,
+            "identity_loss": 0.0007343709003180265,
+            "gradient": {
+              "amplitude_vector": {
+                "norm": 0.46820762753486633,
+                "radial_norm": 0.46820762753486633,
+                "tangent_norm": 3.8902065568890976e-08
+              },
+              "identity_vector": {
+                "norm": 1.1163853406906128,
+                "radial_norm": 2.544879684762691e-08,
+                "tangent_norm": 1.1163853406906128
+              },
+              "shared_projection_amplitude_norm": 0.1521500200033188,
+              "shared_projection_identity_norm": 0.10310352593660355,
+              "shared_projection_gradient_cosine": -0.26665687561035156
+            },
+            "confidence": {
+              "count": 200,
+              "mean": 0.9056857228279114,
+              "quantiles": [
+                0.9056858420372009,
+                0.9056858420372009,
+                0.9056858420372009,
+                0.9056858420372009,
+                0.9056858420372009
+              ]
+            },
+            "zero_tracks": 0.0009523511398583651
+          },
+          {
+            "update": 20,
+            "amplitude_loss": 0.04253721237182617,
+            "identity_loss": 0.0017690074164420366,
+            "gradient": {
+              "amplitude_vector": {
+                "norm": 0.17707881331443787,
+                "radial_norm": 0.17707881331443787,
+                "tangent_norm": 1.3763412631817573e-08
+              },
+              "identity_vector": {
+                "norm": 1.1058710813522339,
+                "radial_norm": 9.665364508748553e-09,
+                "tangent_norm": 1.1058710813522339
+              },
+              "shared_projection_amplitude_norm": 0.222684845328331,
+              "shared_projection_identity_norm": 0.3816344738006592,
+              "shared_projection_gradient_cosine": 0.4828953444957733
+            },
+            "confidence": {
+              "count": 200,
+              "mean": 0.9056857228279114,
+              "quantiles": [
+                0.9056858420372009,
+                0.9056858420372009,
+                0.9056858420372009,
+                0.9056858420372009,
+                0.9056858420372009
+              ]
+            },
+            "zero_tracks": 0.03435872495174408
+          }
+        ],
+        "final_train": [
+          {
+            "stage": "C1",
+            "sample_id": "c1-local-train-00",
+            "actual": {
+              "order": [
+                4,
+                3
+              ],
+              "assignment": "whole-sequence PIT",
+              "all": {
+                "centers": 501,
+                "per_source_iou": [
+                  0.45498883724212646,
+                  0.15257380902767181
+                ],
+                "per_source_mae": [
+                  0.01422039419412613,
+                  0.0034846647176891565
+                ]
+              },
+              "nonoverlap": {
+                "centers": 501,
+                "per_source_iou": [
+                  0.45498883724212646,
+                  0.15257380902767181
+                ],
+                "per_source_mae": [
+                  0.01422039419412613,
+                  0.0034846647176891565
+                ]
+              },
+              "overlap": {
+                "centers": 0,
+                "per_source_iou": null,
+                "per_source_mae": null
+              },
+              "normalized_mae": 0.03416603431105614,
+              "per_source_missed_fraction": [
+                0.11842105263157894,
+                0.03125
+              ],
+              "per_source_silence_false_positive_fraction": [
+                0.7994269340974212,
+                0.8422174840085288
+              ],
+              "second_source_missed_fraction": 0.03125,
+              "unused_false_positive_fraction": 0.8932135728542914,
+              "extra_candidate_area_fraction": 2.344176769256592,
+              "source_count_mae": 6.666666666666667,
+              "global_copy_pairs": [],
+              "candidate_copy_window_fraction": 1.0,
+              "copy_window_seconds": 0.16,
+              "pit_gap": 0.0002827942371368408,
+              "pit_tied": false,
+              "reference_shape_difference": 0.0960286408662796,
+              "onset_offset": [
+                {
+                  "onset": {
+                    "pred_count": 15,
+                    "reference_count": 16,
+                    "median_abs_seconds": null
+                  },
+                  "offset": {
+                    "pred_count": 15,
+                    "reference_count": 16,
+                    "median_abs_seconds": null
+                  }
+                },
+                {
+                  "onset": {
+                    "pred_count": 13,
+                    "reference_count": 16,
+                    "median_abs_seconds": null
+                  },
+                  "offset": {
+                    "pred_count": 13,
+                    "reference_count": 16,
+                    "median_abs_seconds": null
+                  }
+                }
+              ],
+              "boundary_note": "course centers1..11 have complete2s input",
+              "unused_mean_normalized_amplitude": 0.03751801326870918,
+              "full_eight_normalized_mae": 0.03668001802434338
+            },
+            "raw": {
+              "order": [
+                4,
+                1
+              ],
+              "assignment": "whole-sequence PIT",
+              "all": {
+                "centers": 501,
+                "per_source_iou": [
+                  0.7304731607437134,
+                  0.2519073486328125
+                ],
+                "per_source_mae": [
+                  0.007816150784492493,
+                  0.0022693790961056948
+                ]
+              },
+              "nonoverlap": {
+                "centers": 501,
+                "per_source_iou": [
+                  0.7304731607437134,
+                  0.2519073486328125
+                ],
+                "per_source_mae": [
+                  0.007816150784492493,
+                  0.0022693790961056948
+                ]
+              },
+              "overlap": {
+                "centers": 0,
+                "per_source_iou": null,
+                "per_source_mae": null
+              },
+              "normalized_mae": 0.019462386146187782,
+              "per_source_missed_fraction": [
+                0.0,
+                0.0
+              ],
+              "per_source_silence_false_positive_fraction": [
+                1.0,
+                0.9680170575692963
+              ],
+              "second_source_missed_fraction": 0.0,
+              "unused_false_positive_fraction": 0.8439787092481703,
+              "extra_candidate_area_fraction": 1.8909173011779785,
+              "source_count_mae": 6.666666666666667,
+              "global_copy_pairs": [],
+              "candidate_copy_window_fraction": 1.0,
+              "copy_window_seconds": 0.16,
+              "pit_gap": 0.00466981902718544,
+              "pit_tied": false,
+              "reference_shape_difference": 0.0960286408662796,
+              "onset_offset": [
+                {
+                  "onset": {
+                    "pred_count": 1,
+                    "reference_count": 16,
+                    "median_abs_seconds": null
+                  },
+                  "offset": {
+                    "pred_count": 1,
+                    "reference_count": 16,
+                    "median_abs_seconds": null
+                  }
+                },
+                {
+                  "onset": {
+                    "pred_count": 16,
+                    "reference_count": 16,
+                    "median_abs_seconds": 0.9400000000000003
+                  },
+                  "offset": {
+                    "pred_count": 16,
+                    "reference_count": 16,
+                    "median_abs_seconds": 0.36999999999999966
+                  }
+                }
+              ],
+              "boundary_note": "course centers1..11 have complete2s input"
+            },
+            "teacher": {
+              "order": [
+                0,
+                1
+              ],
+              "assignment": "supplied teacher source rows",
+              "all": {
+                "centers": 501,
+                "per_source_iou": [
+                  0.8400131464004517,
+                  0.40201494097709656
+                ],
+                "per_source_mae": [
+                  0.0040345340967178345,
+                  0.0011366857215762138
+                ]
+              },
+              "nonoverlap": {
+                "centers": 501,
+                "per_source_iou": [
+                  0.8400131464004517,
+                  0.40201494097709656
+                ],
+                "per_source_mae": [
+                  0.0040345340967178345,
+                  0.0011366857215762138
+                ]
+              },
+              "overlap": {
+                "centers": 0,
+                "per_source_iou": null,
+                "per_source_mae": null
+              },
+              "normalized_mae": 0.009979069232940674,
+              "per_source_missed_fraction": [
+                0.0,
+                0.0
+              ],
+              "per_source_silence_false_positive_fraction": [
+                0.3438395415472779,
+                0.488272921108742
+              ],
+              "second_source_missed_fraction": 0.0,
+              "unused_false_positive_fraction": 0.9950099800399201,
+              "extra_candidate_area_fraction": 2.0884273052215576,
+              "source_count_mae": 6.666666666666667,
+              "global_copy_pairs": [],
+              "candidate_copy_window_fraction": 1.0,
+              "copy_window_seconds": 0.16,
+              "pit_gap": 0.012421488761901855,
+              "pit_tied": false,
+              "reference_shape_difference": 0.0960286408662796,
+              "onset_offset": [
+                {
+                  "onset": {
+                    "pred_count": 32,
+                    "reference_count": 16,
+                    "median_abs_seconds": null
+                  },
+                  "offset": {
+                    "pred_count": 32,
+                    "reference_count": 16,
+                    "median_abs_seconds": null
+                  }
+                },
+                {
+                  "onset": {
+                    "pred_count": 32,
+                    "reference_count": 16,
+                    "median_abs_seconds": null
+                  },
+                  "offset": {
+                    "pred_count": 32,
+                    "reference_count": 16,
+                    "median_abs_seconds": null
+                  }
+                }
+              ],
+              "boundary_note": "course centers1..11 have complete2s input"
+            },
+            "teacher_confidence": {
+              "count": 200,
+              "mean": 0.9056857228279114,
+              "quantiles": [
+                0.9056858420372009,
+                0.9056858420372009,
+                0.9056858420372009,
+                0.9056858420372009,
+                0.9056858420372009
+              ]
+            },
+            "teacher_zero_confidence_fraction": 0.0,
+            "teacher_block_candidate_change_fraction": 1.0,
+            "identity_loss": 0.00012591610720846802,
+            "identity_pair_count": 507,
+            "identity_effective_weight": 261.13677978515625,
+            "amplitude_conservation_max_error": 2.9802322387695312e-08,
+            "joint_objective_audit": {
+              "objective_before": 0.04378995855037679,
+              "objective_after": 0.04378995855037679,
+              "amplitude_before": 0.04376477527327402,
+              "amplitude_after": 0.04376477527327402,
+              "identity_before": 0.00012591638369485736,
+              "identity_after": 0.00012591638369485736,
+              "accepted_moves": 0,
+              "changed_blocks": 0,
+              "amplitude_cap": 0.06376477527327402,
+              "teacher_training_cost_abs_error": 1.89359675162315e-09
+            },
+            "joint_vs_legacy_active_assignment_change": 0.0,
+            "teacher_label_fit_audit": {
+              "active_chosen_error": {
+                "count": 200,
+                "mean": 0.03348185122013092,
+                "quantiles": [
+                  0.001268132240511477,
+                  0.008166519273072482,
+                  0.02332435641437769,
+                  0.07437979057431221,
+                  0.20350122451782227
+                ]
+              },
+              "active_excess_over_best_envelope": {
+                "count": 200,
+                "mean": 0.0030029488261789083,
+                "quantiles": [
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.007705352082848549,
+                  0.0333637073636055
+                ]
+              },
+              "limitation": "GT RMS fit witnesses do not certify identity of envelope-identical physical sources"
+            },
+            "relations": {
+              "adjacent": {
+                "pairs": 168,
+                "correct_fraction": 1.0,
+                "confidence_weight_sum": 131.03480529785156,
+                "weighted_correct_fraction": 1.0
+              },
+              "block_boundary": {
+                "pairs": 0,
+                "correct_fraction": null,
+                "confidence_weight_sum": 0.0,
+                "weighted_correct_fraction": null
+              },
+              "block_interior": {
+                "pairs": 168,
+                "correct_fraction": 1.0,
+                "confidence_weight_sum": 131.03480529785156,
+                "weighted_correct_fraction": 1.0
+              },
+              "across_silence": {
+                "pairs": 30,
+                "correct_fraction": 0.6,
+                "confidence_weight_sum": 14.121221542358398,
+                "weighted_correct_fraction": 0.7446810603141785
+              },
+              "limitation": "GT-teacher candidate endpoints, evaluation only; within-block constant teacher is an easy index-continuity target, and ambiguous labels receive low weight",
+              "positive_cosine": {
+                "count": 507,
+                "mean": 0.9931847453117371,
+                "quantiles": [
+                  0.8974314332008362,
+                  0.9675215721130371,
+                  0.9998883605003357,
+                  0.9999958872795105,
+                  0.9999984502792358
+                ]
+              },
+              "negative_cosine": {
+                "count": 507,
+                "mean": -0.024303384125232697,
+                "quantiles": [
+                  -0.05098111182451248,
+                  -0.03857021480798721,
+                  -0.03358429670333862,
+                  0.006204345822334296,
+                  0.018430249765515327
+                ]
+              },
+              "identity_pair_weights": {
+                "count": 507,
+                "mean": 0.515062689781189,
+                "quantiles": [
+                  0.034912362694740295,
+                  0.1357998251914978,
+                  0.6639530658721924,
+                  0.6908174276351928,
+                  0.7049124836921692
+                ]
+              },
+              "weighted_positive_cosine": 0.9969300031661987,
+              "weighted_negative_cosine": -0.026100214570760727,
+              "weighted_margin_violation": 0.0
+            },
+            "positive_cross_slot_fraction": 0.0,
+            "positive_cross_silence_fraction": 0.2583826429980276,
+            "teacher_context": {
+              "teacher": "full amplitude + same direct bidirectional ID; frozen GT/directional reliability; no index continuity",
+              "block_frames": 16,
+              "block_source_orders": [
+                [
+                  4,
+                  5
+                ],
+                [
+                  5,
+                  1
+                ],
+                [
+                  4,
+                  5
+                ],
+                [
+                  5,
+                  1
+                ],
+                [
+                  4,
+                  5
+                ],
+                [
+                  5,
+                  1
+                ],
+                [
+                  4,
+                  5
+                ],
+                [
+                  5,
+                  1
+                ],
+                [
+                  4,
+                  5
+                ],
+                [
+                  5,
+                  1
+                ],
+                [
+                  4,
+                  5
+                ],
+                [
+                  5,
+                  1
+                ],
+                [
+                  4,
+                  5
+                ],
+                [
+                  5,
+                  1
+                ],
+                [
+                  4,
+                  5
+                ],
+                [
+                  5,
+                  1
+                ],
+                [
+                  4,
+                  5
+                ],
+                [
+                  5,
+                  1
+                ],
+                [
+                  4,
+                  5
+                ],
+                [
+                  5,
+                  1
+                ],
+                [
+                  4,
+                  5
+                ],
+                [
+                  5,
+                  1
+                ],
+                [
+                  4,
+                  5
+                ],
+                [
+                  5,
+                  1
+                ],
+                [
+                  4,
+                  5
+                ],
+                [
+                  5,
+                  1
+                ],
+                [
+                  4,
+                  5
+                ],
+                [
+                  5,
+                  1
+                ],
+                [
+                  4,
+                  5
+                ],
+                [
+                  5,
+                  1
+                ],
+                [
+                  4,
+                  5
+                ],
+                [
+                  5,
+                  1
+                ]
+              ],
+              "sweeps": 1,
+              "exhaustive": false,
+              "search_scope": "all one-to-one block states; coordinate descent, NOT global optimum",
+              "amplitude_slack": 0.02,
+              "amplitude_cap": 0.06376477527327402,
+              "objective_before": 0.04378995855037679,
+              "objective_after": 0.04378995855037679,
+              "node_envelope_slack": 0.02,
+              "admissible_states_per_block": [
+                7,
+                14,
+                7,
+                14,
+                7,
+                14,
+                7,
+                14,
+                7,
+                14,
+                7,
+                14,
+                7,
+                21,
+                7,
+                14,
+                7,
+                14,
+                7,
+                14,
+                7,
+                14,
+                7,
+                14,
+                7,
+                14,
+                7,
+                14,
+                7,
+                14,
+                7,
+                14
+              ],
+              "amplitude_before": 0.04376477527327402,
+              "amplitude_after": 0.04376477527327402,
+              "identity_before": 0.00012591638369485736,
+              "identity_after": 0.00012591638369485736,
+              "objective_history": [
+                0.04378995855037679
+              ],
+              "accepted_moves": 0,
+              "changed_blocks": 0,
+              "conditional_state_gaps": [
+                0.0005611179341699635,
+                0.00014795346110751256,
+                0.0006145674629789155,
+                0.00014610779911200522,
+                0.0005982137090033701,
+                0.00014747309013751764,
+                0.0005995420454444761,
+                0.0001445158432459015,
+                0.0005531057344789203,
+                0.00014396130985143418,
+                0.0005904427672286036,
+                0.00014086529888790444,
+                0.0005591122249129499,
+                0.0001419426409352692,
+                0.0006061018151634276,
+                0.00014617923868193855,
+                0.000586813325370604,
+                0.00013850829707314632,
+                0.0006301449058433717,
+                0.00014096996421159025,
+                0.0005658551565050907,
+                0.00014211753858973247,
+                0.0005646224611293785,
+                0.0001460595069119608,
+                0.0005920128538107403,
+                0.00014301999723438652,
+                0.0005601309555617051,
+                0.00014373511720323917,
+                0.0005845410985866883,
+                0.00014342760156728362,
+                0.0005624632595518861,
+                6.848070173800375e-05
+              ],
+              "confidence_definition": "frozen GT envelope distinctness times prediction direction spread; reliability, not posterior label correctness",
+              "confidence_mean": 0.9056857228279114,
+              "zero_rows": "undefined identity; original norms still supervised"
+            },
+            "predicted_edge_gap": {
+              "count": 4000,
+              "mean": 0.7044773631691933,
+              "quantiles": [
+                0.001004934310913086,
+                0.4339878559112549,
+                0.6968996524810791,
+                0.9591444969177246,
+                1.27756929397583
+              ]
+            },
+            "actual_gated": {
+              "order": [
+                4,
+                3
+              ],
+              "assignment": "whole-sequence PIT",
+              "all": {
+                "centers": 501,
+                "per_source_iou": [
+                  0.4553167521953583,
+                  0.15495307743549347
+                ],
+                "per_source_mae": [
+                  0.014173035509884357,
+                  0.0034094417933374643
+                ]
+              },
+              "nonoverlap": {
+                "centers": 501,
+                "per_source_iou": [
+                  0.4553167521953583,
+                  0.15495307743549347
+                ],
+                "per_source_mae": [
+                  0.014173035509884357,
+                  0.0034094417933374643
+                ]
+              },
+              "overlap": {
+                "centers": 0,
+                "per_source_iou": null,
+                "per_source_mae": null
+              },
+              "normalized_mae": 0.0339294858276844,
+              "per_source_missed_fraction": [
+                0.11842105263157894,
+                0.03125
+              ],
+              "per_source_silence_false_positive_fraction": [
+                0.7994269340974212,
+                0.8422174840085288
+              ],
+              "second_source_missed_fraction": 0.03125,
+              "unused_false_positive_fraction": 0.8932135728542914,
+              "extra_candidate_area_fraction": 2.330923080444336,
+              "source_count_mae": 6.666666666666667,
+              "global_copy_pairs": [],
+              "candidate_copy_window_fraction": 1.0,
+              "copy_window_seconds": 0.16,
+              "pit_gap": 0.000286296010017395,
+              "pit_tied": false,
+              "reference_shape_difference": 0.0960286408662796,
+              "onset_offset": [
+                {
+                  "onset": {
+                    "pred_count": 15,
+                    "reference_count": 16,
+                    "median_abs_seconds": null
+                  },
+                  "offset": {
+                    "pred_count": 15,
+                    "reference_count": 16,
+                    "median_abs_seconds": null
+                  }
+                },
+                {
+                  "onset": {
+                    "pred_count": 13,
+                    "reference_count": 16,
+                    "median_abs_seconds": null
+                  },
+                  "offset": {
+                    "pred_count": 13,
+                    "reference_count": 16,
+                    "median_abs_seconds": null
+                  }
+                }
+              ],
+              "boundary_note": "course centers1..11 have complete2s input"
+            },
+            "teacher_gated": {
+              "order": [
+                0,
+                1
+              ],
+              "assignment": "supplied teacher source rows",
+              "all": {
+                "centers": 501,
+                "per_source_iou": [
+                  0.8472100496292114,
+                  0.4667917788028717
+                ],
+                "per_source_mae": [
+                  0.0038203145377337933,
+                  0.0008729019900783896
+                ]
+              },
+              "nonoverlap": {
+                "centers": 501,
+                "per_source_iou": [
+                  0.8472100496292114,
+                  0.4667917788028717
+                ],
+                "per_source_mae": [
+                  0.0038203145377337933,
+                  0.0008729019900783896
+                ]
+              },
+              "overlap": {
+                "centers": 0,
+                "per_source_iou": null,
+                "per_source_mae": null
+              },
+              "normalized_mae": 0.009056655690073967,
+              "per_source_missed_fraction": [
+                0.0,
+                0.0
+              ],
+              "per_source_silence_false_positive_fraction": [
+                0.3438395415472779,
+                0.488272921108742
+              ],
+              "second_source_missed_fraction": 0.0,
+              "unused_false_positive_fraction": 0.9950099800399201,
+              "extra_candidate_area_fraction": 2.0873615741729736,
+              "source_count_mae": 6.666666666666667,
+              "global_copy_pairs": [],
+              "candidate_copy_window_fraction": 1.0,
+              "copy_window_seconds": 0.16,
+              "pit_gap": 0.015666037797927856,
+              "pit_tied": false,
+              "reference_shape_difference": 0.0960286408662796,
+              "onset_offset": [
+                {
+                  "onset": {
+                    "pred_count": 32,
+                    "reference_count": 16,
+                    "median_abs_seconds": null
+                  },
+                  "offset": {
+                    "pred_count": 32,
+                    "reference_count": 16,
+                    "median_abs_seconds": null
+                  }
+                },
+                {
+                  "onset": {
+                    "pred_count": 32,
+                    "reference_count": 16,
+                    "median_abs_seconds": null
+                  },
+                  "offset": {
+                    "pred_count": 32,
+                    "reference_count": 16,
+                    "median_abs_seconds": null
+                  }
+                }
+              ],
+              "boundary_note": "course centers1..11 have complete2s input"
+            },
+            "output_gain_diagnostic": {
+              "0.5": {
+                "order": [
+                  4,
+                  3
+                ],
+                "assignment": "whole-sequence PIT",
+                "all": {
+                  "centers": 501,
+                  "per_source_iou": [
+                    0.6434703469276428,
+                    0.17216408252716064
+                  ],
+                  "per_source_mae": [
+                    0.004750228486955166,
+                    0.0012516530696302652
+                  ]
+                },
+                "nonoverlap": {
+                  "centers": 501,
+                  "per_source_iou": [
+                    0.6434703469276428,
+                    0.17216408252716064
+                  ],
+                  "per_source_mae": [
+                    0.004750228486955166,
+                    0.0012516530696302652
+                  ]
+                },
+                "overlap": {
+                  "centers": 0,
+                  "per_source_iou": null,
+                  "per_source_mae": null
+                },
+                "normalized_mae": 0.011582027189433575,
+                "per_source_missed_fraction": [
+                  0.07894736842105263,
+                  0.0
+                ],
+                "per_source_silence_false_positive_fraction": [
+                  0.45272206303724927,
+                  0.6567164179104478
+                ],
+                "second_source_missed_fraction": 0.0,
+                "unused_false_positive_fraction": 0.7564870259481038,
+                "extra_candidate_area_fraction": 2.157883882522583,
+                "source_count_mae": 5.445109780439122,
+                "global_copy_pairs": [],
+                "candidate_copy_window_fraction": 1.0,
+                "copy_window_seconds": 0.16,
+                "pit_gap": 0.002220340073108673,
+                "pit_tied": false,
+                "reference_shape_difference": 0.0480143204331398,
+                "onset_offset": [
+                  {
+                    "onset": {
+                      "pred_count": 48,
+                      "reference_count": 16,
+                      "median_abs_seconds": null
+                    },
+                    "offset": {
+                      "pred_count": 48,
+                      "reference_count": 16,
+                      "median_abs_seconds": null
+                    }
+                  },
+                  {
+                    "onset": {
+                      "pred_count": 31,
+                      "reference_count": 16,
+                      "median_abs_seconds": null
+                    },
+                    "offset": {
+                      "pred_count": 31,
+                      "reference_count": 16,
+                      "median_abs_seconds": null
+                    }
+                  }
+                ],
+                "boundary_note": "course centers1..11 have complete2s input"
+              },
+              "1.0": {
+                "order": [
+                  4,
+                  3
+                ],
+                "assignment": "whole-sequence PIT",
+                "all": {
+                  "centers": 501,
+                  "per_source_iou": [
+                    0.45498883724212646,
+                    0.15257380902767181
+                  ],
+                  "per_source_mae": [
+                    0.01422039419412613,
+                    0.0034846647176891565
+                  ]
+                },
+                "nonoverlap": {
+                  "centers": 501,
+                  "per_source_iou": [
+                    0.45498883724212646,
+                    0.15257380902767181
+                  ],
+                  "per_source_mae": [
+                    0.01422039419412613,
+                    0.0034846647176891565
+                  ]
+                },
+                "overlap": {
+                  "centers": 0,
+                  "per_source_iou": null,
+                  "per_source_mae": null
+                },
+                "normalized_mae": 0.03416603431105614,
+                "per_source_missed_fraction": [
+                  0.11842105263157894,
+                  0.03125
+                ],
+                "per_source_silence_false_positive_fraction": [
+                  0.7994269340974212,
+                  0.8422174840085288
+                ],
+                "second_source_missed_fraction": 0.03125,
+                "unused_false_positive_fraction": 0.8932135728542914,
+                "extra_candidate_area_fraction": 2.344176769256592,
+                "source_count_mae": 6.666666666666667,
+                "global_copy_pairs": [],
+                "candidate_copy_window_fraction": 1.0,
+                "copy_window_seconds": 0.16,
+                "pit_gap": 0.0002827942371368408,
+                "pit_tied": false,
+                "reference_shape_difference": 0.0960286408662796,
+                "onset_offset": [
+                  {
+                    "onset": {
+                      "pred_count": 15,
+                      "reference_count": 16,
+                      "median_abs_seconds": null
+                    },
+                    "offset": {
+                      "pred_count": 15,
+                      "reference_count": 16,
+                      "median_abs_seconds": null
+                    }
+                  },
+                  {
+                    "onset": {
+                      "pred_count": 13,
+                      "reference_count": 16,
+                      "median_abs_seconds": null
+                    },
+                    "offset": {
+                      "pred_count": 13,
+                      "reference_count": 16,
+                      "median_abs_seconds": null
+                    }
+                  }
+                ],
+                "boundary_note": "course centers1..11 have complete2s input"
+              },
+              "2.0": {
+                "order": [
+                  5,
+                  1
+                ],
+                "assignment": "whole-sequence PIT",
+                "all": {
+                  "centers": 501,
+                  "per_source_iou": [
+                    0.30865564942359924,
+                    0.21225464344024658
+                  ],
+                  "per_source_mae": [
+                    0.03650423884391785,
+                    0.0046788728795945644
+                  ]
+                },
+                "nonoverlap": {
+                  "centers": 501,
+                  "per_source_iou": [
+                    0.30865564942359924,
+                    0.21225464344024658
+                  ],
+                  "per_source_mae": [
+                    0.03650423884391785,
+                    0.0046788728795945644
+                  ]
+                },
+                "overlap": {
+                  "centers": 0,
+                  "per_source_iou": null,
+                  "per_source_mae": null
+                },
+                "normalized_mae": 0.07947239279747009,
+                "per_source_missed_fraction": [
+                  0.039473684210526314,
+                  0.0
+                ],
+                "per_source_silence_false_positive_fraction": [
+                  0.6819484240687679,
+                  1.0
+                ],
+                "second_source_missed_fraction": 0.0,
+                "unused_false_positive_fraction": 0.929474384564205,
+                "extra_candidate_area_fraction": 2.5271682739257812,
+                "source_count_mae": 6.976047904191617,
+                "global_copy_pairs": [],
+                "candidate_copy_window_fraction": 1.0,
+                "copy_window_seconds": 0.16,
+                "pit_gap": 0.000718042254447937,
+                "pit_tied": false,
+                "reference_shape_difference": 0.1920572817325592,
+                "onset_offset": [
+                  {
+                    "onset": {
+                      "pred_count": 18,
+                      "reference_count": 16,
+                      "median_abs_seconds": null
+                    },
+                    "offset": {
+                      "pred_count": 18,
+                      "reference_count": 16,
+                      "median_abs_seconds": null
+                    }
+                  },
+                  {
+                    "onset": {
+                      "pred_count": 1,
+                      "reference_count": 16,
+                      "median_abs_seconds": null
+                    },
+                    "offset": {
+                      "pred_count": 1,
+                      "reference_count": 16,
+                      "median_abs_seconds": null
+                    }
+                  }
+                ],
+                "boundary_note": "course centers1..11 have complete2s input"
+              }
+            },
+            "candidate_shuffle_normalized_mae_delta": 0.0
+          }
+        ]
+      },
+      "split": {
+        "history": [
+          {
+            "update": 1,
+            "amplitude_loss": 0.022745585069060326,
+            "identity_loss": 0.0007343709003180265,
+            "gradient": {
+              "amplitude_vector": {
+                "norm": 0.0,
+                "radial_norm": 0.0,
+                "tangent_norm": 0.0
+              },
+              "identity_vector": {
+                "norm": 1.1163853406906128,
+                "radial_norm": 2.544879684762691e-08,
+                "tangent_norm": 1.1163853406906128
+              },
+              "shared_projection_amplitude_norm": 1.3824808597564697,
+              "shared_projection_identity_norm": 0.10310352593660355,
+              "shared_projection_gradient_cosine": -0.12827743589878082
+            },
+            "confidence": {
+              "count": 200,
+              "mean": 0.9056857228279114,
+              "quantiles": [
+                0.9056858420372009,
+                0.9056858420372009,
+                0.9056858420372009,
+                0.9056858420372009,
+                0.9056858420372009
+              ]
+            },
+            "zero_tracks": 0.0009230851428583264
+          },
+          {
+            "update": 20,
+            "amplitude_loss": 0.22285497188568115,
+            "identity_loss": 1.5649613487767056e-05,
+            "gradient": {
+              "amplitude_vector": {
+                "norm": 0.0,
+                "radial_norm": 0.0,
+                "tangent_norm": 0.0
+              },
+              "identity_vector": {
+                "norm": 0.0008113560033962131,
+                "radial_norm": 4.022090216437846e-09,
+                "tangent_norm": 0.0008113560033962131
+              },
+              "shared_projection_amplitude_norm": 1.2770590782165527,
+              "shared_projection_identity_norm": 0.00013205262075643986,
+              "shared_projection_gradient_cosine": -0.20443756878376007
+            },
+            "confidence": {
+              "count": 200,
+              "mean": 0.9056857228279114,
+              "quantiles": [
+                0.9056858420372009,
+                0.9056858420372009,
+                0.9056858420372009,
+                0.9056858420372009,
+                0.9056858420372009
+              ]
+            },
+            "zero_tracks": 0.9887124300003052
+          }
+        ],
+        "final_train": [
+          {
+            "stage": "C1",
+            "sample_id": "c1-local-train-00",
+            "actual": {
+              "order": [
+                2,
+                6
+              ],
+              "assignment": "whole-sequence PIT",
+              "all": {
+                "centers": 501,
+                "per_source_iou": [
+                  0.00010262627620249987,
+                  0.00031750494963489473
+                ],
+                "per_source_mae": [
+                  0.02411467768251896,
+                  0.0007641875999979675
+                ]
+              },
+              "nonoverlap": {
+                "centers": 501,
+                "per_source_iou": [
+                  0.00010262627620249987,
+                  0.00031750494963489473
+                ],
+                "per_source_mae": [
+                  0.02411467768251896,
+                  0.0007641875999979675
+                ]
+              },
+              "overlap": {
+                "centers": 0,
+                "per_source_iou": null,
+                "per_source_mae": null
+              },
+              "normalized_mae": 0.04800958186388016,
+              "per_source_missed_fraction": [
+                1.0,
+                1.0
+              ],
+              "per_source_silence_false_positive_fraction": [
+                0.0,
+                0.0
+              ],
+              "second_source_missed_fraction": 1.0,
+              "unused_false_positive_fraction": 0.3496340652029275,
+              "extra_candidate_area_fraction": 39.41967010498047,
+              "source_count_mae": 1.7305389221556886,
+              "global_copy_pairs": [],
+              "candidate_copy_window_fraction": 1.0,
+              "copy_window_seconds": 0.16,
+              "pit_gap": 9.909272193908691e-06,
+              "pit_tied": true,
+              "reference_shape_difference": 0.0960286408662796,
+              "onset_offset": [
+                {
+                  "onset": {
+                    "pred_count": 0,
+                    "reference_count": 16,
+                    "median_abs_seconds": null
+                  },
+                  "offset": {
+                    "pred_count": 0,
+                    "reference_count": 16,
+                    "median_abs_seconds": null
+                  }
+                },
+                {
+                  "onset": {
+                    "pred_count": 0,
+                    "reference_count": 16,
+                    "median_abs_seconds": null
+                  },
+                  "offset": {
+                    "pred_count": 0,
+                    "reference_count": 16,
+                    "median_abs_seconds": null
+                  }
+                }
+              ],
+              "boundary_note": "course centers1..11 have complete2s input",
+              "unused_mean_normalized_amplitude": 0.6309028267860413,
+              "full_eight_normalized_mae": 0.48517948798863425
+            },
+            "raw": {
+              "order": [
+                2,
+                6
+              ],
+              "assignment": "whole-sequence PIT",
+              "all": {
+                "centers": 501,
+                "per_source_iou": [
+                  0.00010262627620249987,
+                  0.00031750494963489473
+                ],
+                "per_source_mae": [
+                  0.02411467768251896,
+                  0.0007641875999979675
+                ]
+              },
+              "nonoverlap": {
+                "centers": 501,
+                "per_source_iou": [
+                  0.00010262627620249987,
+                  0.00031750494963489473
+                ],
+                "per_source_mae": [
+                  0.02411467768251896,
+                  0.0007641875999979675
+                ]
+              },
+              "overlap": {
+                "centers": 0,
+                "per_source_iou": null,
+                "per_source_mae": null
+              },
+              "normalized_mae": 0.04800958186388016,
+              "per_source_missed_fraction": [
+                1.0,
+                1.0
+              ],
+              "per_source_silence_false_positive_fraction": [
+                0.0,
+                0.0
+              ],
+              "second_source_missed_fraction": 1.0,
+              "unused_false_positive_fraction": 0.3496340652029275,
+              "extra_candidate_area_fraction": 39.41967010498047,
+              "source_count_mae": 1.7305389221556886,
+              "global_copy_pairs": [],
+              "candidate_copy_window_fraction": 1.0,
+              "copy_window_seconds": 0.16,
+              "pit_gap": 9.909272193908691e-06,
+              "pit_tied": true,
+              "reference_shape_difference": 0.0960286408662796,
+              "onset_offset": [
+                {
+                  "onset": {
+                    "pred_count": 0,
+                    "reference_count": 16,
+                    "median_abs_seconds": null
+                  },
+                  "offset": {
+                    "pred_count": 0,
+                    "reference_count": 16,
+                    "median_abs_seconds": null
+                  }
+                },
+                {
+                  "onset": {
+                    "pred_count": 0,
+                    "reference_count": 16,
+                    "median_abs_seconds": null
+                  },
+                  "offset": {
+                    "pred_count": 0,
+                    "reference_count": 16,
+                    "median_abs_seconds": null
+                  }
+                }
+              ],
+              "boundary_note": "course centers1..11 have complete2s input"
+            },
+            "teacher": {
+              "order": [
+                0,
+                1
+              ],
+              "assignment": "supplied teacher source rows",
+              "all": {
+                "centers": 501,
+                "per_source_iou": [
+                  0.5262134671211243,
+                  0.00031761129503138363
+                ],
+                "per_source_mae": [
+                  0.013198556378483772,
+                  0.0007639315444976091
+                ]
+              },
+              "nonoverlap": {
+                "centers": 501,
+                "per_source_iou": [
+                  0.5262134671211243,
+                  0.00031761129503138363
+                ],
+                "per_source_mae": [
+                  0.013198556378483772,
+                  0.0007639315444976091
+                ]
+              },
+              "overlap": {
+                "centers": 0,
+                "per_source_iou": null,
+                "per_source_mae": null
+              },
+              "normalized_mae": 0.026943868026137352,
+              "per_source_missed_fraction": [
+                0.14473684210526316,
+                1.0
+              ],
+              "per_source_silence_false_positive_fraction": [
+                0.0,
+                0.0
+              ],
+              "second_source_missed_fraction": 1.0,
+              "unused_false_positive_fraction": 0.3063872255489022,
+              "extra_candidate_area_fraction": 38.68029022216797,
+              "source_count_mae": 1.7305389221556886,
+              "global_copy_pairs": [],
+              "candidate_copy_window_fraction": 1.0,
+              "copy_window_seconds": 0.16,
+              "pit_gap": 1.589953899383545e-05,
+              "pit_tied": true,
+              "reference_shape_difference": 0.0960286408662796,
+              "onset_offset": [
+                {
+                  "onset": {
+                    "pred_count": 16,
+                    "reference_count": 16,
+                    "median_abs_seconds": 0.0
+                  },
+                  "offset": {
+                    "pred_count": 16,
+                    "reference_count": 16,
+                    "median_abs_seconds": 0.020000000000000462
+                  }
+                },
+                {
+                  "onset": {
+                    "pred_count": 0,
+                    "reference_count": 16,
+                    "median_abs_seconds": null
+                  },
+                  "offset": {
+                    "pred_count": 0,
+                    "reference_count": 16,
+                    "median_abs_seconds": null
+                  }
+                }
+              ],
+              "boundary_note": "course centers1..11 have complete2s input"
+            },
+            "teacher_confidence": {
+              "count": 200,
+              "mean": 0.9056857228279114,
+              "quantiles": [
+                0.9056858420372009,
+                0.9056858420372009,
+                0.9056858420372009,
+                0.9056858420372009,
+                0.9056858420372009
+              ]
+            },
+            "teacher_zero_confidence_fraction": 0.0,
+            "teacher_block_candidate_change_fraction": 1.0,
+            "identity_loss": 1.7274067431571893e-05,
+            "identity_pair_count": 507,
+            "identity_effective_weight": 261.13677978515625,
+            "amplitude_conservation_max_error": 0.0,
+            "joint_objective_audit": {
+              "objective_before": 0.15451330183993672,
+              "objective_after": 0.15451330183993672,
+              "amplitude_before": 0.154509846979475,
+              "amplitude_after": 0.154509846979475,
+              "identity_before": 1.727430208120495e-05,
+              "identity_after": 1.727430208120495e-05,
+              "accepted_moves": 0,
+              "changed_blocks": 0,
+              "amplitude_cap": 0.174509846979475,
+              "teacher_training_cost_abs_error": 2.374757279710593e-09
+            },
+            "joint_vs_legacy_active_assignment_change": 0.0,
+            "teacher_label_fit_audit": {
+              "active_chosen_error": {
+                "count": 200,
+                "mean": 0.13497285544872284,
+                "quantiles": [
+                  0.0006286680581979454,
+                  0.017678175494074824,
+                  0.1405419111251831,
+                  0.21556767374277114,
+                  0.8480839133262634
+                ]
+              },
+              "active_excess_over_best_envelope": {
+                "count": 200,
+                "mean": 0.0038030147552490234,
+                "quantiles": [
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.018972682021558284,
+                  0.048266857862472534
+                ]
+              },
+              "limitation": "GT RMS fit witnesses do not certify identity of envelope-identical physical sources"
+            },
+            "relations": {
+              "adjacent": {
+                "pairs": 168,
+                "correct_fraction": 1.0,
+                "confidence_weight_sum": 131.03480529785156,
+                "weighted_correct_fraction": 1.0
+              },
+              "block_boundary": {
+                "pairs": 0,
+                "correct_fraction": null,
+                "confidence_weight_sum": 0.0,
+                "weighted_correct_fraction": null
+              },
+              "block_interior": {
+                "pairs": 168,
+                "correct_fraction": 1.0,
+                "confidence_weight_sum": 131.03480529785156,
+                "weighted_correct_fraction": 1.0
+              },
+              "across_silence": {
+                "pairs": 30,
+                "correct_fraction": 1.0,
+                "confidence_weight_sum": 14.121221542358398,
+                "weighted_correct_fraction": 1.0
+              },
+              "limitation": "GT-teacher candidate endpoints, evaluation only; within-block constant teacher is an easy index-continuity target, and ambiguous labels receive low weight",
+              "positive_cosine": {
+                "count": 507,
+                "mean": 0.9993555545806885,
+                "quantiles": [
+                  0.99393630027771,
+                  0.9988414287567139,
+                  0.9997997283935547,
+                  0.9999897360801697,
+                  0.999997615814209
+                ]
+              },
+              "negative_cosine": {
+                "count": 507,
+                "mean": -0.18429622054100037,
+                "quantiles": [
+                  -0.19167351722717285,
+                  -0.18895755410194398,
+                  -0.18574589490890503,
+                  -0.17728987336158752,
+                  -0.1653270721435547
+                ]
+              },
+              "identity_pair_weights": {
+                "count": 507,
+                "mean": 0.515062689781189,
+                "quantiles": [
+                  0.034912362694740295,
+                  0.1357998251914978,
+                  0.6639530658721924,
+                  0.6908174276351928,
+                  0.7049124836921692
+                ]
+              },
+              "weighted_positive_cosine": 0.9995788335800171,
+              "weighted_negative_cosine": -0.18571612238883972,
+              "weighted_margin_violation": 0.0
+            },
+            "positive_cross_slot_fraction": 0.0,
+            "positive_cross_silence_fraction": 0.2583826429980276,
+            "teacher_context": {
+              "teacher": "full amplitude + same direct bidirectional ID; frozen GT/directional reliability; no index continuity",
+              "block_frames": 16,
+              "block_source_orders": [
+                [
+                  0,
+                  4
+                ],
+                [
+                  2,
+                  6
+                ],
+                [
+                  0,
+                  4
+                ],
+                [
+                  4,
+                  6
+                ],
+                [
+                  0,
+                  4
+                ],
+                [
+                  4,
+                  6
+                ],
+                [
+                  0,
+                  4
+                ],
+                [
+                  4,
+                  6
+                ],
+                [
+                  0,
+                  4
+                ],
+                [
+                  2,
+                  6
+                ],
+                [
+                  0,
+                  4
+                ],
+                [
+                  4,
+                  6
+                ],
+                [
+                  0,
+                  4
+                ],
+                [
+                  4,
+                  6
+                ],
+                [
+                  0,
+                  4
+                ],
+                [
+                  4,
+                  6
+                ],
+                [
+                  0,
+                  4
+                ],
+                [
+                  4,
+                  6
+                ],
+                [
+                  0,
+                  4
+                ],
+                [
+                  2,
+                  6
+                ],
+                [
+                  0,
+                  4
+                ],
+                [
+                  4,
+                  6
+                ],
+                [
+                  0,
+                  4
+                ],
+                [
+                  4,
+                  6
+                ],
+                [
+                  0,
+                  4
+                ],
+                [
+                  4,
+                  6
+                ],
+                [
+                  0,
+                  4
+                ],
+                [
+                  4,
+                  6
+                ],
+                [
+                  0,
+                  4
+                ],
+                [
+                  4,
+                  6
+                ],
+                [
+                  0,
+                  4
+                ],
+                [
+                  4,
+                  6
+                ]
+              ],
+              "sweeps": 1,
+              "exhaustive": false,
+              "search_scope": "all one-to-one block states; coordinate descent, NOT global optimum",
+              "amplitude_slack": 0.02,
+              "amplitude_cap": 0.174509846979475,
+              "objective_before": 0.15451330183993672,
+              "objective_after": 0.15451330183993672,
+              "node_envelope_slack": 0.02,
+              "admissible_states_per_block": [
+                7,
+                28,
+                7,
+                28,
+                7,
+                28,
+                7,
+                28,
+                7,
+                28,
+                7,
+                28,
+                7,
+                28,
+                7,
+                28,
+                7,
+                28,
+                7,
+                28,
+                7,
+                28,
+                7,
+                28,
+                7,
+                28,
+                7,
+                28,
+                7,
+                28,
+                7,
+                28
+              ],
+              "amplitude_before": 0.154509846979475,
+              "amplitude_after": 0.154509846979475,
+              "identity_before": 1.727430208120495e-05,
+              "identity_after": 1.727430208120495e-05,
+              "objective_history": [
+                0.15451330183993672
+              ],
+              "accepted_moves": 0,
+              "changed_blocks": 0,
+              "conditional_state_gaps": [
+                0.0,
+                2.3703261575747092e-14,
+                5.551115123125783e-17,
+                1.2656542480726785e-14,
+                2.7755575615628914e-17,
+                2.0899948438568572e-14,
+                8.326672684688674e-17,
+                9.880984919163893e-15,
+                0.0,
+                2.0872192862952943e-14,
+                1.3877787807814457e-16,
+                9.159339953157541e-16,
+                0.0,
+                5.551115123125783e-16,
+                5.551115123125783e-17,
+                1.1157741397482823e-14,
+                2.7755575615628914e-17,
+                3.885780586188048e-16,
+                1.3877787807814457e-16,
+                9.43689570931383e-16,
+                0.0,
+                2.4980018054066022e-15,
+                0.0,
+                5.2735593669694936e-15,
+                0.0,
+                1.1185496973098452e-14,
+                0.0,
+                5.995204332975845e-15,
+                5.551115123125783e-17,
+                4.6629367034256575e-15,
+                0.0,
+                1.3322676295501878e-15
+              ],
+              "confidence_definition": "frozen GT envelope distinctness times prediction direction spread; reliability, not posterior label correctness",
+              "confidence_mean": 0.9056857228279114,
+              "zero_rows": "undefined identity; original norms still supervised"
+            },
+            "predicted_edge_gap": {
+              "count": 4000,
+              "mean": 0.21031815664470196,
+              "quantiles": [
+                0.0,
+                0.0,
+                0.001011967658996582,
+                0.8101289272308348,
+                0.996584415435791
+              ]
+            },
+            "actual_gated": {
+              "order": [
+                2,
+                3
+              ],
+              "assignment": "whole-sequence PIT",
+              "all": {
+                "centers": 501,
+                "per_source_iou": [
+                  0.0,
+                  0.0
+                ],
+                "per_source_mae": [
+                  0.02411714941263199,
+                  0.0007641743286512792
+                ]
+              },
+              "nonoverlap": {
+                "centers": 501,
+                "per_source_iou": [
+                  0.0,
+                  0.0
+                ],
+                "per_source_mae": [
+                  0.02411714941263199,
+                  0.0007641743286512792
+                ]
+              },
+              "overlap": {
+                "centers": 0,
+                "per_source_iou": null,
+                "per_source_mae": null
+              },
+              "normalized_mae": 0.048014312982559204,
+              "per_source_missed_fraction": [
+                1.0,
+                1.0
+              ],
+              "per_source_silence_false_positive_fraction": [
+                0.0,
+                0.0
+              ],
+              "second_source_missed_fraction": 1.0,
+              "unused_false_positive_fraction": 0.3496340652029275,
+              "extra_candidate_area_fraction": 39.40108108520508,
+              "source_count_mae": 1.7305389221556886,
+              "global_copy_pairs": [],
+              "candidate_copy_window_fraction": 1.0,
+              "copy_window_seconds": 0.16,
+              "pit_gap": 0.0,
+              "pit_tied": true,
+              "reference_shape_difference": 0.0960286408662796,
+              "onset_offset": [
+                {
+                  "onset": {
+                    "pred_count": 0,
+                    "reference_count": 16,
+                    "median_abs_seconds": null
+                  },
+                  "offset": {
+                    "pred_count": 0,
+                    "reference_count": 16,
+                    "median_abs_seconds": null
+                  }
+                },
+                {
+                  "onset": {
+                    "pred_count": 0,
+                    "reference_count": 16,
+                    "median_abs_seconds": null
+                  },
+                  "offset": {
+                    "pred_count": 0,
+                    "reference_count": 16,
+                    "median_abs_seconds": null
+                  }
+                }
+              ],
+              "boundary_note": "course centers1..11 have complete2s input"
+            },
+            "teacher_gated": {
+              "order": [
+                0,
+                1
+              ],
+              "assignment": "supplied teacher source rows",
+              "all": {
+                "centers": 501,
+                "per_source_iou": [
+                  0.5258038640022278,
+                  0.0
+                ],
+                "per_source_mae": [
+                  0.01320918183773756,
+                  0.0007641743286512792
+                ]
+              },
+              "nonoverlap": {
+                "centers": 501,
+                "per_source_iou": [
+                  0.5258038640022278,
+                  0.0
+                ],
+                "per_source_mae": [
+                  0.01320918183773756,
+                  0.0007641743286512792
+                ]
+              },
+              "overlap": {
+                "centers": 0,
+                "per_source_iou": null,
+                "per_source_mae": null
+              },
+              "normalized_mae": 0.02696485072374344,
+              "per_source_missed_fraction": [
+                0.14473684210526316,
+                1.0
+              ],
+              "per_source_silence_false_positive_fraction": [
+                0.0,
+                0.0
+              ],
+              "second_source_missed_fraction": 1.0,
+              "unused_false_positive_fraction": 0.3063872255489022,
+              "extra_candidate_area_fraction": 38.66215515136719,
+              "source_count_mae": 1.7305389221556886,
+              "global_copy_pairs": [],
+              "candidate_copy_window_fraction": 1.0,
+              "copy_window_seconds": 0.16,
+              "pit_gap": 0.0,
+              "pit_tied": true,
+              "reference_shape_difference": 0.0960286408662796,
+              "onset_offset": [
+                {
+                  "onset": {
+                    "pred_count": 16,
+                    "reference_count": 16,
+                    "median_abs_seconds": 0.0
+                  },
+                  "offset": {
+                    "pred_count": 16,
+                    "reference_count": 16,
+                    "median_abs_seconds": 0.020000000000000462
+                  }
+                },
+                {
+                  "onset": {
+                    "pred_count": 0,
+                    "reference_count": 16,
+                    "median_abs_seconds": null
+                  },
+                  "offset": {
+                    "pred_count": 0,
+                    "reference_count": 16,
+                    "median_abs_seconds": null
+                  }
+                }
+              ],
+              "boundary_note": "course centers1..11 have complete2s input"
+            },
+            "output_gain_diagnostic": {
+              "0.5": {
+                "order": [
+                  2,
+                  6
+                ],
+                "assignment": "whole-sequence PIT",
+                "all": {
+                  "centers": 501,
+                  "per_source_iou": [
+                    0.00010262627620249987,
+                    0.00031750494963489473
+                  ],
+                  "per_source_mae": [
+                    0.01205733884125948,
+                    0.00038209379999898374
+                  ]
+                },
+                "nonoverlap": {
+                  "centers": 501,
+                  "per_source_iou": [
+                    0.00010262627620249987,
+                    0.00031750494963489473
+                  ],
+                  "per_source_mae": [
+                    0.01205733884125948,
+                    0.00038209379999898374
+                  ]
+                },
+                "overlap": {
+                  "centers": 0,
+                  "per_source_iou": null,
+                  "per_source_mae": null
+                },
+                "normalized_mae": 0.02400479093194008,
+                "per_source_missed_fraction": [
+                  1.0,
+                  1.0
+                ],
+                "per_source_silence_false_positive_fraction": [
+                  0.0,
+                  0.0
+                ],
+                "second_source_missed_fraction": 1.0,
+                "unused_false_positive_fraction": 0.3343313373253493,
+                "extra_candidate_area_fraction": 39.41967010498047,
+                "source_count_mae": 1.6387225548902196,
+                "global_copy_pairs": [],
+                "candidate_copy_window_fraction": 1.0,
+                "copy_window_seconds": 0.16,
+                "pit_gap": 7.525086402893066e-06,
+                "pit_tied": true,
+                "reference_shape_difference": 0.0480143204331398,
+                "onset_offset": [
+                  {
+                    "onset": {
+                      "pred_count": 0,
+                      "reference_count": 16,
+                      "median_abs_seconds": null
+                    },
+                    "offset": {
+                      "pred_count": 0,
+                      "reference_count": 16,
+                      "median_abs_seconds": null
+                    }
+                  },
+                  {
+                    "onset": {
+                      "pred_count": 0,
+                      "reference_count": 16,
+                      "median_abs_seconds": null
+                    },
+                    "offset": {
+                      "pred_count": 0,
+                      "reference_count": 16,
+                      "median_abs_seconds": null
+                    }
+                  }
+                ],
+                "boundary_note": "course centers1..11 have complete2s input"
+              },
+              "1.0": {
+                "order": [
+                  2,
+                  6
+                ],
+                "assignment": "whole-sequence PIT",
+                "all": {
+                  "centers": 501,
+                  "per_source_iou": [
+                    0.00010262627620249987,
+                    0.00031750494963489473
+                  ],
+                  "per_source_mae": [
+                    0.02411467768251896,
+                    0.0007641875999979675
+                  ]
+                },
+                "nonoverlap": {
+                  "centers": 501,
+                  "per_source_iou": [
+                    0.00010262627620249987,
+                    0.00031750494963489473
+                  ],
+                  "per_source_mae": [
+                    0.02411467768251896,
+                    0.0007641875999979675
+                  ]
+                },
+                "overlap": {
+                  "centers": 0,
+                  "per_source_iou": null,
+                  "per_source_mae": null
+                },
+                "normalized_mae": 0.04800958186388016,
+                "per_source_missed_fraction": [
+                  1.0,
+                  1.0
+                ],
+                "per_source_silence_false_positive_fraction": [
+                  0.0,
+                  0.0
+                ],
+                "second_source_missed_fraction": 1.0,
+                "unused_false_positive_fraction": 0.3496340652029275,
+                "extra_candidate_area_fraction": 39.41967010498047,
+                "source_count_mae": 1.7305389221556886,
+                "global_copy_pairs": [],
+                "candidate_copy_window_fraction": 1.0,
+                "copy_window_seconds": 0.16,
+                "pit_gap": 9.909272193908691e-06,
+                "pit_tied": true,
+                "reference_shape_difference": 0.0960286408662796,
+                "onset_offset": [
+                  {
+                    "onset": {
+                      "pred_count": 0,
+                      "reference_count": 16,
+                      "median_abs_seconds": null
+                    },
+                    "offset": {
+                      "pred_count": 0,
+                      "reference_count": 16,
+                      "median_abs_seconds": null
+                    }
+                  },
+                  {
+                    "onset": {
+                      "pred_count": 0,
+                      "reference_count": 16,
+                      "median_abs_seconds": null
+                    },
+                    "offset": {
+                      "pred_count": 0,
+                      "reference_count": 16,
+                      "median_abs_seconds": null
+                    }
+                  }
+                ],
+                "boundary_note": "course centers1..11 have complete2s input"
+              },
+              "2.0": {
+                "order": [
+                  2,
+                  6
+                ],
+                "assignment": "whole-sequence PIT",
+                "all": {
+                  "centers": 501,
+                  "per_source_iou": [
+                    0.00010262627620249987,
+                    0.00031750494963489473
+                  ],
+                  "per_source_mae": [
+                    0.04822935536503792,
+                    0.001528375199995935
+                  ]
+                },
+                "nonoverlap": {
+                  "centers": 501,
+                  "per_source_iou": [
+                    0.00010262627620249987,
+                    0.00031750494963489473
+                  ],
+                  "per_source_mae": [
+                    0.04822935536503792,
+                    0.001528375199995935
+                  ]
+                },
+                "overlap": {
+                  "centers": 0,
+                  "per_source_iou": null,
+                  "per_source_mae": null
+                },
+                "normalized_mae": 0.09601916372776031,
+                "per_source_missed_fraction": [
+                  1.0,
+                  1.0
+                ],
+                "per_source_silence_false_positive_fraction": [
+                  0.0,
+                  0.0
+                ],
+                "second_source_missed_fraction": 1.0,
+                "unused_false_positive_fraction": 0.4500998003992016,
+                "extra_candidate_area_fraction": 39.41967010498047,
+                "source_count_mae": 2.3333333333333335,
+                "global_copy_pairs": [],
+                "candidate_copy_window_fraction": 1.0,
+                "copy_window_seconds": 0.16,
+                "pit_gap": 1.4692544937133789e-05,
+                "pit_tied": true,
+                "reference_shape_difference": 0.1920572817325592,
+                "onset_offset": [
+                  {
+                    "onset": {
+                      "pred_count": 0,
+                      "reference_count": 16,
+                      "median_abs_seconds": null
+                    },
+                    "offset": {
+                      "pred_count": 0,
+                      "reference_count": 16,
+                      "median_abs_seconds": null
+                    }
+                  },
+                  {
+                    "onset": {
+                      "pred_count": 0,
+                      "reference_count": 16,
+                      "median_abs_seconds": null
+                    },
+                    "offset": {
+                      "pred_count": 0,
+                      "reference_count": 16,
+                      "median_abs_seconds": null
+                    }
+                  }
+                ],
+                "boundary_note": "course centers1..11 have complete2s input"
+              }
+            },
+            "candidate_shuffle_normalized_mae_delta": 0.0
+          }
+        ]
+      }
+    },
+    "fit-v2": {
+      "coupled": {
+        "history": [
+          {
+            "update": 1,
+            "amplitude_loss": 0.014336287043988705,
+            "identity_loss": 0.0007343709003180265,
+            "gradient": {
+              "amplitude_vector": {
+                "norm": 0.46820762753486633,
+                "radial_norm": 0.46820762753486633,
+                "tangent_norm": 3.8902065568890976e-08
+              },
+              "identity_vector": {
+                "norm": 1.1163853406906128,
+                "radial_norm": 2.544879684762691e-08,
+                "tangent_norm": 1.1163853406906128
+              },
+              "shared_projection_amplitude_norm": 0.1521500200033188,
+              "shared_projection_identity_norm": 0.10310352593660355,
+              "shared_projection_gradient_cosine": -0.26665687561035156
+            },
+            "confidence": {
+              "count": 200,
+              "mean": 0.9056857228279114,
+              "quantiles": [
+                0.9056858420372009,
+                0.9056858420372009,
+                0.9056858420372009,
+                0.9056858420372009,
+                0.9056858420372009
+              ]
+            },
+            "zero_tracks": 0.0009523511398583651
+          },
+          {
+            "update": 20,
+            "amplitude_loss": 0.04253721237182617,
+            "identity_loss": 0.0017690074164420366,
+            "gradient": {
+              "amplitude_vector": {
+                "norm": 0.17707881331443787,
+                "radial_norm": 0.17707881331443787,
+                "tangent_norm": 1.3763412631817573e-08
+              },
+              "identity_vector": {
+                "norm": 1.1058710813522339,
+                "radial_norm": 9.665364508748553e-09,
+                "tangent_norm": 1.1058710813522339
+              },
+              "shared_projection_amplitude_norm": 0.222684845328331,
+              "shared_projection_identity_norm": 0.3816344738006592,
+              "shared_projection_gradient_cosine": 0.4828953444957733
+            },
+            "confidence": {
+              "count": 200,
+              "mean": 0.9056857228279114,
+              "quantiles": [
+                0.9056858420372009,
+                0.9056858420372009,
+                0.9056858420372009,
+                0.9056858420372009,
+                0.9056858420372009
+              ]
+            },
+            "zero_tracks": 0.03435872495174408
+          }
+        ],
+        "final_train": [
+          {
+            "stage": "C1",
+            "sample_id": "c1-local-train-00",
+            "actual": {
+              "order": [
+                4,
+                3
+              ],
+              "assignment": "whole-sequence PIT",
+              "all": {
+                "centers": 501,
+                "per_source_iou": [
+                  0.45498883724212646,
+                  0.15257380902767181
+                ],
+                "per_source_mae": [
+                  0.01422039419412613,
+                  0.0034846647176891565
+                ]
+              },
+              "nonoverlap": {
+                "centers": 501,
+                "per_source_iou": [
+                  0.45498883724212646,
+                  0.15257380902767181
+                ],
+                "per_source_mae": [
+                  0.01422039419412613,
+                  0.0034846647176891565
+                ]
+              },
+              "overlap": {
+                "centers": 0,
+                "per_source_iou": null,
+                "per_source_mae": null
+              },
+              "normalized_mae": 0.03416603431105614,
+              "per_source_missed_fraction": [
+                0.11842105263157894,
+                0.03125
+              ],
+              "per_source_silence_false_positive_fraction": [
+                0.7994269340974212,
+                0.8422174840085288
+              ],
+              "second_source_missed_fraction": 0.03125,
+              "unused_false_positive_fraction": 0.8932135728542914,
+              "extra_candidate_area_fraction": 2.344176769256592,
+              "source_count_mae": 6.666666666666667,
+              "global_copy_pairs": [],
+              "candidate_copy_window_fraction": 1.0,
+              "copy_window_seconds": 0.16,
+              "pit_gap": 0.0002827942371368408,
+              "pit_tied": false,
+              "reference_shape_difference": 0.0960286408662796,
+              "onset_offset": [
+                {
+                  "onset": {
+                    "pred_count": 15,
+                    "reference_count": 16,
+                    "median_abs_seconds": null
+                  },
+                  "offset": {
+                    "pred_count": 15,
+                    "reference_count": 16,
+                    "median_abs_seconds": null
+                  }
+                },
+                {
+                  "onset": {
+                    "pred_count": 13,
+                    "reference_count": 16,
+                    "median_abs_seconds": null
+                  },
+                  "offset": {
+                    "pred_count": 13,
+                    "reference_count": 16,
+                    "median_abs_seconds": null
+                  }
+                }
+              ],
+              "boundary_note": "course centers1..11 have complete2s input",
+              "unused_mean_normalized_amplitude": 0.03751801326870918,
+              "full_eight_normalized_mae": 0.03668001802434338
+            },
+            "raw": {
+              "order": [
+                4,
+                1
+              ],
+              "assignment": "whole-sequence PIT",
+              "all": {
+                "centers": 501,
+                "per_source_iou": [
+                  0.7304731607437134,
+                  0.2519073486328125
+                ],
+                "per_source_mae": [
+                  0.007816150784492493,
+                  0.0022693790961056948
+                ]
+              },
+              "nonoverlap": {
+                "centers": 501,
+                "per_source_iou": [
+                  0.7304731607437134,
+                  0.2519073486328125
+                ],
+                "per_source_mae": [
+                  0.007816150784492493,
+                  0.0022693790961056948
+                ]
+              },
+              "overlap": {
+                "centers": 0,
+                "per_source_iou": null,
+                "per_source_mae": null
+              },
+              "normalized_mae": 0.019462386146187782,
+              "per_source_missed_fraction": [
+                0.0,
+                0.0
+              ],
+              "per_source_silence_false_positive_fraction": [
+                1.0,
+                0.9680170575692963
+              ],
+              "second_source_missed_fraction": 0.0,
+              "unused_false_positive_fraction": 0.8439787092481703,
+              "extra_candidate_area_fraction": 1.8909173011779785,
+              "source_count_mae": 6.666666666666667,
+              "global_copy_pairs": [],
+              "candidate_copy_window_fraction": 1.0,
+              "copy_window_seconds": 0.16,
+              "pit_gap": 0.00466981902718544,
+              "pit_tied": false,
+              "reference_shape_difference": 0.0960286408662796,
+              "onset_offset": [
+                {
+                  "onset": {
+                    "pred_count": 1,
+                    "reference_count": 16,
+                    "median_abs_seconds": null
+                  },
+                  "offset": {
+                    "pred_count": 1,
+                    "reference_count": 16,
+                    "median_abs_seconds": null
+                  }
+                },
+                {
+                  "onset": {
+                    "pred_count": 16,
+                    "reference_count": 16,
+                    "median_abs_seconds": 0.9400000000000003
+                  },
+                  "offset": {
+                    "pred_count": 16,
+                    "reference_count": 16,
+                    "median_abs_seconds": 0.36999999999999966
+                  }
+                }
+              ],
+              "boundary_note": "course centers1..11 have complete2s input"
+            },
+            "teacher": {
+              "order": [
+                0,
+                1
+              ],
+              "assignment": "supplied teacher source rows",
+              "all": {
+                "centers": 501,
+                "per_source_iou": [
+                  0.8400131464004517,
+                  0.40201494097709656
+                ],
+                "per_source_mae": [
+                  0.0040345340967178345,
+                  0.0011366857215762138
+                ]
+              },
+              "nonoverlap": {
+                "centers": 501,
+                "per_source_iou": [
+                  0.8400131464004517,
+                  0.40201494097709656
+                ],
+                "per_source_mae": [
+                  0.0040345340967178345,
+                  0.0011366857215762138
+                ]
+              },
+              "overlap": {
+                "centers": 0,
+                "per_source_iou": null,
+                "per_source_mae": null
+              },
+              "normalized_mae": 0.009979069232940674,
+              "per_source_missed_fraction": [
+                0.0,
+                0.0
+              ],
+              "per_source_silence_false_positive_fraction": [
+                0.3438395415472779,
+                0.488272921108742
+              ],
+              "second_source_missed_fraction": 0.0,
+              "unused_false_positive_fraction": 0.9950099800399201,
+              "extra_candidate_area_fraction": 2.0884273052215576,
+              "source_count_mae": 6.666666666666667,
+              "global_copy_pairs": [],
+              "candidate_copy_window_fraction": 1.0,
+              "copy_window_seconds": 0.16,
+              "pit_gap": 0.012421488761901855,
+              "pit_tied": false,
+              "reference_shape_difference": 0.0960286408662796,
+              "onset_offset": [
+                {
+                  "onset": {
+                    "pred_count": 32,
+                    "reference_count": 16,
+                    "median_abs_seconds": null
+                  },
+                  "offset": {
+                    "pred_count": 32,
+                    "reference_count": 16,
+                    "median_abs_seconds": null
+                  }
+                },
+                {
+                  "onset": {
+                    "pred_count": 32,
+                    "reference_count": 16,
+                    "median_abs_seconds": null
+                  },
+                  "offset": {
+                    "pred_count": 32,
+                    "reference_count": 16,
+                    "median_abs_seconds": null
+                  }
+                }
+              ],
+              "boundary_note": "course centers1..11 have complete2s input"
+            },
+            "teacher_confidence": {
+              "count": 200,
+              "mean": 0.9056857228279114,
+              "quantiles": [
+                0.9056858420372009,
+                0.9056858420372009,
+                0.9056858420372009,
+                0.9056858420372009,
+                0.9056858420372009
+              ]
+            },
+            "teacher_zero_confidence_fraction": 0.0,
+            "teacher_block_candidate_change_fraction": 1.0,
+            "identity_loss": 0.00012591610720846802,
+            "identity_pair_count": 507,
+            "identity_effective_weight": 261.13677978515625,
+            "amplitude_conservation_max_error": 2.9802322387695312e-08,
+            "joint_objective_audit": {
+              "objective_before": 0.04378995855037679,
+              "objective_after": 0.04378995855037679,
+              "amplitude_before": 0.04376477527327402,
+              "amplitude_after": 0.04376477527327402,
+              "identity_before": 0.00012591638369485736,
+              "identity_after": 0.00012591638369485736,
+              "accepted_moves": 0,
+              "changed_blocks": 0,
+              "amplitude_cap": 0.06376477527327402,
+              "teacher_training_cost_abs_error": 1.89359675162315e-09
+            },
+            "joint_vs_legacy_active_assignment_change": 0.0,
+            "teacher_label_fit_audit": {
+              "active_chosen_error": {
+                "count": 200,
+                "mean": 0.03348185122013092,
+                "quantiles": [
+                  0.001268132240511477,
+                  0.008166519273072482,
+                  0.02332435641437769,
+                  0.07437979057431221,
+                  0.20350122451782227
+                ]
+              },
+              "active_excess_over_best_envelope": {
+                "count": 200,
+                "mean": 0.0030029488261789083,
+                "quantiles": [
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.007705352082848549,
+                  0.0333637073636055
+                ]
+              },
+              "limitation": "GT RMS fit witnesses do not certify identity of envelope-identical physical sources"
+            },
+            "relations": {
+              "adjacent": {
+                "pairs": 168,
+                "correct_fraction": 1.0,
+                "confidence_weight_sum": 131.03480529785156,
+                "weighted_correct_fraction": 1.0
+              },
+              "block_boundary": {
+                "pairs": 0,
+                "correct_fraction": null,
+                "confidence_weight_sum": 0.0,
+                "weighted_correct_fraction": null
+              },
+              "block_interior": {
+                "pairs": 168,
+                "correct_fraction": 1.0,
+                "confidence_weight_sum": 131.03480529785156,
+                "weighted_correct_fraction": 1.0
+              },
+              "across_silence": {
+                "pairs": 30,
+                "correct_fraction": 0.6,
+                "confidence_weight_sum": 14.121221542358398,
+                "weighted_correct_fraction": 0.7446810603141785
+              },
+              "limitation": "GT-teacher candidate endpoints, evaluation only; within-block constant teacher is an easy index-continuity target, and ambiguous labels receive low weight",
+              "positive_cosine": {
+                "count": 507,
+                "mean": 0.9931847453117371,
+                "quantiles": [
+                  0.8974314332008362,
+                  0.9675215721130371,
+                  0.9998883605003357,
+                  0.9999958872795105,
+                  0.9999984502792358
+                ]
+              },
+              "negative_cosine": {
+                "count": 507,
+                "mean": -0.024303384125232697,
+                "quantiles": [
+                  -0.05098111182451248,
+                  -0.03857021480798721,
+                  -0.03358429670333862,
+                  0.006204345822334296,
+                  0.018430249765515327
+                ]
+              },
+              "identity_pair_weights": {
+                "count": 507,
+                "mean": 0.515062689781189,
+                "quantiles": [
+                  0.034912362694740295,
+                  0.1357998251914978,
+                  0.6639530658721924,
+                  0.6908174276351928,
+                  0.7049124836921692
+                ]
+              },
+              "weighted_positive_cosine": 0.9969300031661987,
+              "weighted_negative_cosine": -0.026100214570760727,
+              "weighted_margin_violation": 0.0
+            },
+            "positive_cross_slot_fraction": 0.0,
+            "positive_cross_silence_fraction": 0.2583826429980276,
+            "teacher_context": {
+              "teacher": "full amplitude + same direct bidirectional ID; frozen GT/directional reliability; no index continuity",
+              "block_frames": 16,
+              "block_source_orders": [
+                [
+                  4,
+                  5
+                ],
+                [
+                  5,
+                  1
+                ],
+                [
+                  4,
+                  5
+                ],
+                [
+                  5,
+                  1
+                ],
+                [
+                  4,
+                  5
+                ],
+                [
+                  5,
+                  1
+                ],
+                [
+                  4,
+                  5
+                ],
+                [
+                  5,
+                  1
+                ],
+                [
+                  4,
+                  5
+                ],
+                [
+                  5,
+                  1
+                ],
+                [
+                  4,
+                  5
+                ],
+                [
+                  5,
+                  1
+                ],
+                [
+                  4,
+                  5
+                ],
+                [
+                  5,
+                  1
+                ],
+                [
+                  4,
+                  5
+                ],
+                [
+                  5,
+                  1
+                ],
+                [
+                  4,
+                  5
+                ],
+                [
+                  5,
+                  1
+                ],
+                [
+                  4,
+                  5
+                ],
+                [
+                  5,
+                  1
+                ],
+                [
+                  4,
+                  5
+                ],
+                [
+                  5,
+                  1
+                ],
+                [
+                  4,
+                  5
+                ],
+                [
+                  5,
+                  1
+                ],
+                [
+                  4,
+                  5
+                ],
+                [
+                  5,
+                  1
+                ],
+                [
+                  4,
+                  5
+                ],
+                [
+                  5,
+                  1
+                ],
+                [
+                  4,
+                  5
+                ],
+                [
+                  5,
+                  1
+                ],
+                [
+                  4,
+                  5
+                ],
+                [
+                  5,
+                  1
+                ]
+              ],
+              "sweeps": 1,
+              "exhaustive": false,
+              "search_scope": "all one-to-one block states; coordinate descent, NOT global optimum",
+              "amplitude_slack": 0.02,
+              "amplitude_cap": 0.06376477527327402,
+              "objective_before": 0.04378995855037679,
+              "objective_after": 0.04378995855037679,
+              "node_envelope_slack": 0.02,
+              "admissible_states_per_block": [
+                7,
+                14,
+                7,
+                14,
+                7,
+                14,
+                7,
+                14,
+                7,
+                14,
+                7,
+                14,
+                7,
+                21,
+                7,
+                14,
+                7,
+                14,
+                7,
+                14,
+                7,
+                14,
+                7,
+                14,
+                7,
+                14,
+                7,
+                14,
+                7,
+                14,
+                7,
+                14
+              ],
+              "amplitude_before": 0.04376477527327402,
+              "amplitude_after": 0.04376477527327402,
+              "identity_before": 0.00012591638369485736,
+              "identity_after": 0.00012591638369485736,
+              "objective_history": [
+                0.04378995855037679
+              ],
+              "accepted_moves": 0,
+              "changed_blocks": 0,
+              "conditional_state_gaps": [
+                0.0005611179341699635,
+                0.00014795346110751256,
+                0.0006145674629789155,
+                0.00014610779911200522,
+                0.0005982137090033701,
+                0.00014747309013751764,
+                0.0005995420454444761,
+                0.0001445158432459015,
+                0.0005531057344789203,
+                0.00014396130985143418,
+                0.0005904427672286036,
+                0.00014086529888790444,
+                0.0005591122249129499,
+                0.0001419426409352692,
+                0.0006061018151634276,
+                0.00014617923868193855,
+                0.000586813325370604,
+                0.00013850829707314632,
+                0.0006301449058433717,
+                0.00014096996421159025,
+                0.0005658551565050907,
+                0.00014211753858973247,
+                0.0005646224611293785,
+                0.0001460595069119608,
+                0.0005920128538107403,
+                0.00014301999723438652,
+                0.0005601309555617051,
+                0.00014373511720323917,
+                0.0005845410985866883,
+                0.00014342760156728362,
+                0.0005624632595518861,
+                6.848070173800375e-05
+              ],
+              "confidence_definition": "frozen GT envelope distinctness times prediction direction spread; reliability, not posterior label correctness",
+              "confidence_mean": 0.9056857228279114,
+              "zero_rows": "undefined identity; original norms still supervised"
+            },
+            "predicted_edge_gap": {
+              "count": 4000,
+              "mean": 0.7044773631691933,
+              "quantiles": [
+                0.001004934310913086,
+                0.4339878559112549,
+                0.6968996524810791,
+                0.9591444969177246,
+                1.27756929397583
+              ]
+            },
+            "actual_gated": {
+              "order": [
+                4,
+                3
+              ],
+              "assignment": "whole-sequence PIT",
+              "all": {
+                "centers": 501,
+                "per_source_iou": [
+                  0.4553167521953583,
+                  0.15495307743549347
+                ],
+                "per_source_mae": [
+                  0.014173035509884357,
+                  0.0034094417933374643
+                ]
+              },
+              "nonoverlap": {
+                "centers": 501,
+                "per_source_iou": [
+                  0.4553167521953583,
+                  0.15495307743549347
+                ],
+                "per_source_mae": [
+                  0.014173035509884357,
+                  0.0034094417933374643
+                ]
+              },
+              "overlap": {
+                "centers": 0,
+                "per_source_iou": null,
+                "per_source_mae": null
+              },
+              "normalized_mae": 0.0339294858276844,
+              "per_source_missed_fraction": [
+                0.11842105263157894,
+                0.03125
+              ],
+              "per_source_silence_false_positive_fraction": [
+                0.7994269340974212,
+                0.8422174840085288
+              ],
+              "second_source_missed_fraction": 0.03125,
+              "unused_false_positive_fraction": 0.8932135728542914,
+              "extra_candidate_area_fraction": 2.330923080444336,
+              "source_count_mae": 6.666666666666667,
+              "global_copy_pairs": [],
+              "candidate_copy_window_fraction": 1.0,
+              "copy_window_seconds": 0.16,
+              "pit_gap": 0.000286296010017395,
+              "pit_tied": false,
+              "reference_shape_difference": 0.0960286408662796,
+              "onset_offset": [
+                {
+                  "onset": {
+                    "pred_count": 15,
+                    "reference_count": 16,
+                    "median_abs_seconds": null
+                  },
+                  "offset": {
+                    "pred_count": 15,
+                    "reference_count": 16,
+                    "median_abs_seconds": null
+                  }
+                },
+                {
+                  "onset": {
+                    "pred_count": 13,
+                    "reference_count": 16,
+                    "median_abs_seconds": null
+                  },
+                  "offset": {
+                    "pred_count": 13,
+                    "reference_count": 16,
+                    "median_abs_seconds": null
+                  }
+                }
+              ],
+              "boundary_note": "course centers1..11 have complete2s input"
+            },
+            "teacher_gated": {
+              "order": [
+                0,
+                1
+              ],
+              "assignment": "supplied teacher source rows",
+              "all": {
+                "centers": 501,
+                "per_source_iou": [
+                  0.8472100496292114,
+                  0.4667917788028717
+                ],
+                "per_source_mae": [
+                  0.0038203145377337933,
+                  0.0008729019900783896
+                ]
+              },
+              "nonoverlap": {
+                "centers": 501,
+                "per_source_iou": [
+                  0.8472100496292114,
+                  0.4667917788028717
+                ],
+                "per_source_mae": [
+                  0.0038203145377337933,
+                  0.0008729019900783896
+                ]
+              },
+              "overlap": {
+                "centers": 0,
+                "per_source_iou": null,
+                "per_source_mae": null
+              },
+              "normalized_mae": 0.009056655690073967,
+              "per_source_missed_fraction": [
+                0.0,
+                0.0
+              ],
+              "per_source_silence_false_positive_fraction": [
+                0.3438395415472779,
+                0.488272921108742
+              ],
+              "second_source_missed_fraction": 0.0,
+              "unused_false_positive_fraction": 0.9950099800399201,
+              "extra_candidate_area_fraction": 2.0873615741729736,
+              "source_count_mae": 6.666666666666667,
+              "global_copy_pairs": [],
+              "candidate_copy_window_fraction": 1.0,
+              "copy_window_seconds": 0.16,
+              "pit_gap": 0.015666037797927856,
+              "pit_tied": false,
+              "reference_shape_difference": 0.0960286408662796,
+              "onset_offset": [
+                {
+                  "onset": {
+                    "pred_count": 32,
+                    "reference_count": 16,
+                    "median_abs_seconds": null
+                  },
+                  "offset": {
+                    "pred_count": 32,
+                    "reference_count": 16,
+                    "median_abs_seconds": null
+                  }
+                },
+                {
+                  "onset": {
+                    "pred_count": 32,
+                    "reference_count": 16,
+                    "median_abs_seconds": null
+                  },
+                  "offset": {
+                    "pred_count": 32,
+                    "reference_count": 16,
+                    "median_abs_seconds": null
+                  }
+                }
+              ],
+              "boundary_note": "course centers1..11 have complete2s input"
+            },
+            "output_gain_diagnostic": {
+              "0.5": {
+                "order": [
+                  4,
+                  3
+                ],
+                "assignment": "whole-sequence PIT",
+                "all": {
+                  "centers": 501,
+                  "per_source_iou": [
+                    0.6434703469276428,
+                    0.17216408252716064
+                  ],
+                  "per_source_mae": [
+                    0.004750228486955166,
+                    0.0012516530696302652
+                  ]
+                },
+                "nonoverlap": {
+                  "centers": 501,
+                  "per_source_iou": [
+                    0.6434703469276428,
+                    0.17216408252716064
+                  ],
+                  "per_source_mae": [
+                    0.004750228486955166,
+                    0.0012516530696302652
+                  ]
+                },
+                "overlap": {
+                  "centers": 0,
+                  "per_source_iou": null,
+                  "per_source_mae": null
+                },
+                "normalized_mae": 0.011582027189433575,
+                "per_source_missed_fraction": [
+                  0.07894736842105263,
+                  0.0
+                ],
+                "per_source_silence_false_positive_fraction": [
+                  0.45272206303724927,
+                  0.6567164179104478
+                ],
+                "second_source_missed_fraction": 0.0,
+                "unused_false_positive_fraction": 0.7564870259481038,
+                "extra_candidate_area_fraction": 2.157883882522583,
+                "source_count_mae": 5.445109780439122,
+                "global_copy_pairs": [],
+                "candidate_copy_window_fraction": 1.0,
+                "copy_window_seconds": 0.16,
+                "pit_gap": 0.002220340073108673,
+                "pit_tied": false,
+                "reference_shape_difference": 0.0480143204331398,
+                "onset_offset": [
+                  {
+                    "onset": {
+                      "pred_count": 48,
+                      "reference_count": 16,
+                      "median_abs_seconds": null
+                    },
+                    "offset": {
+                      "pred_count": 48,
+                      "reference_count": 16,
+                      "median_abs_seconds": null
+                    }
+                  },
+                  {
+                    "onset": {
+                      "pred_count": 31,
+                      "reference_count": 16,
+                      "median_abs_seconds": null
+                    },
+                    "offset": {
+                      "pred_count": 31,
+                      "reference_count": 16,
+                      "median_abs_seconds": null
+                    }
+                  }
+                ],
+                "boundary_note": "course centers1..11 have complete2s input"
+              },
+              "1.0": {
+                "order": [
+                  4,
+                  3
+                ],
+                "assignment": "whole-sequence PIT",
+                "all": {
+                  "centers": 501,
+                  "per_source_iou": [
+                    0.45498883724212646,
+                    0.15257380902767181
+                  ],
+                  "per_source_mae": [
+                    0.01422039419412613,
+                    0.0034846647176891565
+                  ]
+                },
+                "nonoverlap": {
+                  "centers": 501,
+                  "per_source_iou": [
+                    0.45498883724212646,
+                    0.15257380902767181
+                  ],
+                  "per_source_mae": [
+                    0.01422039419412613,
+                    0.0034846647176891565
+                  ]
+                },
+                "overlap": {
+                  "centers": 0,
+                  "per_source_iou": null,
+                  "per_source_mae": null
+                },
+                "normalized_mae": 0.03416603431105614,
+                "per_source_missed_fraction": [
+                  0.11842105263157894,
+                  0.03125
+                ],
+                "per_source_silence_false_positive_fraction": [
+                  0.7994269340974212,
+                  0.8422174840085288
+                ],
+                "second_source_missed_fraction": 0.03125,
+                "unused_false_positive_fraction": 0.8932135728542914,
+                "extra_candidate_area_fraction": 2.344176769256592,
+                "source_count_mae": 6.666666666666667,
+                "global_copy_pairs": [],
+                "candidate_copy_window_fraction": 1.0,
+                "copy_window_seconds": 0.16,
+                "pit_gap": 0.0002827942371368408,
+                "pit_tied": false,
+                "reference_shape_difference": 0.0960286408662796,
+                "onset_offset": [
+                  {
+                    "onset": {
+                      "pred_count": 15,
+                      "reference_count": 16,
+                      "median_abs_seconds": null
+                    },
+                    "offset": {
+                      "pred_count": 15,
+                      "reference_count": 16,
+                      "median_abs_seconds": null
+                    }
+                  },
+                  {
+                    "onset": {
+                      "pred_count": 13,
+                      "reference_count": 16,
+                      "median_abs_seconds": null
+                    },
+                    "offset": {
+                      "pred_count": 13,
+                      "reference_count": 16,
+                      "median_abs_seconds": null
+                    }
+                  }
+                ],
+                "boundary_note": "course centers1..11 have complete2s input"
+              },
+              "2.0": {
+                "order": [
+                  5,
+                  1
+                ],
+                "assignment": "whole-sequence PIT",
+                "all": {
+                  "centers": 501,
+                  "per_source_iou": [
+                    0.30865564942359924,
+                    0.21225464344024658
+                  ],
+                  "per_source_mae": [
+                    0.03650423884391785,
+                    0.0046788728795945644
+                  ]
+                },
+                "nonoverlap": {
+                  "centers": 501,
+                  "per_source_iou": [
+                    0.30865564942359924,
+                    0.21225464344024658
+                  ],
+                  "per_source_mae": [
+                    0.03650423884391785,
+                    0.0046788728795945644
+                  ]
+                },
+                "overlap": {
+                  "centers": 0,
+                  "per_source_iou": null,
+                  "per_source_mae": null
+                },
+                "normalized_mae": 0.07947239279747009,
+                "per_source_missed_fraction": [
+                  0.039473684210526314,
+                  0.0
+                ],
+                "per_source_silence_false_positive_fraction": [
+                  0.6819484240687679,
+                  1.0
+                ],
+                "second_source_missed_fraction": 0.0,
+                "unused_false_positive_fraction": 0.929474384564205,
+                "extra_candidate_area_fraction": 2.5271682739257812,
+                "source_count_mae": 6.976047904191617,
+                "global_copy_pairs": [],
+                "candidate_copy_window_fraction": 1.0,
+                "copy_window_seconds": 0.16,
+                "pit_gap": 0.000718042254447937,
+                "pit_tied": false,
+                "reference_shape_difference": 0.1920572817325592,
+                "onset_offset": [
+                  {
+                    "onset": {
+                      "pred_count": 18,
+                      "reference_count": 16,
+                      "median_abs_seconds": null
+                    },
+                    "offset": {
+                      "pred_count": 18,
+                      "reference_count": 16,
+                      "median_abs_seconds": null
+                    }
+                  },
+                  {
+                    "onset": {
+                      "pred_count": 1,
+                      "reference_count": 16,
+                      "median_abs_seconds": null
+                    },
+                    "offset": {
+                      "pred_count": 1,
+                      "reference_count": 16,
+                      "median_abs_seconds": null
+                    }
+                  }
+                ],
+                "boundary_note": "course centers1..11 have complete2s input"
+              }
+            },
+            "candidate_shuffle_normalized_mae_delta": 0.0
+          }
+        ]
+      },
+      "split": {
+        "history": [
+          {
+            "update": 1,
+            "amplitude_loss": 0.08778806030750275,
+            "identity_loss": 0.0007343709003180265,
+            "gradient": {
+              "amplitude_vector": {
+                "norm": 0.0,
+                "radial_norm": 0.0,
+                "tangent_norm": 0.0
+              },
+              "identity_vector": {
+                "norm": 1.1163853406906128,
+                "radial_norm": 2.544879684762691e-08,
+                "tangent_norm": 1.1163853406906128
+              },
+              "shared_projection_amplitude_norm": 0.5732569098472595,
+              "shared_projection_identity_norm": 0.10310352593660355,
+              "shared_projection_gradient_cosine": -0.07908066362142563
+            },
+            "confidence": {
+              "count": 200,
+              "mean": 0.9056857228279114,
+              "quantiles": [
+                0.9056858420372009,
+                0.9056858420372009,
+                0.9056858420372009,
+                0.9056858420372009,
+                0.9056858420372009
+              ]
+            },
+            "zero_tracks": 0.0008679698803462088
+          },
+          {
+            "update": 20,
+            "amplitude_loss": 0.13919836282730103,
+            "identity_loss": 0.0002689395332708955,
+            "gradient": {
+              "amplitude_vector": {
+                "norm": 0.0,
+                "radial_norm": 0.0,
+                "tangent_norm": 0.0
+              },
+              "identity_vector": {
+                "norm": 0.00145127740688622,
+                "radial_norm": 1.8026879988752853e-09,
+                "tangent_norm": 0.00145127740688622
+              },
+              "shared_projection_amplitude_norm": 0.09723997861146927,
+              "shared_projection_identity_norm": 0.001094697741791606,
+              "shared_projection_gradient_cosine": -0.21875911951065063
+            },
+            "confidence": {
+              "count": 200,
+              "mean": 0.9056857228279114,
+              "quantiles": [
+                0.9056858420372009,
+                0.9056858420372009,
+                0.9056858420372009,
+                0.9056858420372009,
+                0.9056858420372009
+              ]
+            },
+            "zero_tracks": 0.07229583710432053
+          }
+        ],
+        "final_train": [
+          {
+            "stage": "C1",
+            "sample_id": "c1-local-train-00",
+            "actual": {
+              "order": [
+                7,
+                6
+              ],
+              "assignment": "whole-sequence PIT",
+              "all": {
+                "centers": 501,
+                "per_source_iou": [
+                  0.029132122173905373,
+                  0.03474360704421997
+                ],
+                "per_source_mae": [
+                  0.023910459131002426,
+                  0.001458401675336063
+                ]
+              },
+              "nonoverlap": {
+                "centers": 501,
+                "per_source_iou": [
+                  0.029132122173905373,
+                  0.03474360704421997
+                ],
+                "per_source_mae": [
+                  0.023910459131002426,
+                  0.001458401675336063
+                ]
+              },
+              "overlap": {
+                "centers": 0,
+                "per_source_iou": null,
+                "per_source_mae": null
+              },
+              "normalized_mae": 0.048955079168081284,
+              "per_source_missed_fraction": [
+                0.3618421052631579,
+                1.0
+              ],
+              "per_source_silence_false_positive_fraction": [
+                0.08882521489971347,
+                0.08742004264392324
+              ],
+              "second_source_missed_fraction": 1.0,
+              "unused_false_positive_fraction": 0.20359281437125748,
+              "extra_candidate_area_fraction": 8.953254699707031,
+              "source_count_mae": 1.1916167664670658,
+              "global_copy_pairs": [],
+              "candidate_copy_window_fraction": 0.4375,
+              "copy_window_seconds": 0.16,
+              "pit_gap": 7.912516593933105e-05,
+              "pit_tied": true,
+              "reference_shape_difference": 0.0960286408662796,
+              "onset_offset": [
+                {
+                  "onset": {
+                    "pred_count": 35,
+                    "reference_count": 16,
+                    "median_abs_seconds": null
+                  },
+                  "offset": {
+                    "pred_count": 35,
+                    "reference_count": 16,
+                    "median_abs_seconds": null
+                  }
+                },
+                {
+                  "onset": {
+                    "pred_count": 16,
+                    "reference_count": 16,
+                    "median_abs_seconds": 0.30000000000000016
+                  },
+                  "offset": {
+                    "pred_count": 16,
+                    "reference_count": 16,
+                    "median_abs_seconds": 0.29999999999999993
+                  }
+                }
+              ],
+              "boundary_note": "course centers1..11 have complete2s input",
+              "unused_mean_normalized_amplitude": 0.1432947963476181,
+              "full_eight_normalized_mae": 0.11970987701969414
+            },
+            "raw": {
+              "order": [
+                7,
+                6
+              ],
+              "assignment": "whole-sequence PIT",
+              "all": {
+                "centers": 501,
+                "per_source_iou": [
+                  0.029132122173905373,
+                  0.03474360704421997
+                ],
+                "per_source_mae": [
+                  0.023910459131002426,
+                  0.001458401675336063
+                ]
+              },
+              "nonoverlap": {
+                "centers": 501,
+                "per_source_iou": [
+                  0.029132122173905373,
+                  0.03474360704421997
+                ],
+                "per_source_mae": [
+                  0.023910459131002426,
+                  0.001458401675336063
+                ]
+              },
+              "overlap": {
+                "centers": 0,
+                "per_source_iou": null,
+                "per_source_mae": null
+              },
+              "normalized_mae": 0.048955079168081284,
+              "per_source_missed_fraction": [
+                0.3618421052631579,
+                1.0
+              ],
+              "per_source_silence_false_positive_fraction": [
+                0.08882521489971347,
+                0.08742004264392324
+              ],
+              "second_source_missed_fraction": 1.0,
+              "unused_false_positive_fraction": 0.20359281437125748,
+              "extra_candidate_area_fraction": 8.953254699707031,
+              "source_count_mae": 1.1916167664670658,
+              "global_copy_pairs": [],
+              "candidate_copy_window_fraction": 0.4375,
+              "copy_window_seconds": 0.16,
+              "pit_gap": 7.912516593933105e-05,
+              "pit_tied": true,
+              "reference_shape_difference": 0.0960286408662796,
+              "onset_offset": [
+                {
+                  "onset": {
+                    "pred_count": 35,
+                    "reference_count": 16,
+                    "median_abs_seconds": null
+                  },
+                  "offset": {
+                    "pred_count": 35,
+                    "reference_count": 16,
+                    "median_abs_seconds": null
+                  }
+                },
+                {
+                  "onset": {
+                    "pred_count": 16,
+                    "reference_count": 16,
+                    "median_abs_seconds": 0.30000000000000016
+                  },
+                  "offset": {
+                    "pred_count": 16,
+                    "reference_count": 16,
+                    "median_abs_seconds": 0.29999999999999993
+                  }
+                }
+              ],
+              "boundary_note": "course centers1..11 have complete2s input"
+            },
+            "teacher": {
+              "order": [
+                0,
+                1
+              ],
+              "assignment": "supplied teacher source rows",
+              "all": {
+                "centers": 501,
+                "per_source_iou": [
+                  0.029575752094388008,
+                  0.20314231514930725
+                ],
+                "per_source_mae": [
+                  0.0235410388559103,
+                  0.0029876986518502235
+                ]
+              },
+              "nonoverlap": {
+                "centers": 501,
+                "per_source_iou": [
+                  0.029575752094388008,
+                  0.20314231514930725
+                ],
+                "per_source_mae": [
+                  0.0235410388559103,
+                  0.0029876986518502235
+                ]
+              },
+              "overlap": {
+                "centers": 0,
+                "per_source_iou": null,
+                "per_source_mae": null
+              },
+              "normalized_mae": 0.051193367689847946,
+              "per_source_missed_fraction": [
+                0.3618421052631579,
+                0.0
+              ],
+              "per_source_silence_false_positive_fraction": [
+                0.0,
+                0.4541577825159915
+              ],
+              "second_source_missed_fraction": 0.0,
+              "unused_false_positive_fraction": 0.14604125083167,
+              "extra_candidate_area_fraction": 8.849635124206543,
+              "source_count_mae": 1.1916167664670658,
+              "global_copy_pairs": [],
+              "candidate_copy_window_fraction": 0.4375,
+              "copy_window_seconds": 0.16,
+              "pit_gap": 0.0012765228748321533,
+              "pit_tied": false,
+              "reference_shape_difference": 0.0960286408662796,
+              "onset_offset": [
+                {
+                  "onset": {
+                    "pred_count": 19,
+                    "reference_count": 16,
+                    "median_abs_seconds": null
+                  },
+                  "offset": {
+                    "pred_count": 19,
+                    "reference_count": 16,
+                    "median_abs_seconds": null
+                  }
+                },
+                {
+                  "onset": {
+                    "pred_count": 16,
+                    "reference_count": 16,
+                    "median_abs_seconds": 0.03999999999999959
+                  },
+                  "offset": {
+                    "pred_count": 16,
+                    "reference_count": 16,
+                    "median_abs_seconds": 0.23999999999999966
+                  }
+                }
+              ],
+              "boundary_note": "course centers1..11 have complete2s input"
+            },
+            "teacher_confidence": {
+              "count": 200,
+              "mean": 0.9056857228279114,
+              "quantiles": [
+                0.9056858420372009,
+                0.9056858420372009,
+                0.9056858420372009,
+                0.9056858420372009,
+                0.9056858420372009
+              ]
+            },
+            "teacher_zero_confidence_fraction": 0.0,
+            "teacher_block_candidate_change_fraction": 1.0,
+            "identity_loss": 0.00021901848958805203,
+            "identity_pair_count": 507,
+            "identity_effective_weight": 261.13677978515625,
+            "amplitude_conservation_max_error": 0.0,
+            "joint_objective_audit": {
+              "objective_before": 0.14277291308767576,
+              "objective_after": 0.14277291308767576,
+              "amplitude_before": 0.14272910941085842,
+              "amplitude_after": 0.14272910941085842,
+              "identity_before": 0.0002190183731727302,
+              "identity_after": 0.0002190183731727302,
+              "accepted_moves": 0,
+              "changed_blocks": 0,
+              "amplitude_cap": 0.1627291094108584,
+              "teacher_training_cost_abs_error": 1.085497802755242e-10
+            },
+            "joint_vs_legacy_active_assignment_change": 0.0,
+            "teacher_label_fit_audit": {
+              "active_chosen_error": {
+                "count": 200,
+                "mean": 0.24192678928375244,
+                "quantiles": [
+                  0.0004937566118314862,
+                  0.01608860827982426,
+                  0.27196308970451355,
+                  0.4712339699268341,
+                  0.804839015007019
+                ]
+              },
+              "active_excess_over_best_envelope": {
+                "count": 200,
+                "mean": 0.027118710801005363,
+                "quantiles": [
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.10635664314031601,
+                  0.169822096824646
+                ]
+              },
+              "limitation": "GT RMS fit witnesses do not certify identity of envelope-identical physical sources"
+            },
+            "relations": {
+              "adjacent": {
+                "pairs": 168,
+                "correct_fraction": 1.0,
+                "confidence_weight_sum": 131.03480529785156,
+                "weighted_correct_fraction": 1.0
+              },
+              "block_boundary": {
+                "pairs": 0,
+                "correct_fraction": null,
+                "confidence_weight_sum": 0.0,
+                "weighted_correct_fraction": null
+              },
+              "block_interior": {
+                "pairs": 168,
+                "correct_fraction": 1.0,
+                "confidence_weight_sum": 131.03480529785156,
+                "weighted_correct_fraction": 1.0
+              },
+              "across_silence": {
+                "pairs": 30,
+                "correct_fraction": 1.0,
+                "confidence_weight_sum": 14.121221542358398,
+                "weighted_correct_fraction": 1.0
+              },
+              "limitation": "GT-teacher candidate endpoints, evaluation only; within-block constant teacher is an easy index-continuity target, and ambiguous labels receive low weight",
+              "positive_cosine": {
+                "count": 507,
+                "mean": 0.9943935871124268,
+                "quantiles": [
+                  0.95555180311203,
+                  0.9810137271881103,
+                  0.9981657266616821,
+                  0.9999531507492065,
+                  0.9999969005584717
+                ]
+              },
+              "negative_cosine": {
+                "count": 507,
+                "mean": -0.39905864000320435,
+                "quantiles": [
+                  -0.401539146900177,
+                  -0.4003694236278534,
+                  -0.3991302251815796,
+                  -0.3975950241088867,
+                  -0.39395421743392944
+                ]
+              },
+              "identity_pair_weights": {
+                "count": 507,
+                "mean": 0.515062689781189,
+                "quantiles": [
+                  0.034912362694740295,
+                  0.1357998251914978,
+                  0.6639530658721924,
+                  0.6908174276351928,
+                  0.7049124836921692
+                ]
+              },
+              "weighted_positive_cosine": 0.9946597814559937,
+              "weighted_negative_cosine": -0.39915889501571655,
+              "weighted_margin_violation": 0.0
+            },
+            "positive_cross_slot_fraction": 0.0,
+            "positive_cross_silence_fraction": 0.2583826429980276,
+            "teacher_context": {
+              "teacher": "full amplitude + same direct bidirectional ID; frozen GT/directional reliability; no index continuity",
+              "block_frames": 16,
+              "block_source_orders": [
+                [
+                  7,
+                  4
+                ],
+                [
+                  4,
+                  3
+                ],
+                [
+                  7,
+                  4
+                ],
+                [
+                  4,
+                  3
+                ],
+                [
+                  7,
+                  4
+                ],
+                [
+                  4,
+                  3
+                ],
+                [
+                  7,
+                  4
+                ],
+                [
+                  4,
+                  3
+                ],
+                [
+                  7,
+                  4
+                ],
+                [
+                  4,
+                  3
+                ],
+                [
+                  7,
+                  4
+                ],
+                [
+                  4,
+                  3
+                ],
+                [
+                  7,
+                  4
+                ],
+                [
+                  4,
+                  3
+                ],
+                [
+                  7,
+                  4
+                ],
+                [
+                  4,
+                  3
+                ],
+                [
+                  7,
+                  4
+                ],
+                [
+                  4,
+                  3
+                ],
+                [
+                  7,
+                  4
+                ],
+                [
+                  4,
+                  3
+                ],
+                [
+                  7,
+                  4
+                ],
+                [
+                  4,
+                  3
+                ],
+                [
+                  7,
+                  4
+                ],
+                [
+                  4,
+                  3
+                ],
+                [
+                  7,
+                  4
+                ],
+                [
+                  4,
+                  3
+                ],
+                [
+                  7,
+                  4
+                ],
+                [
+                  4,
+                  3
+                ],
+                [
+                  7,
+                  4
+                ],
+                [
+                  4,
+                  3
+                ],
+                [
+                  7,
+                  4
+                ],
+                [
+                  4,
+                  3
+                ]
+              ],
+              "sweeps": 1,
+              "exhaustive": false,
+              "search_scope": "all one-to-one block states; coordinate descent, NOT global optimum",
+              "amplitude_slack": 0.02,
+              "amplitude_cap": 0.1627291094108584,
+              "objective_before": 0.14277291308767576,
+              "objective_after": 0.14277291308767576,
+              "node_envelope_slack": 0.02,
+              "admissible_states_per_block": [
+                21,
+                7,
+                7,
+                7,
+                7,
+                7,
+                7,
+                7,
+                14,
+                7,
+                7,
+                7,
+                7,
+                7,
+                7,
+                7,
+                7,
+                7,
+                7,
+                7,
+                7,
+                7,
+                7,
+                7,
+                7,
+                7,
+                14,
+                7,
+                7,
+                7,
+                14,
+                7
+              ],
+              "amplitude_before": 0.14272910941085842,
+              "amplitude_after": 0.14272910941085842,
+              "identity_before": 0.0002190183731727302,
+              "identity_after": 0.0002190183731727302,
+              "objective_history": [
+                0.14277291308767576
+              ],
+              "accepted_moves": 0,
+              "changed_blocks": 0,
+              "conditional_state_gaps": [
+                5.0135886140778574e-05,
+                3.2267228910476398e-06,
+                5.57475405896235e-05,
+                3.195355799262556e-06,
+                5.542795580087967e-05,
+                3.1969752601335166e-06,
+                5.5946554410407634e-05,
+                3.1547246380214666e-06,
+                5.1811105403754e-05,
+                3.1176707305513585e-06,
+                5.153886359615667e-05,
+                3.126238829531669e-06,
+                5.1349529466393484e-05,
+                3.199929611286123e-06,
+                5.525902844447095e-05,
+                3.2231801597171206e-06,
+                5.553501241689629e-05,
+                3.23146874550706e-06,
+                5.9690825153307925e-05,
+                3.1760605160857658e-06,
+                5.3942179000843193e-05,
+                3.137449863466202e-06,
+                5.288951880605408e-05,
+                3.1763674267215602e-06,
+                5.5203706287365595e-05,
+                3.1360887384479508e-06,
+                5.195142614461412e-05,
+                3.152900620639887e-06,
+                5.3182229416193216e-05,
+                3.1887257420648574e-06,
+                5.2188891476734334e-05,
+                1.1297753684524903e-06
+              ],
+              "confidence_definition": "frozen GT envelope distinctness times prediction direction spread; reliability, not posterior label correctness",
+              "confidence_mean": 0.9056857228279114,
+              "zero_rows": "undefined identity; original norms still supervised"
+            },
+            "predicted_edge_gap": {
+              "count": 4000,
+              "mean": 0.21847890536487102,
+              "quantiles": [
+                0.10792124271392822,
+                0.11618894338607788,
+                0.13492465019226074,
+                0.5286239504814148,
+                0.9980347156524658
+              ]
+            },
+            "actual_gated": {
+              "order": [
+                6,
+                7
+              ],
+              "assignment": "whole-sequence PIT",
+              "all": {
+                "centers": 501,
+                "per_source_iou": [
+                  0.009989455342292786,
+                  0.0469212532043457
+                ],
+                "per_source_mae": [
+                  0.02387622930109501,
+                  0.001329891150817275
+                ]
+              },
+              "nonoverlap": {
+                "centers": 501,
+                "per_source_iou": [
+                  0.009989455342292786,
+                  0.0469212532043457
+                ],
+                "per_source_mae": [
+                  0.02387622930109501,
+                  0.001329891150817275
+                ]
+              },
+              "overlap": {
+                "centers": 0,
+                "per_source_iou": null,
+                "per_source_mae": null
+              },
+              "normalized_mae": 0.04864109307527542,
+              "per_source_missed_fraction": [
+                0.7302631578947368,
+                0.03125
+              ],
+              "per_source_silence_false_positive_fraction": [
+                0.0,
+                0.2068230277185501
+              ],
+              "second_source_missed_fraction": 0.03125,
+              "unused_false_positive_fraction": 0.20359281437125748,
+              "extra_candidate_area_fraction": 8.885459899902344,
+              "source_count_mae": 1.1916167664670658,
+              "global_copy_pairs": [],
+              "candidate_copy_window_fraction": 0.0,
+              "copy_window_seconds": 0.16,
+              "pit_gap": 0.00015242397785186768,
+              "pit_tied": false,
+              "reference_shape_difference": 0.0960286408662796,
+              "onset_offset": [
+                {
+                  "onset": {
+                    "pred_count": 16,
+                    "reference_count": 16,
+                    "median_abs_seconds": 0.009999999999999787
+                  },
+                  "offset": {
+                    "pred_count": 16,
+                    "reference_count": 16,
+                    "median_abs_seconds": 0.1200000000000001
+                  }
+                },
+                {
+                  "onset": {
+                    "pred_count": 35,
+                    "reference_count": 16,
+                    "median_abs_seconds": null
+                  },
+                  "offset": {
+                    "pred_count": 35,
+                    "reference_count": 16,
+                    "median_abs_seconds": null
+                  }
+                }
+              ],
+              "boundary_note": "course centers1..11 have complete2s input"
+            },
+            "teacher_gated": {
+              "order": [
+                0,
+                1
+              ],
+              "assignment": "supplied teacher source rows",
+              "all": {
+                "centers": 501,
+                "per_source_iou": [
+                  0.026171769946813583,
+                  0.20314231514930725
+                ],
+                "per_source_mae": [
+                  0.023485960438847542,
+                  0.0029876986518502235
+                ]
+              },
+              "nonoverlap": {
+                "centers": 501,
+                "per_source_iou": [
+                  0.026171769946813583,
+                  0.20314231514930725
+                ],
+                "per_source_mae": [
+                  0.023485960438847542,
+                  0.0029876986518502235
+                ]
+              },
+              "overlap": {
+                "centers": 0,
+                "per_source_iou": null,
+                "per_source_mae": null
+              },
+              "normalized_mae": 0.051087092608213425,
+              "per_source_missed_fraction": [
+                0.3618421052631579,
+                0.0
+              ],
+              "per_source_silence_false_positive_fraction": [
+                0.0,
+                0.4541577825159915
+              ],
+              "second_source_missed_fraction": 0.0,
+              "unused_false_positive_fraction": 0.14604125083167,
+              "extra_candidate_area_fraction": 8.747186660766602,
+              "source_count_mae": 1.1916167664670658,
+              "global_copy_pairs": [],
+              "candidate_copy_window_fraction": 0.0,
+              "copy_window_seconds": 0.16,
+              "pit_gap": 0.001566171646118164,
+              "pit_tied": false,
+              "reference_shape_difference": 0.0960286408662796,
+              "onset_offset": [
+                {
+                  "onset": {
+                    "pred_count": 19,
+                    "reference_count": 16,
+                    "median_abs_seconds": null
+                  },
+                  "offset": {
+                    "pred_count": 19,
+                    "reference_count": 16,
+                    "median_abs_seconds": null
+                  }
+                },
+                {
+                  "onset": {
+                    "pred_count": 16,
+                    "reference_count": 16,
+                    "median_abs_seconds": 0.03999999999999959
+                  },
+                  "offset": {
+                    "pred_count": 16,
+                    "reference_count": 16,
+                    "median_abs_seconds": 0.23999999999999966
+                  }
+                }
+              ],
+              "boundary_note": "course centers1..11 have complete2s input"
+            },
+            "output_gain_diagnostic": {
+              "0.5": {
+                "order": [
+                  7,
+                  6
+                ],
+                "assignment": "whole-sequence PIT",
+                "all": {
+                  "centers": 501,
+                  "per_source_iou": [
+                    0.029132122173905373,
+                    0.03474360704421997
+                  ],
+                  "per_source_mae": [
+                    0.011955229565501213,
+                    0.0007292008376680315
+                  ]
+                },
+                "nonoverlap": {
+                  "centers": 501,
+                  "per_source_iou": [
+                    0.029132122173905373,
+                    0.03474360704421997
+                  ],
+                  "per_source_mae": [
+                    0.011955229565501213,
+                    0.0007292008376680315
+                  ]
+                },
+                "overlap": {
+                  "centers": 0,
+                  "per_source_iou": null,
+                  "per_source_mae": null
+                },
+                "normalized_mae": 0.024477539584040642,
+                "per_source_missed_fraction": [
+                  0.7828947368421053,
+                  1.0
+                ],
+                "per_source_silence_false_positive_fraction": [
+                  0.0,
+                  0.046908315565031986
+                ],
+                "second_source_missed_fraction": 1.0,
+                "unused_false_positive_fraction": 0.17964071856287425,
+                "extra_candidate_area_fraction": 8.953254699707031,
+                "source_count_mae": 0.8203592814371258,
+                "global_copy_pairs": [],
+                "candidate_copy_window_fraction": 0.4375,
+                "copy_window_seconds": 0.16,
+                "pit_gap": 9.876489639282227e-05,
+                "pit_tied": true,
+                "reference_shape_difference": 0.0480143204331398,
+                "onset_offset": [
+                  {
+                    "onset": {
+                      "pred_count": 16,
+                      "reference_count": 16,
+                      "median_abs_seconds": 0.019999999999999574
+                    },
+                    "offset": {
+                      "pred_count": 16,
+                      "reference_count": 16,
+                      "median_abs_seconds": 0.12999999999999945
+                    }
+                  },
+                  {
+                    "onset": {
+                      "pred_count": 16,
+                      "reference_count": 16,
+                      "median_abs_seconds": 0.29999999999999993
+                    },
+                    "offset": {
+                      "pred_count": 16,
+                      "reference_count": 16,
+                      "median_abs_seconds": 0.3199999999999996
+                    }
+                  }
+                ],
+                "boundary_note": "course centers1..11 have complete2s input"
+              },
+              "1.0": {
+                "order": [
+                  7,
+                  6
+                ],
+                "assignment": "whole-sequence PIT",
+                "all": {
+                  "centers": 501,
+                  "per_source_iou": [
+                    0.029132122173905373,
+                    0.03474360704421997
+                  ],
+                  "per_source_mae": [
+                    0.023910459131002426,
+                    0.001458401675336063
+                  ]
+                },
+                "nonoverlap": {
+                  "centers": 501,
+                  "per_source_iou": [
+                    0.029132122173905373,
+                    0.03474360704421997
+                  ],
+                  "per_source_mae": [
+                    0.023910459131002426,
+                    0.001458401675336063
+                  ]
+                },
+                "overlap": {
+                  "centers": 0,
+                  "per_source_iou": null,
+                  "per_source_mae": null
+                },
+                "normalized_mae": 0.048955079168081284,
+                "per_source_missed_fraction": [
+                  0.3618421052631579,
+                  1.0
+                ],
+                "per_source_silence_false_positive_fraction": [
+                  0.08882521489971347,
+                  0.08742004264392324
+                ],
+                "second_source_missed_fraction": 1.0,
+                "unused_false_positive_fraction": 0.20359281437125748,
+                "extra_candidate_area_fraction": 8.953254699707031,
+                "source_count_mae": 1.1916167664670658,
+                "global_copy_pairs": [],
+                "candidate_copy_window_fraction": 0.4375,
+                "copy_window_seconds": 0.16,
+                "pit_gap": 7.912516593933105e-05,
+                "pit_tied": true,
+                "reference_shape_difference": 0.0960286408662796,
+                "onset_offset": [
+                  {
+                    "onset": {
+                      "pred_count": 35,
+                      "reference_count": 16,
+                      "median_abs_seconds": null
+                    },
+                    "offset": {
+                      "pred_count": 35,
+                      "reference_count": 16,
+                      "median_abs_seconds": null
+                    }
+                  },
+                  {
+                    "onset": {
+                      "pred_count": 16,
+                      "reference_count": 16,
+                      "median_abs_seconds": 0.30000000000000016
+                    },
+                    "offset": {
+                      "pred_count": 16,
+                      "reference_count": 16,
+                      "median_abs_seconds": 0.29999999999999993
+                    }
+                  }
+                ],
+                "boundary_note": "course centers1..11 have complete2s input"
+              },
+              "2.0": {
+                "order": [
+                  7,
+                  1
+                ],
+                "assignment": "whole-sequence PIT",
+                "all": {
+                  "centers": 501,
+                  "per_source_iou": [
+                    0.029132122173905373,
+                    0.03263750299811363
+                  ],
+                  "per_source_mae": [
+                    0.04782091826200485,
+                    0.0023982420098036528
+                  ]
+                },
+                "nonoverlap": {
+                  "centers": 501,
+                  "per_source_iou": [
+                    0.029132122173905373,
+                    0.03263750299811363
+                  ],
+                  "per_source_mae": [
+                    0.04782091826200485,
+                    0.0023982420098036528
+                  ]
+                },
+                "overlap": {
+                  "centers": 0,
+                  "per_source_iou": null,
+                  "per_source_mae": null
+                },
+                "normalized_mae": 0.09690948575735092,
+                "per_source_missed_fraction": [
+                  0.0,
+                  0.09375
+                ],
+                "per_source_silence_false_positive_fraction": [
+                  1.0,
+                  0.2068230277185501
+                ],
+                "second_source_missed_fraction": 0.09375,
+                "unused_false_positive_fraction": 0.45342648037258815,
+                "extra_candidate_area_fraction": 8.964644432067871,
+                "source_count_mae": 3.604790419161677,
+                "global_copy_pairs": [],
+                "candidate_copy_window_fraction": 0.4375,
+                "copy_window_seconds": 0.16,
+                "pit_gap": 4.723668098449707e-06,
+                "pit_tied": true,
+                "reference_shape_difference": 0.1920572817325592,
+                "onset_offset": [
+                  {
+                    "onset": {
+                      "pred_count": 1,
+                      "reference_count": 16,
+                      "median_abs_seconds": null
+                    },
+                    "offset": {
+                      "pred_count": 1,
+                      "reference_count": 16,
+                      "median_abs_seconds": null
+                    }
+                  },
+                  {
+                    "onset": {
+                      "pred_count": 38,
+                      "reference_count": 16,
+                      "median_abs_seconds": null
+                    },
+                    "offset": {
+                      "pred_count": 38,
+                      "reference_count": 16,
+                      "median_abs_seconds": null
+                    }
+                  }
+                ],
+                "boundary_note": "course centers1..11 have complete2s input"
+              }
+            },
+            "candidate_shuffle_normalized_mae_delta": 0.0
+          }
+        ]
+      }
+    }
+  },
+  "first_source_sha256": {
+    "head.py": "f92af63752f13d31a34fc697b9d3eb527b7fa8f6fc6f9fdd2fd41d35bbc89047",
+    "cache_courses.py": "a587a029d73e5fa9ec2541ce3c59ceac34f529ad852721724a5fd7e6e88b6e2b",
+    "identity_supervision.py": "4302f961bc4cd511328daeaa7db39e7151b1cfc2235d7efa87b645252a9c54bd",
+    "initialize_split_head.py": "54d9658799bcccd108c42a25c913b5344bcd7636b54dec14b79c1293917af26d",
+    "course_metrics.py": "97c0d5d5085db928cbb53d9bc9b03994fa5c1f01d3701c48337d0b48eff0836e",
+    "summarize_split_head.py": "c1cbb6c48bce2f4e41503790bf8d7123e0bb9343c50169d7feaf1ce2de85af0d",
+    "collect_window_evidence.py": "c29149ea56b33a96cb84071186e0dc12fd69cc4380802983d88109446cbbda81",
+    "finish_depth_suite.py": "08319d08c10fece3f73cb71426587db739d5e65df9627cc1fcc883b21165085e",
+    "courses.py": "65e0a7d173893d2e6031ecf20567267aac1e978881df1359ac26adea6a3f8fb2",
+    "reevaluate_courses.py": "57889e3d455c1023551021c756e26c22c1b41164906ae4dddb896ae0959b2356",
+    "run_joint_suite.py": "da5101eb8fcba99d0af647fe33fc2508ee377e31cdc1feacc90ce1522d6d8a2d",
+    "test_window_depth.py": "e1b4c4db209a0a07f79752bdeb31138ce89612d0708cb283a0c1ae856dae1a4f",
+    "summarize_teacher_identity.py": "7de5c8c96a5dbdd74b35b074f8d9ebd022c6f03f43492625d332e70721f640dc",
+    "train_courses.py": "ae1aa6822b74256fde8e4a4e15e8793ef7863ee05cf718e33bc96799394ced0a",
+    "dataset_adapter.py": "9224c9e8732d9985c6455b1581834c823e044548cedf55ad0c7aa85445ea7ad8",
+    "joint_teacher.py": "ff7a65bcd963a6547cbc2f4bfd311dabde7f028e0eebae665cdf843e9f86dfbc",
+    "train_window_depth.py": "2dd881058ac19a355d0d31c74b55825500766d5e60ae0f1b58def0dc9d2a37b0",
+    "test_split_head.py": "4b1f5fa7b27aa16a33e90fb55e963943add040952887521f9a45ddaf7d65d473",
+    "evaluate_reference_association.py": "16eeab466d7a2fc0f09ff0c07f90e46ea0a6f5bbacc67a322f4b03c107205cfe",
+    "fast_association.py": "300822eece8cd7ffdb51c1fef55ae7fead7b4c848c295f9cfde2007e219d255b",
+    "train_c0.py": "bc163232f9f273b6fd2c4f7c85e538dc517dc161f245fe3c0988f99803bdcb37",
+    "render_joint_report.py": "c2991c356219ec87019f75383d3b0c9e232de2397f399796ef4082934002bad3",
+    "summarize_courses.py": "6745b19ee6966c0a88c6b5bb46f95c4e921e9b0679306e6a590881de7f7685bb",
+    "test_c0.py": "c707cbcfb88ceb2ce92672ee11f37eaaea703d8dd567d3c5161342be6cd0b515",
+    "train_joint_teacher.py": "385b174fd77bf4e80638da676072f7472a2e1c883073d39bf0dd1658d239132e",
+    "run_split_suite.py": "0419178369daf79c3e1ce2b585c63d5a4d1fdc6694069b234cd93454cbc2b4a9",
+    "test_courses.py": "786b3fe15a6757d144711ce46358e6164c16acbe0810817cd13a99c94afecb74",
+    "audit_trained_association.py": "4cb1bf14bfbf02cd96468d5ccac3a67de42fe0066b820ceac739fa2bf51e5e67",
+    "course_loss.py": "bfdc8d1390dc82e5e71e00e4c9ce4a36ccaacf49c2ed14eddc8208b939435552",
+    "verify_split_selected.py": "b8f94015c9c564561dbf7cd70e9a0340db0801edb984fb56dd00668c8fbc665c",
+    "audit_joint_small.py": "c44abd3c41cfd3819628197a3993b280970950da00975e912d004705f63fead5",
+    "test_features.py": "22e50ab50d37eaab1b6de8365a82be87475b1bee703e8221784769f784c560d2",
+    "summarize_joint_teacher.py": "78835efd2188b93007910e839f26eea4cb005c784167270ab069606389df85aa",
+    "verify_joint_execution.py": "326c04561c80a2678a3528642adef4044fdf1ed581c01499feb15f4cef27a045",
+    "test_teacher_identity.py": "276e1f9fdbff9c70eeb1817ac5e2485ac79bb20cf182f8318523d880660e9599",
+    "local_association.py": "eb6a5e436de320d6fdd7e837451b7f4312a19543afcbed754fceded37b5e5927",
+    "run_teacher_suite.py": "1d4b2fa3f4ffe8f7a9a8af3f867510f6a81b42990f10d67d5d4db3567a97f361",
+    "train_teacher_identity.py": "0cbb1f33ed2dda4e9b995622ef1df1a0182e30a4c7a7d9fc0145bfc2aa356d86",
+    "window_head.py": "97bd65ca60448c9459a545653e5c8f58a4f29aa544a265355fc2faa90dd99bf0",
+    "shape_loss.py": "61b32d9f026a69bdfa4572877a075150fee3e150bae434e18ee11a7da928a566",
+    "teacher_assignment.py": "59677320dc460dfcdf69f2d9a3ab2d71ec1b4acb8c5bc1ff86796c7188aac3f1",
+    "verify_split_execution.py": "6be4f8abe7efaf9eb29328196831c2c384f4fcdcfd0825a3e74e5103f2fa2514",
+    "audit_joint_gap_failures.py": "bd02f3827e3c063326a8447f37a2dd224fe774ba314ec9ec179a0952a836bebd",
+    "summarize_window_depth.py": "d19ecf024d3bd97c84e3b74b111291706e4290a633a4fb4f38ae750e000eb3b3",
+    "audit_window_cache.py": "8165f94718c9c7f9562bade40663c27750296667a07aa5de4fc7444881e5dff7",
+    "status_window_depth.py": "679cc5779ae636d6f6b8acd393a3af85781bfcc6db9b00afa927f3b95d0e4f1c",
+    "inspect_window_context.py": "d4437589dfc25e3fe80920449062a5d993b0f2116a64439c77973d415fc5079d",
+    "audit_teacher_gap_failures.py": "bb5c94c73f261bb1a8a3bef6f5c9e5bc5bb0f4b28dc96be8520ff3a383caf427",
+    "hard_identity_inference.py": "c8d49b1f64482df37acaa878b86241bfbb2d6388280be9ae866c1baa64bca8ed",
+    "evaluate_window_depth.py": "1869b9ba5bdd097fed5fc23fa555ab864519e3eb2e655e5fb7425bfb30d40038",
+    "run_depth_suite.py": "956caa7f74e66191725328317a656ecd90f2504054096c4da2782033c1f7c1a7",
+    "features.py": "57ba9360daf0812074419f806111b55d5c66679035291f120058fe436a8081d9",
+    "probe.py": "2ae2ca3139e5ee11b150e550f5fcd90a1259fb06083a1460f2ac782206abfe9a",
+    "test_joint_teacher.py": "a10adb98a0d85994aaed626ba2a49070efa957f47c70ff61049f9607fd8e1ca9",
+    "verify_joint_selected.py": "51449d2aa9bdc64d95f2e8eebd221a757f34c885a80feb1adfbdbe9e920688e9",
+    "diagnose_c0.py": "6ba4d964d5d54677db1f0c25079d73738a3bf565f19ebe5c8bad801a72eb9bef"
+  },
+  "total_formal_updates_including_preserved": 16000,
+  "total_pilot_updates": 120,
+  "note": "fit-v1 ill-conditioned softplus initialization failed; fit-v2 train-only calibration/pilots only; final fit-v3 abs chosen by train matching/conditioning"
+}

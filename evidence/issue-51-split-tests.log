@@ -1,0 +1,8 @@
+......................./mnt/ssd/user/lgy/issue-51-ssast/research/issue_51_ssast/test_split_head.py:64: UserWarning: Converting a tensor with requires_grad=True to a scalar may lead to unexpected behavior.
+Consider using tensor.detach() first. (Triggered internally at /pytorch/torch/csrc/autograd/generated/python_variable_methods.cpp:836.)
+  self.assertEqual(float(lid),0)
+..................
+----------------------------------------------------------------------
+Ran 41 tests in 0.954s
+
+OK

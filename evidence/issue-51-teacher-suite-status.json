@@ -1,0 +1,48 @@
+{
+  "start_epoch": 1791129102.6465986,
+  "elapsed_seconds": 330.01922607421875,
+  "gpu": 0,
+  "jobs": [
+    {
+      "name": "teacher-amplitude",
+      "pid": 253936,
+      "command": [
+        "/mnt/ssd/user/lgy/issue-51-ssast/.venv-p0/bin/python",
+        "research/issue_51_ssast/train_teacher_identity.py",
+        "--cache",
+        "runs/window-depth/cache",
+        "--c0-cache",
+        "runs/p1/frame-c0-cache",
+        "--initial",
+        "runs/window-depth/fit-v1/depth4/C1-raw/head.pth",
+        "--out",
+        "runs/teacher-identity/fit-v1/teacher-amplitude",
+        "--identity-weight",
+        "0"
+      ],
+      "log": "runs/teacher-identity/fit-v1/teacher-amplitude.log",
+      "exit_code": 0
+    },
+    {
+      "name": "teacher-identity",
+      "pid": 253937,
+      "command": [
+        "/mnt/ssd/user/lgy/issue-51-ssast/.venv-p0/bin/python",
+        "research/issue_51_ssast/train_teacher_identity.py",
+        "--cache",
+        "runs/window-depth/cache",
+        "--c0-cache",
+        "runs/p1/frame-c0-cache",
+        "--initial",
+        "runs/window-depth/fit-v1/depth4/C1-raw/head.pth",
+        "--out",
+        "runs/teacher-identity/fit-v1/teacher-identity",
+        "--identity-weight",
+        ".2"
+      ],
+      "log": "runs/teacher-identity/fit-v1/teacher-identity.log",
+      "exit_code": 0
+    }
+  ],
+  "complete": true
+}

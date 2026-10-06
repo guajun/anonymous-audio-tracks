@@ -1,0 +1,147 @@
+{
+  "stage": "P1 C0 feature cache",
+  "encoder": {
+    "official_commit": "a1a3eecb94731e226308a6812f2fbf268d789caf",
+    "source_sha256": "92424d76f3aec44b6d94b58ed1ac499b32e72fd5cf42ea0c8afdcec95b2b40b4",
+    "checkpoint_sha256": "b82b0714d92ddfd9de2c535b459ad900dea85a50c810dc43086fc6ac7047f689",
+    "kernel": [
+      128,
+      2
+    ],
+    "stride": [
+      128,
+      1
+    ],
+    "pretrain_dims": [
+      128,
+      1024
+    ],
+    "checkpoint_keys": 166,
+    "missing_keys": [],
+    "unexpected_keys": [],
+    "output_grid": [
+      1,
+      197
+    ],
+    "output_dim": 768,
+    "adapted_position_shape": [
+      1,
+      199,
+      768
+    ],
+    "position_time_crop_start": 158,
+    "special_tokens": 2,
+    "fbank": {
+      "htk_compat": true,
+      "sample_frequency": 16000,
+      "use_energy": false,
+      "window_type": "hanning",
+      "num_mel_bins": 128,
+      "dither": 0.0,
+      "frame_length": 25.0,
+      "frame_shift": 10.0,
+      "snip_edges": true,
+      "preemphasis_coefficient": 0.97,
+      "remove_dc_offset": true,
+      "low_freq": 20.0,
+      "high_freq": 0.0,
+      "use_log_fbank": true,
+      "use_power": true,
+      "round_to_power_of_two": true
+    },
+    "normalization": {
+      "mean": -4.2677393,
+      "std": 4.5689974,
+      "std_multiplier": 2
+    },
+    "padding": "none at spectrogram level; waveform padding separately audited"
+  },
+  "renderer_index_sha256": "04182de078fd692668f53841e35844769c97ccd3613c176672fc44e5a6d32771",
+  "representation": "frequency mean only; all 197 time tokens retained as float16",
+  "head_center_seconds": 1.0,
+  "context_seconds": 2.0,
+  "hop_seconds": 0.02,
+  "rms_bypass": "original-channel power average, 20ms centered measurement",
+  "entries": [
+    {
+      "sample_id": "c0-train-00",
+      "split": "train",
+      "cache": "c0-train-00.npz",
+      "cache_sha256": "adbdd19d6b808d900807125f4c9e694c3a6c9c91bad8b234664c8b4fa1fd492c",
+      "centers": 500,
+      "mix_sha256": "b4a7221f7ba9e1e7efad33d508c22a93d465cca5094aa52ac3877fc9825951ed",
+      "envelope_sha256": "51dea3daeba99adceacd83b080d882c1a0d475f9b4ee10a3d5c9caa97022d772",
+      "boundary_windows": 99
+    },
+    {
+      "sample_id": "c0-train-01",
+      "split": "train",
+      "cache": "c0-train-01.npz",
+      "cache_sha256": "1e3e3522ddc7da873940ca75d841c9cefaba842cb48eec1444826e549f039519",
+      "centers": 500,
+      "mix_sha256": "fb64cbd2c30be2c70526681043db3ee0049c9d6f663867cbf853eece8cf38600",
+      "envelope_sha256": "6b299a42a189631122818e61072eb81736bafbfc04d18eaff8fcf4d9302ce362",
+      "boundary_windows": 99
+    },
+    {
+      "sample_id": "c0-train-02",
+      "split": "train",
+      "cache": "c0-train-02.npz",
+      "cache_sha256": "b70115764c1c441a1c7dc531690d5116611591e0ef5ce0a0f9172cf430c0359e",
+      "centers": 500,
+      "mix_sha256": "61d37dd1783a5b004ce2312df963961c30517622cc328d9e68435a425fe9736e",
+      "envelope_sha256": "ab13b5b46f4551beed90270fc843198e16566161196234d1262db5f39d0d4078",
+      "boundary_windows": 99
+    },
+    {
+      "sample_id": "c0-train-03",
+      "split": "train",
+      "cache": "c0-train-03.npz",
+      "cache_sha256": "ec47c1ca61ae1dd67bcb56bdb19a4b8166b50a304cb2ad8d70eae9be13c78b91",
+      "centers": 500,
+      "mix_sha256": "503d04e286f1931fbb6d58558333167c0c4c5d475101c4e733f0f3493d9652c1",
+      "envelope_sha256": "ec522f0e73091821d3199a7d810b41be8f005ad0b879751b810cce32a6b03c35",
+      "boundary_windows": 99
+    },
+    {
+      "sample_id": "c0-val-00",
+      "split": "val",
+      "cache": "c0-val-00.npz",
+      "cache_sha256": "3dbe567478f415dad9f79db6167336c9e11e82606fbdb5af181ca9e31fb9d3b1",
+      "centers": 500,
+      "mix_sha256": "f45b6250df9b3e102c7b2b1619a0bafc5396337f6aae1bc6cbdd19645b5e11b1",
+      "envelope_sha256": "d5fd123ad1ba1b12c71f7fc45b68a8b11f6a3c4eb3a1356186bc9c9d3d6cbb58",
+      "boundary_windows": 99
+    },
+    {
+      "sample_id": "c0-val-01",
+      "split": "val",
+      "cache": "c0-val-01.npz",
+      "cache_sha256": "291c9b5b13c936e7d97fd24c3ba6a3c432a74b39849cf8daf5829a882a60e01c",
+      "centers": 500,
+      "mix_sha256": "3e860cafc0230ab6987e0f50cf8708367a6ed914ebb46a84cc821bf0b1477dac",
+      "envelope_sha256": "68b0bbacf46b20b3e2f1880329aa1db01879f62036fcfd32e32cae16cf252b7a",
+      "boundary_windows": 99
+    },
+    {
+      "sample_id": "c0-test-00",
+      "split": "test",
+      "cache": "c0-test-00.npz",
+      "cache_sha256": "c3695d6f85fb3936a575c9c41874b95229b4f3f765153dfaaee044063101f375",
+      "centers": 500,
+      "mix_sha256": "a53e08692fdd92b13144e43827064273227ac2c0012496bf442d604576c1c405",
+      "envelope_sha256": "b70c396f4779d9b74434f6d0de2d0634f015597122b9993ce280f22facdc1537",
+      "boundary_windows": 99
+    },
+    {
+      "sample_id": "c0-test-01",
+      "split": "test",
+      "cache": "c0-test-01.npz",
+      "cache_sha256": "3513dbb50392ff68d7cfe6c3856f767800906f62e1cc0d5d7bdc89fc75f3bc6f",
+      "centers": 500,
+      "mix_sha256": "b680ea5fbf8d070d3d2baf0765dd74567b88f6c268ed5844c01ec34b8daac8e7",
+      "envelope_sha256": "de2059d341653a9ee0f4e66fc67baf12e8282a0a529666b4267422a56ead2e3d",
+      "boundary_windows": 99
+    }
+  ]
+}

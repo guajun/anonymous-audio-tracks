@@ -1,0 +1,284 @@
+{
+  "46": {
+    "val": [
+      {
+        "sample_id": "c0-val-00",
+        "thresholds": {
+          "0.0005": {
+            "unused_false_positive_fraction": 0.13314285714285715,
+            "source_count_mae": 0.932,
+            "extra_activity_area_fraction": 0.058302346616983414
+          },
+          "0.001": {
+            "unused_false_positive_fraction": 0.06485714285714286,
+            "source_count_mae": 0.454,
+            "extra_activity_area_fraction": 0.0376485139131546
+          },
+          "0.002": {
+            "unused_false_positive_fraction": 0.007714285714285714,
+            "source_count_mae": 0.054,
+            "extra_activity_area_fraction": 0.006751443259418011
+          }
+        },
+        "raw_extra_area_fraction": 0.1176367998123169,
+        "global_shape_copy_pairs": []
+      },
+      {
+        "sample_id": "c0-val-01",
+        "thresholds": {
+          "0.0005": {
+            "unused_false_positive_fraction": 0.12542857142857142,
+            "source_count_mae": 0.878,
+            "extra_activity_area_fraction": 0.059750258922576904
+          },
+          "0.001": {
+            "unused_false_positive_fraction": 0.03257142857142857,
+            "source_count_mae": 0.228,
+            "extra_activity_area_fraction": 0.022990018129348755
+          },
+          "0.002": {
+            "unused_false_positive_fraction": 0.002285714285714286,
+            "source_count_mae": 0.016,
+            "extra_activity_area_fraction": 0.002743698889389634
+          }
+        },
+        "raw_extra_area_fraction": 0.1396237164735794,
+        "global_shape_copy_pairs": []
+      }
+    ],
+    "test": [
+      {
+        "sample_id": "c0-test-00",
+        "thresholds": {
+          "0.0005": {
+            "unused_false_positive_fraction": 0.14942857142857144,
+            "source_count_mae": 1.048,
+            "extra_activity_area_fraction": 0.06533540040254593
+          },
+          "0.001": {
+            "unused_false_positive_fraction": 0.09771428571428571,
+            "source_count_mae": 0.686,
+            "extra_activity_area_fraction": 0.05409451574087143
+          },
+          "0.002": {
+            "unused_false_positive_fraction": 0.03685714285714286,
+            "source_count_mae": 0.258,
+            "extra_activity_area_fraction": 0.028233405202627182
+          }
+        },
+        "raw_extra_area_fraction": 0.1080697700381279,
+        "global_shape_copy_pairs": []
+      },
+      {
+        "sample_id": "c0-test-01",
+        "thresholds": {
+          "0.0005": {
+            "unused_false_positive_fraction": 0.122,
+            "source_count_mae": 0.854,
+            "extra_activity_area_fraction": 0.05096237361431122
+          },
+          "0.001": {
+            "unused_false_positive_fraction": 0.028857142857142856,
+            "source_count_mae": 0.202,
+            "extra_activity_area_fraction": 0.017964893952012062
+          },
+          "0.002": {
+            "unused_false_positive_fraction": 0.0014285714285714286,
+            "source_count_mae": 0.012,
+            "extra_activity_area_fraction": 0.0014798559714108706
+          }
+        },
+        "raw_extra_area_fraction": 0.12359143793582916,
+        "global_shape_copy_pairs": []
+      }
+    ]
+  },
+  "47": {
+    "val": [
+      {
+        "sample_id": "c0-val-00",
+        "thresholds": {
+          "0.0005": {
+            "unused_false_positive_fraction": 0.09514285714285714,
+            "source_count_mae": 0.672,
+            "extra_activity_area_fraction": 0.027073079720139503
+          },
+          "0.001": {
+            "unused_false_positive_fraction": 0.004857142857142857,
+            "source_count_mae": 0.034,
+            "extra_activity_area_fraction": 0.0020876703783869743
+          },
+          "0.002": {
+            "unused_false_positive_fraction": 0.0,
+            "source_count_mae": 0.002,
+            "extra_activity_area_fraction": 0.0
+          }
+        },
+        "raw_extra_area_fraction": 0.0760202407836914,
+        "global_shape_copy_pairs": []
+      },
+      {
+        "sample_id": "c0-val-01",
+        "thresholds": {
+          "0.0005": {
+            "unused_false_positive_fraction": 0.04971428571428571,
+            "source_count_mae": 0.356,
+            "extra_activity_area_fraction": 0.017826510593295097
+          },
+          "0.001": {
+            "unused_false_positive_fraction": 0.003142857142857143,
+            "source_count_mae": 0.022,
+            "extra_activity_area_fraction": 0.0018270148430019617
+          },
+          "0.002": {
+            "unused_false_positive_fraction": 0.0,
+            "source_count_mae": 0.0,
+            "extra_activity_area_fraction": 0.0
+          }
+        },
+        "raw_extra_area_fraction": 0.08902691304683685,
+        "global_shape_copy_pairs": []
+      }
+    ],
+    "test": [
+      {
+        "sample_id": "c0-test-00",
+        "thresholds": {
+          "0.0005": {
+            "unused_false_positive_fraction": 0.10685714285714286,
+            "source_count_mae": 0.752,
+            "extra_activity_area_fraction": 0.0276749636977911
+          },
+          "0.001": {
+            "unused_false_positive_fraction": 0.026571428571428572,
+            "source_count_mae": 0.188,
+            "extra_activity_area_fraction": 0.01035542692989111
+          },
+          "0.002": {
+            "unused_false_positive_fraction": 0.0005714285714285715,
+            "source_count_mae": 0.006,
+            "extra_activity_area_fraction": 0.0003507912333589047
+          }
+        },
+        "raw_extra_area_fraction": 0.06342601776123047,
+        "global_shape_copy_pairs": []
+      },
+      {
+        "sample_id": "c0-test-01",
+        "thresholds": {
+          "0.0005": {
+            "unused_false_positive_fraction": 0.06371428571428571,
+            "source_count_mae": 0.446,
+            "extra_activity_area_fraction": 0.02053726837038994
+          },
+          "0.001": {
+            "unused_false_positive_fraction": 0.0034285714285714284,
+            "source_count_mae": 0.024,
+            "extra_activity_area_fraction": 0.00189866847358644
+          },
+          "0.002": {
+            "unused_false_positive_fraction": 0.0,
+            "source_count_mae": 0.002,
+            "extra_activity_area_fraction": 0.0
+          }
+        },
+        "raw_extra_area_fraction": 0.08475972712039948,
+        "global_shape_copy_pairs": []
+      }
+    ]
+  },
+  "48": {
+    "val": [
+      {
+        "sample_id": "c0-val-00",
+        "thresholds": {
+          "0.0005": {
+            "unused_false_positive_fraction": 0.05285714285714286,
+            "source_count_mae": 0.374,
+            "extra_activity_area_fraction": 0.016082148998975754
+          },
+          "0.001": {
+            "unused_false_positive_fraction": 0.008571428571428572,
+            "source_count_mae": 0.06,
+            "extra_activity_area_fraction": 0.004200395196676254
+          },
+          "0.002": {
+            "unused_false_positive_fraction": 0.0,
+            "source_count_mae": 0.002,
+            "extra_activity_area_fraction": 0.0
+          }
+        },
+        "raw_extra_area_fraction": 0.0664692223072052,
+        "global_shape_copy_pairs": []
+      },
+      {
+        "sample_id": "c0-val-01",
+        "thresholds": {
+          "0.0005": {
+            "unused_false_positive_fraction": 0.036,
+            "source_count_mae": 0.258,
+            "extra_activity_area_fraction": 0.014288299717009068
+          },
+          "0.001": {
+            "unused_false_positive_fraction": 0.004,
+            "source_count_mae": 0.028,
+            "extra_activity_area_fraction": 0.002628663321956992
+          },
+          "0.002": {
+            "unused_false_positive_fraction": 0.0,
+            "source_count_mae": 0.0,
+            "extra_activity_area_fraction": 0.0
+          }
+        },
+        "raw_extra_area_fraction": 0.07877495139837265,
+        "global_shape_copy_pairs": []
+      }
+    ],
+    "test": [
+      {
+        "sample_id": "c0-test-00",
+        "thresholds": {
+          "0.0005": {
+            "unused_false_positive_fraction": 0.10114285714285715,
+            "source_count_mae": 0.708,
+            "extra_activity_area_fraction": 0.024054842069745064
+          },
+          "0.001": {
+            "unused_false_positive_fraction": 0.02057142857142857,
+            "source_count_mae": 0.146,
+            "extra_activity_area_fraction": 0.007814258337020874
+          },
+          "0.002": {
+            "unused_false_positive_fraction": 0.0,
+            "source_count_mae": 0.0,
+            "extra_activity_area_fraction": 0.0
+          }
+        },
+        "raw_extra_area_fraction": 0.05945950746536255,
+        "global_shape_copy_pairs": []
+      },
+      {
+        "sample_id": "c0-test-01",
+        "thresholds": {
+          "0.0005": {
+            "unused_false_positive_fraction": 0.030285714285714287,
+            "source_count_mae": 0.212,
+            "extra_activity_area_fraction": 0.009868052788078785
+          },
+          "0.001": {
+            "unused_false_positive_fraction": 0.001142857142857143,
+            "source_count_mae": 0.008,
+            "extra_activity_area_fraction": 0.0006038597202859819
+          },
+          "0.002": {
+            "unused_false_positive_fraction": 0.0,
+            "source_count_mae": 0.0,
+            "extra_activity_area_fraction": 0.0
+          }
+        },
+        "raw_extra_area_fraction": 0.07180435210466385,
+        "global_shape_copy_pairs": []
+      }
+    ]
+  }
+}

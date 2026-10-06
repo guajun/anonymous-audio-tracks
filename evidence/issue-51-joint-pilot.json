@@ -1,0 +1,1072 @@
+{
+ "history": [
+  {
+   "update": 1,
+   "amplitude_loss": 0.014336287043988705,
+   "identity_loss": 0.0007343709003180265,
+   "gradient": {
+    "amplitude_vector": {
+     "norm": 0.46820762753486633,
+     "radial_norm": 0.46820762753486633,
+     "tangent_norm": 3.8902065568890976e-08
+    },
+    "identity_vector": {
+     "norm": 1.1163853406906128,
+     "radial_norm": 2.544879684762691e-08,
+     "tangent_norm": 1.1163853406906128
+    },
+    "shared_projection_amplitude_norm": 0.1521500200033188,
+    "shared_projection_identity_norm": 0.10310352593660355,
+    "shared_projection_gradient_cosine": -0.26665687561035156
+   },
+   "confidence": {
+    "count": 200,
+    "mean": 0.9056857228279114,
+    "quantiles": [
+     0.9056858420372009,
+     0.9056858420372009,
+     0.9056858420372009,
+     0.9056858420372009,
+     0.9056858420372009
+    ]
+   },
+   "zero_tracks": 0.0009523511398583651
+  },
+  {
+   "update": 20,
+   "amplitude_loss": 0.04253721237182617,
+   "identity_loss": 0.0017690074164420366,
+   "gradient": {
+    "amplitude_vector": {
+     "norm": 0.17707881331443787,
+     "radial_norm": 0.17707881331443787,
+     "tangent_norm": 1.3763412631817573e-08
+    },
+    "identity_vector": {
+     "norm": 1.1058710813522339,
+     "radial_norm": 9.665364508748553e-09,
+     "tangent_norm": 1.1058710813522339
+    },
+    "shared_projection_amplitude_norm": 0.222684845328331,
+    "shared_projection_identity_norm": 0.3816344738006592,
+    "shared_projection_gradient_cosine": 0.4828953444957733
+   },
+   "confidence": {
+    "count": 200,
+    "mean": 0.9056857228279114,
+    "quantiles": [
+     0.9056858420372009,
+     0.9056858420372009,
+     0.9056858420372009,
+     0.9056858420372009,
+     0.9056858420372009
+    ]
+   },
+   "zero_tracks": 0.03435872495174408
+  }
+ ],
+ "final_train": [
+  {
+   "stage": "C1",
+   "sample_id": "c1-local-train-00",
+   "actual": {
+    "order": [
+     4,
+     3
+    ],
+    "assignment": "whole-sequence PIT",
+    "all": {
+     "centers": 501,
+     "per_source_iou": [
+      0.45498883724212646,
+      0.15257380902767181
+     ],
+     "per_source_mae": [
+      0.01422039419412613,
+      0.0034846647176891565
+     ]
+    },
+    "nonoverlap": {
+     "centers": 501,
+     "per_source_iou": [
+      0.45498883724212646,
+      0.15257380902767181
+     ],
+     "per_source_mae": [
+      0.01422039419412613,
+      0.0034846647176891565
+     ]
+    },
+    "overlap": {
+     "centers": 0,
+     "per_source_iou": null,
+     "per_source_mae": null
+    },
+    "normalized_mae": 0.03416603431105614,
+    "per_source_missed_fraction": [
+     0.11842105263157894,
+     0.03125
+    ],
+    "per_source_silence_false_positive_fraction": [
+     0.7994269340974212,
+     0.8422174840085288
+    ],
+    "second_source_missed_fraction": 0.03125,
+    "unused_false_positive_fraction": 0.8932135728542914,
+    "extra_candidate_area_fraction": 2.344176769256592,
+    "source_count_mae": 6.666666666666667,
+    "global_copy_pairs": [],
+    "candidate_copy_window_fraction": 1.0,
+    "copy_window_seconds": 0.16,
+    "pit_gap": 0.0002827942371368408,
+    "pit_tied": false,
+    "reference_shape_difference": 0.0960286408662796,
+    "onset_offset": [
+     {
+      "onset": {
+       "pred_count": 15,
+       "reference_count": 16,
+       "median_abs_seconds": null
+      },
+      "offset": {
+       "pred_count": 15,
+       "reference_count": 16,
+       "median_abs_seconds": null
+      }
+     },
+     {
+      "onset": {
+       "pred_count": 13,
+       "reference_count": 16,
+       "median_abs_seconds": null
+      },
+      "offset": {
+       "pred_count": 13,
+       "reference_count": 16,
+       "median_abs_seconds": null
+      }
+     }
+    ],
+    "boundary_note": "course centers1..11 have complete2s input",
+    "unused_mean_normalized_amplitude": 0.037518009543418884,
+    "full_eight_normalized_mae": 0.0366800180881569
+   },
+   "raw": {
+    "order": [
+     4,
+     1
+    ],
+    "assignment": "whole-sequence PIT",
+    "all": {
+     "centers": 501,
+     "per_source_iou": [
+      0.7304731607437134,
+      0.2519073486328125
+     ],
+     "per_source_mae": [
+      0.007816150784492493,
+      0.0022693790961056948
+     ]
+    },
+    "nonoverlap": {
+     "centers": 501,
+     "per_source_iou": [
+      0.7304731607437134,
+      0.2519073486328125
+     ],
+     "per_source_mae": [
+      0.007816150784492493,
+      0.0022693790961056948
+     ]
+    },
+    "overlap": {
+     "centers": 0,
+     "per_source_iou": null,
+     "per_source_mae": null
+    },
+    "normalized_mae": 0.019462386146187782,
+    "per_source_missed_fraction": [
+     0.0,
+     0.0
+    ],
+    "per_source_silence_false_positive_fraction": [
+     1.0,
+     0.9680170575692963
+    ],
+    "second_source_missed_fraction": 0.0,
+    "unused_false_positive_fraction": 0.8439787092481703,
+    "extra_candidate_area_fraction": 1.8909173011779785,
+    "source_count_mae": 6.666666666666667,
+    "global_copy_pairs": [],
+    "candidate_copy_window_fraction": 1.0,
+    "copy_window_seconds": 0.16,
+    "pit_gap": 0.00466981902718544,
+    "pit_tied": false,
+    "reference_shape_difference": 0.0960286408662796,
+    "onset_offset": [
+     {
+      "onset": {
+       "pred_count": 1,
+       "reference_count": 16,
+       "median_abs_seconds": null
+      },
+      "offset": {
+       "pred_count": 1,
+       "reference_count": 16,
+       "median_abs_seconds": null
+      }
+     },
+     {
+      "onset": {
+       "pred_count": 16,
+       "reference_count": 16,
+       "median_abs_seconds": 0.9400000000000003
+      },
+      "offset": {
+       "pred_count": 16,
+       "reference_count": 16,
+       "median_abs_seconds": 0.36999999999999966
+      }
+     }
+    ],
+    "boundary_note": "course centers1..11 have complete2s input"
+   },
+   "teacher": {
+    "order": [
+     0,
+     1
+    ],
+    "assignment": "supplied teacher source rows",
+    "all": {
+     "centers": 501,
+     "per_source_iou": [
+      0.8400131464004517,
+      0.40201494097709656
+     ],
+     "per_source_mae": [
+      0.0040345340967178345,
+      0.0011366857215762138
+     ]
+    },
+    "nonoverlap": {
+     "centers": 501,
+     "per_source_iou": [
+      0.8400131464004517,
+      0.40201494097709656
+     ],
+     "per_source_mae": [
+      0.0040345340967178345,
+      0.0011366857215762138
+     ]
+    },
+    "overlap": {
+     "centers": 0,
+     "per_source_iou": null,
+     "per_source_mae": null
+    },
+    "normalized_mae": 0.009979069232940674,
+    "per_source_missed_fraction": [
+     0.0,
+     0.0
+    ],
+    "per_source_silence_false_positive_fraction": [
+     0.3438395415472779,
+     0.488272921108742
+    ],
+    "second_source_missed_fraction": 0.0,
+    "unused_false_positive_fraction": 0.9950099800399201,
+    "extra_candidate_area_fraction": 2.0884273052215576,
+    "source_count_mae": 6.666666666666667,
+    "global_copy_pairs": [],
+    "candidate_copy_window_fraction": 1.0,
+    "copy_window_seconds": 0.16,
+    "pit_gap": 0.012421488761901855,
+    "pit_tied": false,
+    "reference_shape_difference": 0.0960286408662796,
+    "onset_offset": [
+     {
+      "onset": {
+       "pred_count": 32,
+       "reference_count": 16,
+       "median_abs_seconds": null
+      },
+      "offset": {
+       "pred_count": 32,
+       "reference_count": 16,
+       "median_abs_seconds": null
+      }
+     },
+     {
+      "onset": {
+       "pred_count": 32,
+       "reference_count": 16,
+       "median_abs_seconds": null
+      },
+      "offset": {
+       "pred_count": 32,
+       "reference_count": 16,
+       "median_abs_seconds": null
+      }
+     }
+    ],
+    "boundary_note": "course centers1..11 have complete2s input"
+   },
+   "teacher_confidence": {
+    "count": 200,
+    "mean": 0.9056857228279114,
+    "quantiles": [
+     0.9056858420372009,
+     0.9056858420372009,
+     0.9056858420372009,
+     0.9056858420372009,
+     0.9056858420372009
+    ]
+   },
+   "teacher_zero_confidence_fraction": 0.0,
+   "teacher_block_candidate_change_fraction": 1.0,
+   "identity_loss": 0.00012591610720846802,
+   "identity_pair_count": 507,
+   "identity_effective_weight": 261.13677978515625,
+   "amplitude_conservation_max_error": 2.9802322387695312e-08,
+   "joint_objective_audit": {
+    "objective_before": 0.04378995761030907,
+    "objective_after": 0.04378995761030907,
+    "amplitude_before": 0.0437647743332063,
+    "amplitude_after": 0.0437647743332063,
+    "identity_before": 0.00012591638369485736,
+    "identity_after": 0.00012591638369485736,
+    "accepted_moves": 0,
+    "changed_blocks": 0,
+    "amplitude_cap": 0.0637647743332063,
+    "teacher_training_cost_abs_error": 2.833664469736874e-09
+   },
+   "joint_vs_legacy_active_assignment_change": 0.0,
+   "teacher_label_fit_audit": {
+    "active_chosen_error": {
+     "count": 200,
+     "mean": 0.03348185122013092,
+     "quantiles": [
+      0.001268132240511477,
+      0.008166519273072482,
+      0.02332435641437769,
+      0.07437979057431221,
+      0.20350122451782227
+     ]
+    },
+    "active_excess_over_best_envelope": {
+     "count": 200,
+     "mean": 0.0030029488261789083,
+     "quantiles": [
+      0.0,
+      0.0,
+      0.0,
+      0.007705352082848549,
+      0.0333637073636055
+     ]
+    },
+    "limitation": "GT RMS fit witnesses do not certify identity of envelope-identical physical sources"
+   },
+   "relations": {
+    "adjacent": {
+     "pairs": 168,
+     "correct_fraction": 1.0,
+     "confidence_weight_sum": 131.03480529785156,
+     "weighted_correct_fraction": 1.0
+    },
+    "block_boundary": {
+     "pairs": 0,
+     "correct_fraction": null,
+     "confidence_weight_sum": 0.0,
+     "weighted_correct_fraction": null
+    },
+    "block_interior": {
+     "pairs": 168,
+     "correct_fraction": 1.0,
+     "confidence_weight_sum": 131.03480529785156,
+     "weighted_correct_fraction": 1.0
+    },
+    "across_silence": {
+     "pairs": 30,
+     "correct_fraction": 0.6,
+     "confidence_weight_sum": 14.121221542358398,
+     "weighted_correct_fraction": 0.7446810603141785
+    },
+    "limitation": "GT-teacher candidate endpoints, evaluation only; within-block constant teacher is an easy index-continuity target, and ambiguous labels receive low weight",
+    "positive_cosine": {
+     "count": 507,
+     "mean": 0.9931847453117371,
+     "quantiles": [
+      0.8974314332008362,
+      0.9675215721130371,
+      0.9998883605003357,
+      0.9999958872795105,
+      0.9999984502792358
+     ]
+    },
+    "negative_cosine": {
+     "count": 507,
+     "mean": -0.024303384125232697,
+     "quantiles": [
+      -0.05098111182451248,
+      -0.03857021480798721,
+      -0.03358429670333862,
+      0.006204345822334296,
+      0.018430249765515327
+     ]
+    },
+    "identity_pair_weights": {
+     "count": 507,
+     "mean": 0.515062689781189,
+     "quantiles": [
+      0.034912362694740295,
+      0.1357998251914978,
+      0.6639530658721924,
+      0.6908174276351928,
+      0.7049124836921692
+     ]
+    },
+    "weighted_positive_cosine": 0.9969300031661987,
+    "weighted_negative_cosine": -0.026100214570760727,
+    "weighted_margin_violation": 0.0
+   },
+   "positive_cross_slot_fraction": 0.0,
+   "positive_cross_silence_fraction": 0.2583826429980276,
+   "teacher_context": {
+    "teacher": "full amplitude + same direct bidirectional ID; frozen GT/directional reliability; no index continuity",
+    "block_frames": 16,
+    "block_source_orders": [
+     [
+      4,
+      5
+     ],
+     [
+      5,
+      1
+     ],
+     [
+      4,
+      5
+     ],
+     [
+      5,
+      1
+     ],
+     [
+      4,
+      5
+     ],
+     [
+      5,
+      1
+     ],
+     [
+      4,
+      5
+     ],
+     [
+      5,
+      1
+     ],
+     [
+      4,
+      5
+     ],
+     [
+      5,
+      1
+     ],
+     [
+      4,
+      5
+     ],
+     [
+      5,
+      1
+     ],
+     [
+      4,
+      5
+     ],
+     [
+      5,
+      1
+     ],
+     [
+      4,
+      5
+     ],
+     [
+      5,
+      1
+     ],
+     [
+      4,
+      5
+     ],
+     [
+      5,
+      1
+     ],
+     [
+      4,
+      5
+     ],
+     [
+      5,
+      1
+     ],
+     [
+      4,
+      5
+     ],
+     [
+      5,
+      1
+     ],
+     [
+      4,
+      5
+     ],
+     [
+      5,
+      1
+     ],
+     [
+      4,
+      5
+     ],
+     [
+      5,
+      1
+     ],
+     [
+      4,
+      5
+     ],
+     [
+      5,
+      1
+     ],
+     [
+      4,
+      5
+     ],
+     [
+      5,
+      1
+     ],
+     [
+      4,
+      5
+     ],
+     [
+      5,
+      1
+     ]
+    ],
+    "sweeps": 1,
+    "exhaustive": false,
+    "search_scope": "all one-to-one block states; coordinate descent, NOT global optimum",
+    "amplitude_slack": 0.02,
+    "amplitude_cap": 0.0637647743332063,
+    "objective_before": 0.04378995761030907,
+    "objective_after": 0.04378995761030907,
+    "node_envelope_slack": 0.02,
+    "admissible_states_per_block": [
+     7,
+     14,
+     7,
+     14,
+     7,
+     14,
+     7,
+     14,
+     7,
+     14,
+     7,
+     14,
+     7,
+     21,
+     7,
+     14,
+     7,
+     14,
+     7,
+     14,
+     7,
+     14,
+     7,
+     14,
+     7,
+     14,
+     7,
+     14,
+     7,
+     14,
+     7,
+     14
+    ],
+    "amplitude_before": 0.0437647743332063,
+    "amplitude_after": 0.0437647743332063,
+    "identity_before": 0.00012591638369485736,
+    "identity_after": 0.00012591638369485736,
+    "objective_history": [
+     0.04378995761030907
+    ],
+    "accepted_moves": 0,
+    "changed_blocks": 0,
+    "conditional_state_gaps": [
+     0.000561117915255982,
+     0.00014795346393914333,
+     0.0006145674582150595,
+     0.00014610778416942333,
+     0.0005982137043628252,
+     0.00014747309295798372,
+     0.0005995421368502271,
+     0.00014451585878632461,
+     0.0005531057301792555,
+     0.0001439613126123368,
+     0.000590442762646956,
+     0.00014086530160465488,
+     0.0005591122205669818,
+     0.00014194264367498738,
+     0.0006061018104633539,
+     0.0001461792414880203,
+     0.0005868133208158932,
+     0.00013850828698958734,
+     0.0006301448718590008,
+     0.00014096996693318403,
+     0.0005658552292062968,
+     0.00014211754132161664,
+     0.0005646224567432134,
+     0.00014605950970895953,
+     0.000592012849219184,
+     0.00014302000317387847,
+     0.0005601309319240716,
+     0.0001437351199615744,
+     0.0005845410794983186,
+     0.00014342761708988072,
+     0.0005624631780594275,
+     6.848070300077835e-05
+    ],
+    "confidence_definition": "frozen GT envelope distinctness times prediction direction spread; reliability, not posterior label correctness",
+    "confidence_mean": 0.9056857228279114,
+    "zero_rows": "undefined identity; original norms still supervised"
+   },
+   "predicted_edge_gap": {
+    "count": 4000,
+    "mean": 0.70447736287117,
+    "quantiles": [
+     0.001004934310913086,
+     0.4339878559112549,
+     0.6968998908996582,
+     0.9591444969177246,
+     1.27756929397583
+    ]
+   },
+   "actual_gated": {
+    "order": [
+     4,
+     3
+    ],
+    "assignment": "whole-sequence PIT",
+    "all": {
+     "centers": 501,
+     "per_source_iou": [
+      0.4553167521953583,
+      0.15495307743549347
+     ],
+     "per_source_mae": [
+      0.014173035509884357,
+      0.003409442026168108
+     ]
+    },
+    "nonoverlap": {
+     "centers": 501,
+     "per_source_iou": [
+      0.4553167521953583,
+      0.15495307743549347
+     ],
+     "per_source_mae": [
+      0.014173035509884357,
+      0.003409442026168108
+     ]
+    },
+    "overlap": {
+     "centers": 0,
+     "per_source_iou": null,
+     "per_source_mae": null
+    },
+    "normalized_mae": 0.0339294858276844,
+    "per_source_missed_fraction": [
+     0.11842105263157894,
+     0.03125
+    ],
+    "per_source_silence_false_positive_fraction": [
+     0.7994269340974212,
+     0.8422174840085288
+    ],
+    "second_source_missed_fraction": 0.03125,
+    "unused_false_positive_fraction": 0.8932135728542914,
+    "extra_candidate_area_fraction": 2.330923080444336,
+    "source_count_mae": 6.666666666666667,
+    "global_copy_pairs": [],
+    "candidate_copy_window_fraction": 1.0,
+    "copy_window_seconds": 0.16,
+    "pit_gap": 0.000286296010017395,
+    "pit_tied": false,
+    "reference_shape_difference": 0.0960286408662796,
+    "onset_offset": [
+     {
+      "onset": {
+       "pred_count": 15,
+       "reference_count": 16,
+       "median_abs_seconds": null
+      },
+      "offset": {
+       "pred_count": 15,
+       "reference_count": 16,
+       "median_abs_seconds": null
+      }
+     },
+     {
+      "onset": {
+       "pred_count": 13,
+       "reference_count": 16,
+       "median_abs_seconds": null
+      },
+      "offset": {
+       "pred_count": 13,
+       "reference_count": 16,
+       "median_abs_seconds": null
+      }
+     }
+    ],
+    "boundary_note": "course centers1..11 have complete2s input"
+   },
+   "teacher_gated": {
+    "order": [
+     0,
+     1
+    ],
+    "assignment": "supplied teacher source rows",
+    "all": {
+     "centers": 501,
+     "per_source_iou": [
+      0.8472100496292114,
+      0.4667917788028717
+     ],
+     "per_source_mae": [
+      0.0038203145377337933,
+      0.0008729019900783896
+     ]
+    },
+    "nonoverlap": {
+     "centers": 501,
+     "per_source_iou": [
+      0.8472100496292114,
+      0.4667917788028717
+     ],
+     "per_source_mae": [
+      0.0038203145377337933,
+      0.0008729019900783896
+     ]
+    },
+    "overlap": {
+     "centers": 0,
+     "per_source_iou": null,
+     "per_source_mae": null
+    },
+    "normalized_mae": 0.009056655690073967,
+    "per_source_missed_fraction": [
+     0.0,
+     0.0
+    ],
+    "per_source_silence_false_positive_fraction": [
+     0.3438395415472779,
+     0.488272921108742
+    ],
+    "second_source_missed_fraction": 0.0,
+    "unused_false_positive_fraction": 0.9950099800399201,
+    "extra_candidate_area_fraction": 2.0873615741729736,
+    "source_count_mae": 6.666666666666667,
+    "global_copy_pairs": [],
+    "candidate_copy_window_fraction": 1.0,
+    "copy_window_seconds": 0.16,
+    "pit_gap": 0.015666037797927856,
+    "pit_tied": false,
+    "reference_shape_difference": 0.0960286408662796,
+    "onset_offset": [
+     {
+      "onset": {
+       "pred_count": 32,
+       "reference_count": 16,
+       "median_abs_seconds": null
+      },
+      "offset": {
+       "pred_count": 32,
+       "reference_count": 16,
+       "median_abs_seconds": null
+      }
+     },
+     {
+      "onset": {
+       "pred_count": 32,
+       "reference_count": 16,
+       "median_abs_seconds": null
+      },
+      "offset": {
+       "pred_count": 32,
+       "reference_count": 16,
+       "median_abs_seconds": null
+      }
+     }
+    ],
+    "boundary_note": "course centers1..11 have complete2s input"
+   },
+   "output_gain_diagnostic": {
+    "0.5": {
+     "order": [
+      4,
+      3
+     ],
+     "assignment": "whole-sequence PIT",
+     "all": {
+      "centers": 501,
+      "per_source_iou": [
+       0.6434703469276428,
+       0.17216409742832184
+      ],
+      "per_source_mae": [
+       0.004750228486955166,
+       0.001251653186045587
+      ]
+     },
+     "nonoverlap": {
+      "centers": 501,
+      "per_source_iou": [
+       0.6434703469276428,
+       0.17216409742832184
+      ],
+      "per_source_mae": [
+       0.004750228486955166,
+       0.001251653186045587
+      ]
+     },
+     "overlap": {
+      "centers": 0,
+      "per_source_iou": null,
+      "per_source_mae": null
+     },
+     "normalized_mae": 0.011582027189433575,
+     "per_source_missed_fraction": [
+      0.07894736842105263,
+      0.0
+     ],
+     "per_source_silence_false_positive_fraction": [
+      0.45272206303724927,
+      0.6567164179104478
+     ],
+     "second_source_missed_fraction": 0.0,
+     "unused_false_positive_fraction": 0.7564870259481038,
+     "extra_candidate_area_fraction": 2.157883882522583,
+     "source_count_mae": 5.445109780439122,
+     "global_copy_pairs": [],
+     "candidate_copy_window_fraction": 1.0,
+     "copy_window_seconds": 0.16,
+     "pit_gap": 0.002220332622528076,
+     "pit_tied": false,
+     "reference_shape_difference": 0.0480143204331398,
+     "onset_offset": [
+      {
+       "onset": {
+        "pred_count": 48,
+        "reference_count": 16,
+        "median_abs_seconds": null
+       },
+       "offset": {
+        "pred_count": 48,
+        "reference_count": 16,
+        "median_abs_seconds": null
+       }
+      },
+      {
+       "onset": {
+        "pred_count": 31,
+        "reference_count": 16,
+        "median_abs_seconds": null
+       },
+       "offset": {
+        "pred_count": 31,
+        "reference_count": 16,
+        "median_abs_seconds": null
+       }
+      }
+     ],
+     "boundary_note": "course centers1..11 have complete2s input"
+    },
+    "1.0": {
+     "order": [
+      4,
+      3
+     ],
+     "assignment": "whole-sequence PIT",
+     "all": {
+      "centers": 501,
+      "per_source_iou": [
+       0.45498883724212646,
+       0.15257380902767181
+      ],
+      "per_source_mae": [
+       0.01422039419412613,
+       0.0034846647176891565
+      ]
+     },
+     "nonoverlap": {
+      "centers": 501,
+      "per_source_iou": [
+       0.45498883724212646,
+       0.15257380902767181
+      ],
+      "per_source_mae": [
+       0.01422039419412613,
+       0.0034846647176891565
+      ]
+     },
+     "overlap": {
+      "centers": 0,
+      "per_source_iou": null,
+      "per_source_mae": null
+     },
+     "normalized_mae": 0.03416603431105614,
+     "per_source_missed_fraction": [
+      0.11842105263157894,
+      0.03125
+     ],
+     "per_source_silence_false_positive_fraction": [
+      0.7994269340974212,
+      0.8422174840085288
+     ],
+     "second_source_missed_fraction": 0.03125,
+     "unused_false_positive_fraction": 0.8932135728542914,
+     "extra_candidate_area_fraction": 2.344176769256592,
+     "source_count_mae": 6.666666666666667,
+     "global_copy_pairs": [],
+     "candidate_copy_window_fraction": 1.0,
+     "copy_window_seconds": 0.16,
+     "pit_gap": 0.0002827942371368408,
+     "pit_tied": false,
+     "reference_shape_difference": 0.0960286408662796,
+     "onset_offset": [
+      {
+       "onset": {
+        "pred_count": 15,
+        "reference_count": 16,
+        "median_abs_seconds": null
+       },
+       "offset": {
+        "pred_count": 15,
+        "reference_count": 16,
+        "median_abs_seconds": null
+       }
+      },
+      {
+       "onset": {
+        "pred_count": 13,
+        "reference_count": 16,
+        "median_abs_seconds": null
+       },
+       "offset": {
+        "pred_count": 13,
+        "reference_count": 16,
+        "median_abs_seconds": null
+       }
+      }
+     ],
+     "boundary_note": "course centers1..11 have complete2s input"
+    },
+    "2.0": {
+     "order": [
+      5,
+      1
+     ],
+     "assignment": "whole-sequence PIT",
+     "all": {
+      "centers": 501,
+      "per_source_iou": [
+       0.30865564942359924,
+       0.21225464344024658
+      ],
+      "per_source_mae": [
+       0.03650423884391785,
+       0.0046788728795945644
+      ]
+     },
+     "nonoverlap": {
+      "centers": 501,
+      "per_source_iou": [
+       0.30865564942359924,
+       0.21225464344024658
+      ],
+      "per_source_mae": [
+       0.03650423884391785,
+       0.0046788728795945644
+      ]
+     },
+     "overlap": {
+      "centers": 0,
+      "per_source_iou": null,
+      "per_source_mae": null
+     },
+     "normalized_mae": 0.07947240024805069,
+     "per_source_missed_fraction": [
+      0.039473684210526314,
+      0.0
+     ],
+     "per_source_silence_false_positive_fraction": [
+      0.6819484240687679,
+      1.0
+     ],
+     "second_source_missed_fraction": 0.0,
+     "unused_false_positive_fraction": 0.929474384564205,
+     "extra_candidate_area_fraction": 2.5271682739257812,
+     "source_count_mae": 6.976047904191617,
+     "global_copy_pairs": [],
+     "candidate_copy_window_fraction": 1.0,
+     "copy_window_seconds": 0.16,
+     "pit_gap": 0.000718042254447937,
+     "pit_tied": false,
+     "reference_shape_difference": 0.1920572817325592,
+     "onset_offset": [
+      {
+       "onset": {
+        "pred_count": 18,
+        "reference_count": 16,
+        "median_abs_seconds": null
+       },
+       "offset": {
+        "pred_count": 18,
+        "reference_count": 16,
+        "median_abs_seconds": null
+       }
+      },
+      {
+       "onset": {
+        "pred_count": 1,
+        "reference_count": 16,
+        "median_abs_seconds": null
+       },
+       "offset": {
+        "pred_count": 1,
+        "reference_count": 16,
+        "median_abs_seconds": null
+       }
+      }
+     ],
+     "boundary_note": "course centers1..11 have complete2s input"
+    }
+   },
+   "candidate_shuffle_normalized_mae_delta": 0.0
+  }
+ ]
+}

@@ -1,0 +1,310 @@
+{
+  "files": [
+    {
+      "path": "runs/teacher-identity/fit-v1/teacher-identity/C1/C0-c0-test-00.npz",
+      "sha256": "0eaedc2719af08360c123034d85b7d1efca3dd9affe88553932344825114eeac",
+      "total_amplitude_max_error": 2.9802322387695312e-08
+    },
+    {
+      "path": "runs/teacher-identity/fit-v1/teacher-identity/C1/C1-c1-local-test-00.npz",
+      "sha256": "c253ee43db04e6b5cccc7f346979ee0fdf626f2e0206bf9d66dcdfd137d93473",
+      "total_amplitude_max_error": 2.9802322387695312e-08
+    },
+    {
+      "path": "runs/teacher-identity/fit-v1/teacher-identity/C1/C0-c0-test-01.npz",
+      "sha256": "51bd5db9953ac65af588cb5a7de4ab66a7efef9d9f87d1036cc411513aaffc08",
+      "total_amplitude_max_error": 1.4901161193847656e-08
+    },
+    {
+      "path": "runs/teacher-identity/fit-v1/teacher-identity/C1/C1-c1-local-test-01.npz",
+      "sha256": "55b0b80805526ad6abdbb4cc300df9b2fa81506b125ade35af5bf76e462ec303",
+      "total_amplitude_max_error": 2.9802322387695312e-08
+    },
+    {
+      "path": "runs/teacher-identity/fit-v1/teacher-identity/C2-low/C2-low-c2-low-test-00.npz",
+      "sha256": "d38538b30a598cf0c6e5efce793494417bec500248b773fbba867f0beb1217bd",
+      "total_amplitude_max_error": 4.470348358154297e-08
+    },
+    {
+      "path": "runs/teacher-identity/fit-v1/teacher-identity/C2-low/C0-c0-test-00.npz",
+      "sha256": "b19779cdd23db3ebed147d5fbda2893ad3f4489e3532d60b5424d60c8bc2c306",
+      "total_amplitude_max_error": 2.9802322387695312e-08
+    },
+    {
+      "path": "runs/teacher-identity/fit-v1/teacher-identity/C2-low/C1-c1-local-test-00.npz",
+      "sha256": "097b6b8baf51893e56ff9b4e9030f085d0855fff6710e8f04c68e60f987ac791",
+      "total_amplitude_max_error": 1.4901161193847656e-08
+    },
+    {
+      "path": "runs/teacher-identity/fit-v1/teacher-identity/C2-low/C2-low-c2-low-test-01.npz",
+      "sha256": "f5fe204b666c3c7d362f2102d9833390bac9fa623b57f0f2f5b4efdd711ab4f7",
+      "total_amplitude_max_error": 5.960464477539063e-08
+    },
+    {
+      "path": "runs/teacher-identity/fit-v1/teacher-identity/C2-low/C0-c0-test-01.npz",
+      "sha256": "89f03284175bb918d77005959228f98ed181dc5802c203d50a257f2a17dbc679",
+      "total_amplitude_max_error": 1.4901161193847656e-08
+    },
+    {
+      "path": "runs/teacher-identity/fit-v1/teacher-identity/C2-low/C1-c1-local-test-01.npz",
+      "sha256": "8562d4af0a8bb8ed7c2485d0bdfb390f452f96b7dc5ba33b9f62e4e8e8169180",
+      "total_amplitude_max_error": 2.9802322387695312e-08
+    },
+    {
+      "path": "runs/teacher-identity/fit-v1/teacher-identity/C3/C2-high-c2-high-test-01.npz",
+      "sha256": "0eb5694362bad3287c18cec715d24bcb9469fdc72673bd4f819e56e78a79adda",
+      "total_amplitude_max_error": 2.9802322387695312e-08
+    },
+    {
+      "path": "runs/teacher-identity/fit-v1/teacher-identity/C3/C2-low-c2-low-test-00.npz",
+      "sha256": "ab8ea75080f66577f38167e54c6961cf3c3620c904c8fa65f6c0b8507088edf8",
+      "total_amplitude_max_error": 2.9802322387695312e-08
+    },
+    {
+      "path": "runs/teacher-identity/fit-v1/teacher-identity/C3/C0-c0-test-00.npz",
+      "sha256": "a322b4d3b013d4166a39555b2268090ddee600fc1e509fe57814ed569fd02c0b",
+      "total_amplitude_max_error": 2.9802322387695312e-08
+    },
+    {
+      "path": "runs/teacher-identity/fit-v1/teacher-identity/C3/C1-c1-local-test-00.npz",
+      "sha256": "f512dd5a2b0e29e5ec35d0f2096af168b1283252e8c099d194d5ee2150e67d40",
+      "total_amplitude_max_error": 2.9802322387695312e-08
+    },
+    {
+      "path": "runs/teacher-identity/fit-v1/teacher-identity/C3/C2-high-c2-high-test-00.npz",
+      "sha256": "a8177e3094bfa371dd9632e57b46bfacb0a5dbbb1e9fff5bb50277b5ddb45408",
+      "total_amplitude_max_error": 2.9802322387695312e-08
+    },
+    {
+      "path": "runs/teacher-identity/fit-v1/teacher-identity/C3/C3-c3-test-01.npz",
+      "sha256": "c274fb78d8bb2adb5423d8e7d602c4e77eabe2c8714d292454c01bf92ccfb7c2",
+      "total_amplitude_max_error": 2.9802322387695312e-08
+    },
+    {
+      "path": "runs/teacher-identity/fit-v1/teacher-identity/C3/C3-c3-test-00.npz",
+      "sha256": "c58b2b2911f3bf307e512bf731f85b94b8f64827a0439008ae89c755dbef3d61",
+      "total_amplitude_max_error": 2.9802322387695312e-08
+    },
+    {
+      "path": "runs/teacher-identity/fit-v1/teacher-identity/C3/C2-low-c2-low-test-01.npz",
+      "sha256": "489e4ce1022e9994cb8a0ceb813c0f5413ef79b769ade2c327a6e5334aa2980e",
+      "total_amplitude_max_error": 2.9802322387695312e-08
+    },
+    {
+      "path": "runs/teacher-identity/fit-v1/teacher-identity/C3/C0-c0-test-01.npz",
+      "sha256": "bc0ec94d6b132ed668a266461bc8f50eeac7aaa19c092594de96ff60e083f07b",
+      "total_amplitude_max_error": 2.9802322387695312e-08
+    },
+    {
+      "path": "runs/teacher-identity/fit-v1/teacher-identity/C3/C1-c1-local-test-01.npz",
+      "sha256": "3f7ee159b8c6060854fe7a0dd3f1e7074cd2293761b0ee50fd235cfa5c83c1ca",
+      "total_amplitude_max_error": 2.9802322387695312e-08
+    },
+    {
+      "path": "runs/teacher-identity/fit-v1/teacher-identity/C2-high/C2-high-c2-high-test-01.npz",
+      "sha256": "bc18add1d23b74b2fa454ec500a0ceeb52d1170cd102899adb3d37c0daa00c71",
+      "total_amplitude_max_error": 2.9802322387695312e-08
+    },
+    {
+      "path": "runs/teacher-identity/fit-v1/teacher-identity/C2-high/C2-low-c2-low-test-00.npz",
+      "sha256": "77dec38b9061004c3fbdb374a8aa08ac90e02536dbab96823c46d587704c82c5",
+      "total_amplitude_max_error": 2.9802322387695312e-08
+    },
+    {
+      "path": "runs/teacher-identity/fit-v1/teacher-identity/C2-high/C0-c0-test-00.npz",
+      "sha256": "e77d845d9c507ed6368480bac4d26d1013d2d5dfab0ee274e3f7cceeca2c2eea",
+      "total_amplitude_max_error": 2.9802322387695312e-08
+    },
+    {
+      "path": "runs/teacher-identity/fit-v1/teacher-identity/C2-high/C1-c1-local-test-00.npz",
+      "sha256": "2512d83586194aee2b757bd0c35e27dbda28f3f8fa25c7e10017adccf7c28052",
+      "total_amplitude_max_error": 2.9802322387695312e-08
+    },
+    {
+      "path": "runs/teacher-identity/fit-v1/teacher-identity/C2-high/C2-high-c2-high-test-00.npz",
+      "sha256": "87f8f14513ac3ed332ce2d062c72b68aee32c4cc36405978e5aae8148664ad72",
+      "total_amplitude_max_error": 1.4901161193847656e-08
+    },
+    {
+      "path": "runs/teacher-identity/fit-v1/teacher-identity/C2-high/C2-low-c2-low-test-01.npz",
+      "sha256": "cd7c6dde419957563d813e4981ba10d74a1395c31bbe1c66dd04e52b096dd4c2",
+      "total_amplitude_max_error": 5.960464477539063e-08
+    },
+    {
+      "path": "runs/teacher-identity/fit-v1/teacher-identity/C2-high/C0-c0-test-01.npz",
+      "sha256": "f2c7af3c46407ba144f0fabec54d2752a836e5908feeabb1fddd809edcfec3e7",
+      "total_amplitude_max_error": 1.4901161193847656e-08
+    },
+    {
+      "path": "runs/teacher-identity/fit-v1/teacher-identity/C2-high/C1-c1-local-test-01.npz",
+      "sha256": "0d8196e3852c399e39b9db4769a7b9c0c2a46b3951e8b8c9de3585e59279fd97",
+      "total_amplitude_max_error": 2.9802322387695312e-08
+    },
+    {
+      "path": "runs/teacher-identity/fit-v1/teacher-amplitude/C1/C0-c0-test-00.npz",
+      "sha256": "97d1c524088932ab3204988ba8e280b351c71d8971f40567dc33a6322e79aeab",
+      "total_amplitude_max_error": 2.9802322387695312e-08
+    },
+    {
+      "path": "runs/teacher-identity/fit-v1/teacher-amplitude/C1/C1-c1-local-test-00.npz",
+      "sha256": "a22e7373b6841ed146980deb7a8580a5afe3cae043966d267e6dfc1b7b8d5a06",
+      "total_amplitude_max_error": 2.9802322387695312e-08
+    },
+    {
+      "path": "runs/teacher-identity/fit-v1/teacher-amplitude/C1/C0-c0-test-01.npz",
+      "sha256": "6cfffb6772b2be3b1a414fc53d115651995981dec64f4c78471c8363777ff7d3",
+      "total_amplitude_max_error": 1.4901161193847656e-08
+    },
+    {
+      "path": "runs/teacher-identity/fit-v1/teacher-amplitude/C1/C1-c1-local-test-01.npz",
+      "sha256": "599290f89fb7fcba38ff9b9fcf6a0cc104046c7f627369b03e979d349eda020c",
+      "total_amplitude_max_error": 4.470348358154297e-08
+    },
+    {
+      "path": "runs/teacher-identity/fit-v1/teacher-amplitude/C2-low/C2-low-c2-low-test-00.npz",
+      "sha256": "e1bcbd9f297b9f5dafaddf5bcdbb3ade197656e33de04a9a6d2323eea384966e",
+      "total_amplitude_max_error": 2.9802322387695312e-08
+    },
+    {
+      "path": "runs/teacher-identity/fit-v1/teacher-amplitude/C2-low/C0-c0-test-00.npz",
+      "sha256": "ac6aec19363383ed173f07fef3eb673b5e84af58239948e86762dd3c5531b970",
+      "total_amplitude_max_error": 5.960464477539063e-08
+    },
+    {
+      "path": "runs/teacher-identity/fit-v1/teacher-amplitude/C2-low/C1-c1-local-test-00.npz",
+      "sha256": "0ea84ca33b44fe8b7bb28a9c60cd7bd38b82bc8ba26926ce13f0121e43abd00b",
+      "total_amplitude_max_error": 2.9802322387695312e-08
+    },
+    {
+      "path": "runs/teacher-identity/fit-v1/teacher-amplitude/C2-low/C2-low-c2-low-test-01.npz",
+      "sha256": "f906e66aee94eb8cc73808a9c58264a1b0227128ea018c89ed6322f50086981e",
+      "total_amplitude_max_error": 5.960464477539063e-08
+    },
+    {
+      "path": "runs/teacher-identity/fit-v1/teacher-amplitude/C2-low/C0-c0-test-01.npz",
+      "sha256": "f790aaea1aa2d7b9bfdd7ec316d1cf8d2cd6211c00d6f5ac02fcce5741d07b30",
+      "total_amplitude_max_error": 1.4901161193847656e-08
+    },
+    {
+      "path": "runs/teacher-identity/fit-v1/teacher-amplitude/C2-low/C1-c1-local-test-01.npz",
+      "sha256": "eb727987963e98741eb024f283f82abcc4f2c41c1ee407bd6857fd0b1ddb63e1",
+      "total_amplitude_max_error": 4.470348358154297e-08
+    },
+    {
+      "path": "runs/teacher-identity/fit-v1/teacher-amplitude/C3/C2-high-c2-high-test-01.npz",
+      "sha256": "0546a0d7de349896985edc9604beba4471cd1f1e9fb064f3e838b8c346cdb72d",
+      "total_amplitude_max_error": 5.960464477539063e-08
+    },
+    {
+      "path": "runs/teacher-identity/fit-v1/teacher-amplitude/C3/C2-low-c2-low-test-00.npz",
+      "sha256": "f37afe4529bfb0b76c1f2ac12fdd1dd036410becf1f796d725cd16d29b530113",
+      "total_amplitude_max_error": 2.9802322387695312e-08
+    },
+    {
+      "path": "runs/teacher-identity/fit-v1/teacher-amplitude/C3/C0-c0-test-00.npz",
+      "sha256": "a897abe5cd94ed5639d515617c53ac290c11248e9199040bfb1809420cb7b1db",
+      "total_amplitude_max_error": 2.9802322387695312e-08
+    },
+    {
+      "path": "runs/teacher-identity/fit-v1/teacher-amplitude/C3/C1-c1-local-test-00.npz",
+      "sha256": "e44a9137d3d62d3fe82a87373daa98506a1e51a0dd411bc6b6e5dc1eeefda29c",
+      "total_amplitude_max_error": 2.9802322387695312e-08
+    },
+    {
+      "path": "runs/teacher-identity/fit-v1/teacher-amplitude/C3/C2-high-c2-high-test-00.npz",
+      "sha256": "b5b4d0909961cd2998d03759bca095b461931bdd7b1a72bbcfcdcfeb62042aae",
+      "total_amplitude_max_error": 4.470348358154297e-08
+    },
+    {
+      "path": "runs/teacher-identity/fit-v1/teacher-amplitude/C3/C3-c3-test-01.npz",
+      "sha256": "6aa1062ddf20d328f9614e265adc261c755b3e19dd8454572f23646b117bad03",
+      "total_amplitude_max_error": 5.960464477539063e-08
+    },
+    {
+      "path": "runs/teacher-identity/fit-v1/teacher-amplitude/C3/C3-c3-test-00.npz",
+      "sha256": "c09e3cfb727aa23004efbb682a655153549f0aae306e7db306a324f6c2f26d7a",
+      "total_amplitude_max_error": 5.960464477539063e-08
+    },
+    {
+      "path": "runs/teacher-identity/fit-v1/teacher-amplitude/C3/C2-low-c2-low-test-01.npz",
+      "sha256": "881f075955e90eebd8349e7afe746f9c7848a0a94a9209e57fdec368553743a4",
+      "total_amplitude_max_error": 5.960464477539063e-08
+    },
+    {
+      "path": "runs/teacher-identity/fit-v1/teacher-amplitude/C3/C0-c0-test-01.npz",
+      "sha256": "0ce95ee5f43720bc8ef001cfd0ea1aaa0e2bca699e0863ff5ddb0bd20946d482",
+      "total_amplitude_max_error": 2.9802322387695312e-08
+    },
+    {
+      "path": "runs/teacher-identity/fit-v1/teacher-amplitude/C3/C1-c1-local-test-01.npz",
+      "sha256": "59942b0932f594489921e643b57dd919e4355dcfadf9e1ae4803a6ee17333f7d",
+      "total_amplitude_max_error": 2.9802322387695312e-08
+    },
+    {
+      "path": "runs/teacher-identity/fit-v1/teacher-amplitude/C2-high/C2-high-c2-high-test-01.npz",
+      "sha256": "960c025ebb632fb93980c9fba58cc5403aeee58d5deeff26dbaf360e5756a9aa",
+      "total_amplitude_max_error": 5.960464477539063e-08
+    },
+    {
+      "path": "runs/teacher-identity/fit-v1/teacher-amplitude/C2-high/C2-low-c2-low-test-00.npz",
+      "sha256": "b802b6f9e04bf42a61acc8481e8caf86c4196f65a178eb069cbe3179afded020",
+      "total_amplitude_max_error": 2.9802322387695312e-08
+    },
+    {
+      "path": "runs/teacher-identity/fit-v1/teacher-amplitude/C2-high/C0-c0-test-00.npz",
+      "sha256": "15d9f0d3647069ea42a2e0c7cb1f4b0cf8b0b6b799874b323fb05e5cb2f70340",
+      "total_amplitude_max_error": 5.960464477539063e-08
+    },
+    {
+      "path": "runs/teacher-identity/fit-v1/teacher-amplitude/C2-high/C1-c1-local-test-00.npz",
+      "sha256": "db3a256fd94b6f9d4a9f35b566f56ffeaabeb95c64b0bbbf64e94bb80ee6ac00",
+      "total_amplitude_max_error": 2.9802322387695312e-08
+    },
+    {
+      "path": "runs/teacher-identity/fit-v1/teacher-amplitude/C2-high/C2-high-c2-high-test-00.npz",
+      "sha256": "115649c85c64bd922106076638c17155d0fc0177252e91b0f242f95a5b54aa87",
+      "total_amplitude_max_error": 4.470348358154297e-08
+    },
+    {
+      "path": "runs/teacher-identity/fit-v1/teacher-amplitude/C2-high/C2-low-c2-low-test-01.npz",
+      "sha256": "ffebc23ca8b109a2d9280bf1c734409c2ed85d6b260615dcb4003f5d87f5a655",
+      "total_amplitude_max_error": 5.960464477539063e-08
+    },
+    {
+      "path": "runs/teacher-identity/fit-v1/teacher-amplitude/C2-high/C0-c0-test-01.npz",
+      "sha256": "6bb5be89a34dd889fd19c5e9f8dcc12480ec2a2fd00e6bc53b5daaee2696291b",
+      "total_amplitude_max_error": 1.4901161193847656e-08
+    },
+    {
+      "path": "runs/teacher-identity/fit-v1/teacher-amplitude/C2-high/C1-c1-local-test-01.npz",
+      "sha256": "470249bc7d556c0d64a2837832f9e2d8e75db5ebc48a7c2472f4253cf90faf01",
+      "total_amplitude_max_error": 5.960464477539063e-08
+    }
+  ],
+  "npz_count": 56,
+  "zip_sha256": "5c58c6c2272698d1368f8fad7150e8987e9d6f9b3c0db0feffb7a608708885f7",
+  "gpu": 0,
+  "tests": "29 passed",
+  "new_inference_has_truth_input": false,
+  "implementation_commit": "8c70bab",
+  "source_sha256": {
+    "train_teacher_identity.py": "0cbb1f33ed2dda4e9b995622ef1df1a0182e30a4c7a7d9fc0145bfc2aa356d86",
+    "teacher_assignment.py": "59677320dc460dfcdf69f2d9a3ab2d71ec1b4acb8c5bc1ff86796c7188aac3f1",
+    "identity_supervision.py": "4302f961bc4cd511328daeaa7db39e7151b1cfc2235d7efa87b645252a9c54bd",
+    "hard_identity_inference.py": "2b083e5e89a5405ccf9bd89bbb4268d4fe74a125f204df6a459df594ce2a9855",
+    "run_teacher_suite.py": "1d4b2fa3f4ffe8f7a9a8af3f867510f6a81b42990f10d67d5d4db3567a97f361",
+    "course_metrics.py": "97c0d5d5085db928cbb53d9bc9b03994fa5c1f01d3701c48337d0b48eff0836e",
+    "window_head.py": "4965ad029515b3826dfa1389f3f295d2df8991bc2298d603594a865afec16eab"
+  },
+  "identical_initial_checkpoint": true,
+  "checkpoint_sha256": {
+    "runs/teacher-identity/fit-v1/teacher-identity/C1/head.pth": "d23071b7cb35402461057174dbbdba08b71a468ebb172e5bfce385ab0ede72a8",
+    "runs/teacher-identity/fit-v1/teacher-identity/C2-low/head.pth": "8d9bf37de5024832595a1907f1d7cbc9b46a8343714415e1a7d324c26a6b1522",
+    "runs/teacher-identity/fit-v1/teacher-identity/C3/head.pth": "b451a62939052ffe699469eb3b96890bbf4279c21ead5f32405c6480da0185d4",
+    "runs/teacher-identity/fit-v1/teacher-identity/C2-high/head.pth": "cd8388a29def9af60835f04c682515b29f7bfb89e67e5ae8a9d678ae1becd9d2",
+    "runs/teacher-identity/fit-v1/teacher-amplitude/C1/head.pth": "8a9566b44a0ccbe67c5d5b1b45b176d920d0429d362aea6b6a8d737a90dd1e22",
+    "runs/teacher-identity/fit-v1/teacher-amplitude/C2-low/head.pth": "0944748e1ec46b8db5f1515452717c54c6f5833d5441b65c642da1e791028023",
+    "runs/teacher-identity/fit-v1/teacher-amplitude/C3/head.pth": "9eed6209e1f85d2e54e0c54fdb64dc37fddc58e4dae7a0663785e0b185dd2f6d",
+    "runs/teacher-identity/fit-v1/teacher-amplitude/C2-high/head.pth": "9b41ad7d087437b08d59b58c9cf3650b9416265e2b96c3ddfa451a7a03b1eea3"
+  }
+}

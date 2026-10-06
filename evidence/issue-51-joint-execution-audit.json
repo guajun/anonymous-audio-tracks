@@ -1,0 +1,471 @@
+{
+  "files": [
+    {
+      "path": "runs/joint-teacher/fit-v2/joint-id/C1/C0-c0-test-00.npz",
+      "sha256": "b320d3b64e8735993ae5004217cbc0c91036b15f3093322abfe60afb065c098e",
+      "total_amplitude_max_error": 5.960464477539063e-08
+    },
+    {
+      "path": "runs/joint-teacher/fit-v2/joint-id/C1/C1-c1-local-test-00.npz",
+      "sha256": "0f5dbdcad15d45ef04a64d81a060059c6ae44acd67a9df9c577107f3645ac517",
+      "total_amplitude_max_error": 2.9802322387695312e-08
+    },
+    {
+      "path": "runs/joint-teacher/fit-v2/joint-id/C1/C0-c0-test-01.npz",
+      "sha256": "9f9eabc8882ceba69c0ca5df2841cae4459a29c80978f75aba64d268bbf3f4cc",
+      "total_amplitude_max_error": 2.9802322387695312e-08
+    },
+    {
+      "path": "runs/joint-teacher/fit-v2/joint-id/C1/C1-c1-local-test-01.npz",
+      "sha256": "cd322d7481488cddd36876bf5ca19a7d100d7921fbe36b94fe5bb90b3d29b052",
+      "total_amplitude_max_error": 5.960464477539063e-08
+    },
+    {
+      "path": "runs/joint-teacher/fit-v2/joint-id/C2-low/C2-low-c2-low-test-00.npz",
+      "sha256": "79854b3055f28c6235f3f863dccf144b800057fa5104c195bad8a7f897e43acc",
+      "total_amplitude_max_error": 2.9802322387695312e-08
+    },
+    {
+      "path": "runs/joint-teacher/fit-v2/joint-id/C2-low/C0-c0-test-00.npz",
+      "sha256": "95fc49bc80a28a2aec4fc65d855ecb44256f800e8c546788383652153ab31b72",
+      "total_amplitude_max_error": 2.9802322387695312e-08
+    },
+    {
+      "path": "runs/joint-teacher/fit-v2/joint-id/C2-low/C1-c1-local-test-00.npz",
+      "sha256": "5a56bb643c097eb3a1dbfd27bb13b09bafa6e69e88a198bfc3b9ed79a5cdc1c9",
+      "total_amplitude_max_error": 2.9802322387695312e-08
+    },
+    {
+      "path": "runs/joint-teacher/fit-v2/joint-id/C2-low/C2-low-c2-low-test-01.npz",
+      "sha256": "2db73018d187fc9eb4a33c2239eaa47309623bae36e02beccf28c0617bb691e7",
+      "total_amplitude_max_error": 5.960464477539063e-08
+    },
+    {
+      "path": "runs/joint-teacher/fit-v2/joint-id/C2-low/C0-c0-test-01.npz",
+      "sha256": "a9a2218458862076ee1e991adc429a2c13c9b6f6d5e081bd395b09f8e7abcd94",
+      "total_amplitude_max_error": 2.9802322387695312e-08
+    },
+    {
+      "path": "runs/joint-teacher/fit-v2/joint-id/C2-low/C1-c1-local-test-01.npz",
+      "sha256": "9d1e3a341f0b3f2ab8760db7908c1a7da9f253baa4bbfd781dfbf023d7897150",
+      "total_amplitude_max_error": 5.960464477539063e-08
+    },
+    {
+      "path": "runs/joint-teacher/fit-v2/joint-id/C3/C2-high-c2-high-test-01.npz",
+      "sha256": "6b61da8d7233eb9a034129a23d7b77562a6559ff593a6352ee22c9d29ea33874",
+      "total_amplitude_max_error": 5.960464477539063e-08
+    },
+    {
+      "path": "runs/joint-teacher/fit-v2/joint-id/C3/C2-low-c2-low-test-00.npz",
+      "sha256": "177dd4cf688ff483424aa200a2f7e382804378d17f3d0cd1f35f569e8397aeca",
+      "total_amplitude_max_error": 2.9802322387695312e-08
+    },
+    {
+      "path": "runs/joint-teacher/fit-v2/joint-id/C3/C0-c0-test-00.npz",
+      "sha256": "8b74a3154e900d7bb1adafb355a39af74c399e6943fd1887f0e455da4d7c35c6",
+      "total_amplitude_max_error": 2.9802322387695312e-08
+    },
+    {
+      "path": "runs/joint-teacher/fit-v2/joint-id/C3/C1-c1-local-test-00.npz",
+      "sha256": "b3e3250986d3dd1b7b187d71c78378f2b4b02acfe6dc27e267bad4ad876ec46f",
+      "total_amplitude_max_error": 2.9802322387695312e-08
+    },
+    {
+      "path": "runs/joint-teacher/fit-v2/joint-id/C3/C2-high-c2-high-test-00.npz",
+      "sha256": "55e95de37cade9d91d057f837e932b5315a35bbc0c214e4b1cdc1bf5eb84f254",
+      "total_amplitude_max_error": 2.9802322387695312e-08
+    },
+    {
+      "path": "runs/joint-teacher/fit-v2/joint-id/C3/C3-c3-test-01.npz",
+      "sha256": "9112caace3f4aabc0b22037b15f092f2e811b6edbac36331cce9e18055257c9b",
+      "total_amplitude_max_error": 2.9802322387695312e-08
+    },
+    {
+      "path": "runs/joint-teacher/fit-v2/joint-id/C3/C3-c3-test-00.npz",
+      "sha256": "d8a2b88e6cf9c7748f0e059be213e63193f5c88f6b3cdc5b66ac3cf164c94226",
+      "total_amplitude_max_error": 2.9802322387695312e-08
+    },
+    {
+      "path": "runs/joint-teacher/fit-v2/joint-id/C3/C2-low-c2-low-test-01.npz",
+      "sha256": "4cce130e24aeda101b106d1eb4ccdebdd7608c0ae05ccc18c6ea1023dd9b1764",
+      "total_amplitude_max_error": 2.9802322387695312e-08
+    },
+    {
+      "path": "runs/joint-teacher/fit-v2/joint-id/C3/C0-c0-test-01.npz",
+      "sha256": "0fa36079f21ab696269902c322f918124bcf8c15e83532721b22f114163da007",
+      "total_amplitude_max_error": 2.9802322387695312e-08
+    },
+    {
+      "path": "runs/joint-teacher/fit-v2/joint-id/C3/C1-c1-local-test-01.npz",
+      "sha256": "336b51b27ced94454e68c7328f53a557c2ce42aadf36d95e0e9952216703fd14",
+      "total_amplitude_max_error": 5.960464477539063e-08
+    },
+    {
+      "path": "runs/joint-teacher/fit-v2/joint-id/C2-high/C2-high-c2-high-test-01.npz",
+      "sha256": "43dc98fe43f09cb3c5e2c45c27a3eee92847a6d0fa1e66a8a19feff23dd4d1d6",
+      "total_amplitude_max_error": 5.960464477539063e-08
+    },
+    {
+      "path": "runs/joint-teacher/fit-v2/joint-id/C2-high/C2-low-c2-low-test-00.npz",
+      "sha256": "2900273c7884dd544b215f17cb9c9080c0d8a5d1c1e015fd68517ac363794a3c",
+      "total_amplitude_max_error": 2.9802322387695312e-08
+    },
+    {
+      "path": "runs/joint-teacher/fit-v2/joint-id/C2-high/C0-c0-test-00.npz",
+      "sha256": "a6ba56d9f458b32c42796100fa36a95528f8df1601db60a3f55230af7e747a3c",
+      "total_amplitude_max_error": 4.470348358154297e-08
+    },
+    {
+      "path": "runs/joint-teacher/fit-v2/joint-id/C2-high/C1-c1-local-test-00.npz",
+      "sha256": "02cb10aee57cd170266ed1cd1b97d3dc291c7ed6c731dab0b6a5b2fc5211cced",
+      "total_amplitude_max_error": 1.4901161193847656e-08
+    },
+    {
+      "path": "runs/joint-teacher/fit-v2/joint-id/C2-high/C2-high-c2-high-test-00.npz",
+      "sha256": "aa1fb89411834eee9ea8fd7f75ae132fe3f4992ab9e416c36c815f17930b9872",
+      "total_amplitude_max_error": 2.9802322387695312e-08
+    },
+    {
+      "path": "runs/joint-teacher/fit-v2/joint-id/C2-high/C2-low-c2-low-test-01.npz",
+      "sha256": "5faeec56285a898f0f75ebb1bacca40c263ca1239e17d54dcae1be2af5bc055d",
+      "total_amplitude_max_error": 5.960464477539063e-08
+    },
+    {
+      "path": "runs/joint-teacher/fit-v2/joint-id/C2-high/C0-c0-test-01.npz",
+      "sha256": "4700cb8ab9051cb83d3753638ce374b2bd40a58e1450acad000a08f954d08728",
+      "total_amplitude_max_error": 1.4901161193847656e-08
+    },
+    {
+      "path": "runs/joint-teacher/fit-v2/joint-id/C2-high/C1-c1-local-test-01.npz",
+      "sha256": "bf10a5e063e83c106284d569b9a6f0dc5d6d3f87fc3d856dcce0d0ba6cfc7326",
+      "total_amplitude_max_error": 2.9802322387695312e-08
+    },
+    {
+      "path": "runs/joint-teacher/fit-v2/envelope-id/C1/C0-c0-test-00.npz",
+      "sha256": "88d9135bfe3e15576e338d26526339a4f026b0cd28dd83f7de4064c31357d390",
+      "total_amplitude_max_error": 2.9802322387695312e-08
+    },
+    {
+      "path": "runs/joint-teacher/fit-v2/envelope-id/C1/C1-c1-local-test-00.npz",
+      "sha256": "6e7c6fd2d12ebbaf85882449a9c88398396c49a52b71c1d9dbd26ac58f0d7e94",
+      "total_amplitude_max_error": 2.9802322387695312e-08
+    },
+    {
+      "path": "runs/joint-teacher/fit-v2/envelope-id/C1/C0-c0-test-01.npz",
+      "sha256": "6075c78472f10ab1fd050d88a745474f16906ad188e23ba9ae126ba43bf2724f",
+      "total_amplitude_max_error": 1.4901161193847656e-08
+    },
+    {
+      "path": "runs/joint-teacher/fit-v2/envelope-id/C1/C1-c1-local-test-01.npz",
+      "sha256": "17bcd2443c690475917b312e88e7247828a934515b9deee1c8756dc507eebb3c",
+      "total_amplitude_max_error": 2.9802322387695312e-08
+    },
+    {
+      "path": "runs/joint-teacher/fit-v2/envelope-id/C2-low/C2-low-c2-low-test-00.npz",
+      "sha256": "138df5bef9908032cda50d3c95c60576d8b25fb66757d107f501dd5e0d789f9f",
+      "total_amplitude_max_error": 4.470348358154297e-08
+    },
+    {
+      "path": "runs/joint-teacher/fit-v2/envelope-id/C2-low/C0-c0-test-00.npz",
+      "sha256": "fe4fe8beaa3f0ef53975db79f1b5a93c75ad08f0362613b7f4511b9a5a9c840a",
+      "total_amplitude_max_error": 2.9802322387695312e-08
+    },
+    {
+      "path": "runs/joint-teacher/fit-v2/envelope-id/C2-low/C1-c1-local-test-00.npz",
+      "sha256": "3fe866fa22caee01e510d620d587bdc5402acacb96835f82f87047a065b7bcb5",
+      "total_amplitude_max_error": 2.9802322387695312e-08
+    },
+    {
+      "path": "runs/joint-teacher/fit-v2/envelope-id/C2-low/C2-low-c2-low-test-01.npz",
+      "sha256": "cc8583af8928e3a7d8b1534ac13556190340d1f85d992f75a5cf01d9814267e9",
+      "total_amplitude_max_error": 5.960464477539063e-08
+    },
+    {
+      "path": "runs/joint-teacher/fit-v2/envelope-id/C2-low/C0-c0-test-01.npz",
+      "sha256": "d38e7371ac5b325b7f91ff60fe43dba1b67bc95ce4cc0c45b6c3099d9f84ec85",
+      "total_amplitude_max_error": 2.9802322387695312e-08
+    },
+    {
+      "path": "runs/joint-teacher/fit-v2/envelope-id/C2-low/C1-c1-local-test-01.npz",
+      "sha256": "8848155dde4ec10996f988dfb9019cd612a3c54ed629ed93d37df7018d7cf92e",
+      "total_amplitude_max_error": 5.960464477539063e-08
+    },
+    {
+      "path": "runs/joint-teacher/fit-v2/envelope-id/C3/C2-high-c2-high-test-01.npz",
+      "sha256": "cbbb3d2540f323d98aa4b32eeccde064194b97be6d873a94d02b7965f3a87684",
+      "total_amplitude_max_error": 5.960464477539063e-08
+    },
+    {
+      "path": "runs/joint-teacher/fit-v2/envelope-id/C3/C2-low-c2-low-test-00.npz",
+      "sha256": "5e86d3b6f91c70b5fb46024e8f154269a643342f7bc614d166879241268294b5",
+      "total_amplitude_max_error": 4.470348358154297e-08
+    },
+    {
+      "path": "runs/joint-teacher/fit-v2/envelope-id/C3/C0-c0-test-00.npz",
+      "sha256": "cc14a6c95a8e71f7d613da0733523be82ba38b8c54efa185a922e86b2a181645",
+      "total_amplitude_max_error": 5.960464477539063e-08
+    },
+    {
+      "path": "runs/joint-teacher/fit-v2/envelope-id/C3/C1-c1-local-test-00.npz",
+      "sha256": "8d984edc97388f64ffe19f74fddcfa2e26de2b0d37eacc1264067415894e5bb0",
+      "total_amplitude_max_error": 1.4901161193847656e-08
+    },
+    {
+      "path": "runs/joint-teacher/fit-v2/envelope-id/C3/C2-high-c2-high-test-00.npz",
+      "sha256": "c3c9e70749b8faf93758402d940fc4d1c65bfc870d9d8d0b2865c9602ee1afa6",
+      "total_amplitude_max_error": 2.9802322387695312e-08
+    },
+    {
+      "path": "runs/joint-teacher/fit-v2/envelope-id/C3/C3-c3-test-01.npz",
+      "sha256": "e0b15f0a260a430ee765e48d30fed182d283f876f49a52176c9845f86d4dcbd1",
+      "total_amplitude_max_error": 4.470348358154297e-08
+    },
+    {
+      "path": "runs/joint-teacher/fit-v2/envelope-id/C3/C3-c3-test-00.npz",
+      "sha256": "316387c2d4e418649e31f3d150e9df8a149b62aa955616bfa148db33d05efc2e",
+      "total_amplitude_max_error": 2.9802322387695312e-08
+    },
+    {
+      "path": "runs/joint-teacher/fit-v2/envelope-id/C3/C2-low-c2-low-test-01.npz",
+      "sha256": "31e3eb66ca1363e6695fae147e0f7eeae8ffd5daf6b239d1f75bef3dbcb0c88f",
+      "total_amplitude_max_error": 5.960464477539063e-08
+    },
+    {
+      "path": "runs/joint-teacher/fit-v2/envelope-id/C3/C0-c0-test-01.npz",
+      "sha256": "ce3b2508a38b7ba65681a5644d2f96f041fda8e469586e25207c0e98949ad86f",
+      "total_amplitude_max_error": 2.9802322387695312e-08
+    },
+    {
+      "path": "runs/joint-teacher/fit-v2/envelope-id/C3/C1-c1-local-test-01.npz",
+      "sha256": "68d5945a10334e987003739a0187ad5dcc69cd7096682e4e5bf37a412245fe27",
+      "total_amplitude_max_error": 2.9802322387695312e-08
+    },
+    {
+      "path": "runs/joint-teacher/fit-v2/envelope-id/C2-high/C2-high-c2-high-test-01.npz",
+      "sha256": "1e96f889c66c1f0fb82b8d3354457e53160f77782e2748b18945b70ec4328b19",
+      "total_amplitude_max_error": 4.470348358154297e-08
+    },
+    {
+      "path": "runs/joint-teacher/fit-v2/envelope-id/C2-high/C2-low-c2-low-test-00.npz",
+      "sha256": "4a81d330dee55f159d9ce3262ccf73aaa010b78958132cdf9711d62cd190b6fc",
+      "total_amplitude_max_error": 2.9802322387695312e-08
+    },
+    {
+      "path": "runs/joint-teacher/fit-v2/envelope-id/C2-high/C0-c0-test-00.npz",
+      "sha256": "4af4e5146c9a588c445a12907855ee583e1dd8915e3f67f2f25b71be74b0089b",
+      "total_amplitude_max_error": 2.9802322387695312e-08
+    },
+    {
+      "path": "runs/joint-teacher/fit-v2/envelope-id/C2-high/C1-c1-local-test-00.npz",
+      "sha256": "889ef92bf95523b7186b31ce4542d8dc213393cc0f27be5bd196a4e9ebd360b8",
+      "total_amplitude_max_error": 2.9802322387695312e-08
+    },
+    {
+      "path": "runs/joint-teacher/fit-v2/envelope-id/C2-high/C2-high-c2-high-test-00.npz",
+      "sha256": "92fd6e0962b48c5553ae4d2b262abb628e6fc53a860f9384bbe3fe58ee3e88cb",
+      "total_amplitude_max_error": 2.9802322387695312e-08
+    },
+    {
+      "path": "runs/joint-teacher/fit-v2/envelope-id/C2-high/C2-low-c2-low-test-01.npz",
+      "sha256": "4e9f2ec86b61a6bb94d856466453a0c8ff3c37e5f9dad258341e309a1645d42b",
+      "total_amplitude_max_error": 2.9802322387695312e-08
+    },
+    {
+      "path": "runs/joint-teacher/fit-v2/envelope-id/C2-high/C0-c0-test-01.npz",
+      "sha256": "c523c81126cfa0b83341e97edcda57b6c21892e96884b87aa2e2f466c0ee8871",
+      "total_amplitude_max_error": 1.4901161193847656e-08
+    },
+    {
+      "path": "runs/joint-teacher/fit-v2/envelope-id/C2-high/C1-c1-local-test-01.npz",
+      "sha256": "b33ee4b27bf5e4e70b5bf82896500f7f7a6fd1851be72b60f2fa59561f56553b",
+      "total_amplitude_max_error": 2.9802322387695312e-08
+    }
+  ],
+  "npz_count": 56,
+  "zip_sha256": "c07d740e97ab03bc9a82ec9db7c0803bac649aeeeb80830bc098f60fbcdb55f1",
+  "gpu": 0,
+  "tests": "36 passed",
+  "new_inference_has_truth_input": false,
+  "implementation_commit": "7fb747e2d3b8eab42a2c32ed1c147aefccebd398",
+  "source_sha256": {
+    "train_joint_teacher.py": "6678f9fa868a111c6ee48f67715a6e1776b4c7b4a49d90292b0fbdb7a9ff75c3",
+    "joint_teacher.py": "0efd51faba6ced8cd3916ea1fbb58fe60a3461ce2a6646e9c3c392b7457a2c00",
+    "teacher_assignment.py": "59677320dc460dfcdf69f2d9a3ab2d71ec1b4acb8c5bc1ff86796c7188aac3f1",
+    "identity_supervision.py": "4302f961bc4cd511328daeaa7db39e7151b1cfc2235d7efa87b645252a9c54bd",
+    "hard_identity_inference.py": "2b083e5e89a5405ccf9bd89bbb4268d4fe74a125f204df6a459df594ce2a9855",
+    "run_joint_suite.py": "da5101eb8fcba99d0af647fe33fc2508ee377e31cdc1feacc90ce1522d6d8a2d",
+    "course_metrics.py": "97c0d5d5085db928cbb53d9bc9b03994fa5c1f01d3701c48337d0b48eff0836e",
+    "window_head.py": "4965ad029515b3826dfa1389f3f295d2df8991bc2298d603594a865afec16eab"
+  },
+  "identical_initial_checkpoint": true,
+  "checkpoint_sha256": {
+    "runs/joint-teacher/fit-v2/joint-id/C1/head.pth": "2a6ab0a8c969497141957bf5848ae0d6ba84dac9d3a91a88e27f3ef0cfca06d2",
+    "runs/joint-teacher/fit-v2/joint-id/C2-low/head.pth": "a38a84d8a170bfc9c57782383a38d5d4fe66bc0a4d510b581c81b8343ea22ece",
+    "runs/joint-teacher/fit-v2/joint-id/C3/head.pth": "290921323c1a0250eb9b9db38e43e715c47421d8b1d88439af9520b70f0b9d20",
+    "runs/joint-teacher/fit-v2/joint-id/C2-high/head.pth": "098dd7c035701b39050861aeac2e2b1dab01ed606fb75ffaac745d2bf0f2445e",
+    "runs/joint-teacher/fit-v2/envelope-id/C1/head.pth": "1531c649c264469de1289177b905e1b35b29de3ee57b3b647e77ac6cd5e6fdf0",
+    "runs/joint-teacher/fit-v2/envelope-id/C2-low/head.pth": "00932d864ec044575542a81337c14697bb647ed6a9b9b135bcef52ff98705501",
+    "runs/joint-teacher/fit-v2/envelope-id/C3/head.pth": "2813913e2049c782e1cdaa8386b8f928cf694acbca722cc30719aa1071cb8167",
+    "runs/joint-teacher/fit-v2/envelope-id/C2-high/head.pth": "4a9f1c807c0e153d53cdabb7d3edd309e3b9b515ac4977cca742de1cff77bd36"
+  },
+  "precursor_source_sha256": {
+    "run_joint_suite.py": "6699e1d35a4810b765c493a855f179c315f95c13b65e1e22cdae4852b9117cea",
+    "joint_teacher.py": "05e29bd4db695f393bdd47111d4c1753247a93d1718cf93c9b598445190cad53",
+    "train_joint_teacher.py": "6678f9fa868a111c6ee48f67715a6e1776b4c7b4a49d90292b0fbdb7a9ff75c3"
+  },
+  "executed_vs_committed_source": [
+    {
+      "name": "train_joint_teacher.py",
+      "executed_bytes_sha256": "6678f9fa868a111c6ee48f67715a6e1776b4c7b4a49d90292b0fbdb7a9ff75c3",
+      "committed_text_sha256": "6678f9fa868a111c6ee48f67715a6e1776b4c7b4a49d90292b0fbdb7a9ff75c3",
+      "identical_text_after_CRLF_LF_normalization": true
+    },
+    {
+      "name": "joint_teacher.py",
+      "executed_bytes_sha256": "0efd51faba6ced8cd3916ea1fbb58fe60a3461ce2a6646e9c3c392b7457a2c00",
+      "committed_text_sha256": "0efd51faba6ced8cd3916ea1fbb58fe60a3461ce2a6646e9c3c392b7457a2c00",
+      "identical_text_after_CRLF_LF_normalization": true
+    },
+    {
+      "name": "teacher_assignment.py",
+      "executed_bytes_sha256": "59677320dc460dfcdf69f2d9a3ab2d71ec1b4acb8c5bc1ff86796c7188aac3f1",
+      "committed_text_sha256": "59677320dc460dfcdf69f2d9a3ab2d71ec1b4acb8c5bc1ff86796c7188aac3f1",
+      "identical_text_after_CRLF_LF_normalization": true
+    },
+    {
+      "name": "identity_supervision.py",
+      "executed_bytes_sha256": "4302f961bc4cd511328daeaa7db39e7151b1cfc2235d7efa87b645252a9c54bd",
+      "committed_text_sha256": "4302f961bc4cd511328daeaa7db39e7151b1cfc2235d7efa87b645252a9c54bd",
+      "identical_text_after_CRLF_LF_normalization": true
+    },
+    {
+      "name": "hard_identity_inference.py",
+      "executed_bytes_sha256": "2b083e5e89a5405ccf9bd89bbb4268d4fe74a125f204df6a459df594ce2a9855",
+      "committed_text_sha256": "2b083e5e89a5405ccf9bd89bbb4268d4fe74a125f204df6a459df594ce2a9855",
+      "identical_text_after_CRLF_LF_normalization": true
+    },
+    {
+      "name": "run_joint_suite.py",
+      "executed_bytes_sha256": "da5101eb8fcba99d0af647fe33fc2508ee377e31cdc1feacc90ce1522d6d8a2d",
+      "committed_text_sha256": "da5101eb8fcba99d0af647fe33fc2508ee377e31cdc1feacc90ce1522d6d8a2d",
+      "identical_text_after_CRLF_LF_normalization": true
+    },
+    {
+      "name": "course_metrics.py",
+      "executed_bytes_sha256": "97c0d5d5085db928cbb53d9bc9b03994fa5c1f01d3701c48337d0b48eff0836e",
+      "committed_text_sha256": "97c0d5d5085db928cbb53d9bc9b03994fa5c1f01d3701c48337d0b48eff0836e",
+      "identical_text_after_CRLF_LF_normalization": true
+    },
+    {
+      "name": "window_head.py",
+      "executed_bytes_sha256": "4965ad029515b3826dfa1389f3f295d2df8991bc2298d603594a865afec16eab",
+      "committed_text_sha256": "4965ad029515b3826dfa1389f3f295d2df8991bc2298d603594a865afec16eab",
+      "identical_text_after_CRLF_LF_normalization": true
+    }
+  ],
+  "reconstruction_sample_schedules": {
+    "C1": {
+      "seed": 4650,
+      "sha256": "2e61f06e825e9dd5a25873401b7b9d328afde14e78cd7998106097bebafd2156",
+      "samples": 2000,
+      "first": [
+        [
+          "C0",
+          "c0-train-02"
+        ],
+        [
+          "C1",
+          "c1-local-train-02"
+        ]
+      ],
+      "last": [
+        [
+          "C0",
+          "c0-train-00"
+        ],
+        [
+          "C1",
+          "c1-local-train-03"
+        ]
+      ]
+    },
+    "C2-low": {
+      "seed": 4651,
+      "sha256": "c20b2843d5372b0fb1a033feff19d69dc50219b1dd5c860081f5d256dd3a2666",
+      "samples": 2000,
+      "first": [
+        [
+          "C0",
+          "c0-train-03"
+        ],
+        [
+          "C2-low",
+          "c2-low-train-03"
+        ]
+      ],
+      "last": [
+        [
+          "C0",
+          "c0-train-02"
+        ],
+        [
+          "C2-low",
+          "c2-low-train-02"
+        ]
+      ]
+    },
+    "C2-high": {
+      "seed": 4652,
+      "sha256": "d21b7cd9f61e33a8faf6bebdf81a25685f2765ac078cf283770bdf735b7c4297",
+      "samples": 2000,
+      "first": [
+        [
+          "C0",
+          "c0-train-03"
+        ],
+        [
+          "C2-high",
+          "c2-high-train-01"
+        ]
+      ],
+      "last": [
+        [
+          "C0",
+          "c0-train-00"
+        ],
+        [
+          "C2-high",
+          "c2-high-train-02"
+        ]
+      ]
+    },
+    "C3": {
+      "seed": 4653,
+      "sha256": "bf6ffc16894a1fc832e171d4cfa5c6848d9326afe6beee71ea71040448367ea1",
+      "samples": 2000,
+      "first": [
+        [
+          "C1",
+          "c1-local-train-03"
+        ],
+        [
+          "C3",
+          "c3-train-03"
+        ]
+      ],
+      "last": [
+        [
+          "C1",
+          "c1-local-train-03"
+        ],
+        [
+          "C3",
+          "c3-train-03"
+        ]
+      ]
+    }
+  },
+  "schedule_note": "reconstructed from same manifests/seeds and code; not a per-step live trace",
+  "initial_sha256": "83ff4753abc0c79f006e4d6b6b104f30a80cd907ffb05a9ed05c3cabe81b33c3",
+  "source_snapshot": "runs/joint-teacher/fit-v2/source"
+}

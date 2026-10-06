@@ -1,0 +1,170 @@
+{
+  "stage": "P0",
+  "model_type": "frame",
+  "scope": "unpooled feature diagnostics; not training or source separation",
+  "manifest": {
+    "official_commit": "a1a3eecb94731e226308a6812f2fbf268d789caf",
+    "source_sha256": "92424d76f3aec44b6d94b58ed1ac499b32e72fd5cf42ea0c8afdcec95b2b40b4",
+    "checkpoint_sha256": "b82b0714d92ddfd9de2c535b459ad900dea85a50c810dc43086fc6ac7047f689",
+    "kernel": [
+      128,
+      2
+    ],
+    "stride": [
+      128,
+      1
+    ],
+    "pretrain_dims": [
+      128,
+      1024
+    ],
+    "checkpoint_keys": 166,
+    "missing_keys": [],
+    "unexpected_keys": [],
+    "output_grid": [
+      1,
+      197
+    ],
+    "output_dim": 768,
+    "adapted_position_shape": [
+      1,
+      199,
+      768
+    ],
+    "position_time_crop_start": 158,
+    "special_tokens": 2,
+    "fbank": {
+      "htk_compat": true,
+      "sample_frequency": 16000,
+      "use_energy": false,
+      "window_type": "hanning",
+      "num_mel_bins": 128,
+      "dither": 0.0,
+      "frame_length": 25.0,
+      "frame_shift": 10.0,
+      "snip_edges": true,
+      "preemphasis_coefficient": 0.97,
+      "remove_dc_offset": true,
+      "low_freq": 20.0,
+      "high_freq": 0.0,
+      "use_log_fbank": true,
+      "use_power": true,
+      "round_to_power_of_two": true
+    },
+    "normalization": {
+      "mean": -4.2677393,
+      "std": 4.5689974,
+      "std_multiplier": 2
+    },
+    "padding": "none at spectrogram level; waveform padding separately audited"
+  },
+  "runtime": {
+    "python": "3.12.11",
+    "torch": "2.9.1+cu128",
+    "torchaudio": "2.9.1+cu128",
+    "timm": "0.4.5",
+    "device": "NVIDIA RTX A6000",
+    "threads": 4
+  },
+  "fbank_shape": [
+    8,
+    198,
+    128
+  ],
+  "token_shape": [
+    8,
+    1,
+    197,
+    768
+  ],
+  "first_center": 0.0175,
+  "last_center": 1.9775,
+  "coordinate_error_seconds": 2.220446049250313e-16,
+  "repeat_max_error": 0.0,
+  "gain_probe": [
+    {
+      "name": "real",
+      "finite": true,
+      "feature_norm_mean": 25.975629806518555,
+      "difference_from_real": 0.0,
+      "valid_waveform_fraction": 1.0,
+      "origin_seconds": 1.0
+    },
+    {
+      "name": "gain_half",
+      "finite": true,
+      "feature_norm_mean": 25.96266746520996,
+      "difference_from_real": 1.0397685766220093,
+      "valid_waveform_fraction": 1.0,
+      "origin_seconds": 1.0
+    },
+    {
+      "name": "gain_double",
+      "finite": true,
+      "feature_norm_mean": 26.031681060791016,
+      "difference_from_real": 1.294981837272644,
+      "valid_waveform_fraction": 1.0,
+      "origin_seconds": 1.0
+    },
+    {
+      "name": "silence",
+      "finite": true,
+      "feature_norm_mean": 25.706544876098633,
+      "difference_from_real": 5.747823238372803,
+      "valid_waveform_fraction": 1.0,
+      "origin_seconds": 1.0
+    },
+    {
+      "name": "impulse",
+      "finite": true,
+      "feature_norm_mean": 25.72350311279297,
+      "difference_from_real": 5.867958068847656,
+      "valid_waveform_fraction": 1.0,
+      "origin_seconds": 1.0
+    },
+    {
+      "name": "step",
+      "finite": true,
+      "feature_norm_mean": 25.677352905273438,
+      "difference_from_real": 5.91901969909668,
+      "valid_waveform_fraction": 1.0,
+      "origin_seconds": 1.0
+    },
+    {
+      "name": "shift_10ms",
+      "finite": true,
+      "feature_norm_mean": 25.976755142211914,
+      "difference_from_real": 0.6600244045257568,
+      "valid_waveform_fraction": 1.0,
+      "origin_seconds": 1.0
+    },
+    {
+      "name": "left_boundary_pad",
+      "finite": true,
+      "feature_norm_mean": 25.706544876098633,
+      "difference_from_real": 5.747823238372803,
+      "valid_waveform_fraction": 0.5,
+      "origin_seconds": -1.0
+    }
+  ],
+  "costs": {
+    "1": {
+      "batch_seconds": 0.0039994867984205484,
+      "per_window_seconds": 0.0039994867984205484
+    },
+    "4": {
+      "batch_seconds": 0.01122676655650139,
+      "per_window_seconds": 0.0028066916391253473
+    }
+  },
+  "peak_allocated_bytes": 418280448,
+  "peak_reserved_bytes": 784334848,
+  "peak_process_rss_bytes": 2020171776,
+  "validity_note": "projection support masks do not restrict attention; all tokens see the full 2s input",
+  "original_sample_rate": 44100,
+  "bypass_rms_unit": "linear_rms_full_scale; original channel power average",
+  "minute_track_estimate_seconds_at_hop_20ms": 8.420074917376041,
+  "checkpoint_origin": "user-provided",
+  "provenance_note": "origin is declared and recorded; a supplied file is not independently authenticated as the author's original download",
+  "frame_stage_gate_passed": true
+}

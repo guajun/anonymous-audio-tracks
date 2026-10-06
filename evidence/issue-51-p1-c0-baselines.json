@@ -1,0 +1,72 @@
+{
+  "oracle": {
+    "train": {
+      "normalized_mae": 0.0,
+      "active_normalized_mae": 0.0,
+      "area_iou": 1.0,
+      "silence_false_positive_fraction": 0.0,
+      "unused_false_positive_fraction": 0.0,
+      "source_count_mae": 0.0,
+      "gate_normalized_mae": 5.309338371322892e-06,
+      "onset_median_abs_seconds": 0.0,
+      "offset_median_abs_seconds": 0.0
+    },
+    "val": {
+      "normalized_mae": 0.0,
+      "active_normalized_mae": 0.0,
+      "area_iou": 1.0,
+      "silence_false_positive_fraction": 0.0,
+      "unused_false_positive_fraction": 0.0,
+      "source_count_mae": 0.0,
+      "gate_normalized_mae": 0.0,
+      "onset_median_abs_seconds": 0.0,
+      "offset_median_abs_seconds": 0.0
+    },
+    "test": {
+      "normalized_mae": 0.0,
+      "active_normalized_mae": 0.0,
+      "area_iou": 1.0,
+      "silence_false_positive_fraction": 0.0,
+      "unused_false_positive_fraction": 0.0,
+      "source_count_mae": 0.0,
+      "gate_normalized_mae": 6.547236447855844e-06,
+      "onset_median_abs_seconds": 0.0,
+      "offset_median_abs_seconds": 0.0
+    }
+  },
+  "zero": {
+    "train": {
+      "normalized_mae": 0.06927577071011262,
+      "active_normalized_mae": 0.37184194944657417,
+      "area_iou": 0.0,
+      "silence_false_positive_fraction": 0.0,
+      "unused_false_positive_fraction": 0.0,
+      "source_count_mae": 0.186,
+      "gate_normalized_mae": 0.06927577071011262,
+      "onset_median_abs_seconds": null,
+      "offset_median_abs_seconds": null
+    },
+    "val": {
+      "normalized_mae": 0.05871692853119071,
+      "active_normalized_mae": 0.3537164369348838,
+      "area_iou": 0.0,
+      "silence_false_positive_fraction": 0.0,
+      "unused_false_positive_fraction": 0.0,
+      "source_count_mae": 0.166,
+      "gate_normalized_mae": 0.05871692853119071,
+      "onset_median_abs_seconds": null,
+      "offset_median_abs_seconds": null
+    },
+    "test": {
+      "normalized_mae": 0.07341489521001351,
+      "active_normalized_mae": 0.420736538919378,
+      "area_iou": 0.0,
+      "silence_false_positive_fraction": 0.0,
+      "unused_false_positive_fraction": 0.0,
+      "source_count_mae": 0.173,
+      "gate_normalized_mae": 0.07341489521001351,
+      "onset_median_abs_seconds": null,
+      "offset_median_abs_seconds": null
+    }
+  }
+}

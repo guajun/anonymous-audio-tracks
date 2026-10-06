@@ -1,0 +1,17 @@
+{
+  "training_backend": "Original discrete selector on CPU, batched differentiable GPU C with genuine past/current E gradients",
+  "training_algorithm_parameters_changed": false,
+  "all_new_depths_share_same_backend": true,
+  "small_contract_tests_passed": 20,
+  "real_checkpoint_bitwise_equivalence_claimed": false,
+  "real_checkpoint_max_relation_abs_difference": 0.125,
+  "real_checkpoint_max_amplitude_abs_difference": 0.0318637490272522,
+  "real_checkpoint_max_normalized_mae_delta": 0.000611104071140289,
+  "real_checkpoint_fragment_ids_equal": true,
+  "largest_difference_scope": "Four-layer C3 raw supervised checkpoints with an EXTRA association diagnostic; primary raw predictions do not transport A",
+  "selected_local_C3_max_amplitude_abs_difference": 0.0013750642538070679,
+  "selected_local_C3_max_abs_normalized_mae_delta": 0.000007096678018569946,
+  "original_GPU_all_selected_local_checkpoints_evaluated": true,
+  "response_to_audit": "Run original GPU association for every selected local checkpoint on all seen fixed validation/test sets; no retraining or checkpoint selection. Preserve fast and original evaluations separately.",
+  "historical_comparison_limit": "Readout, precision, budget and association execution backend differ from historical shallow trials. New full-window depth comparison shares these settings; isolated receptive-field gain is not established."
+}

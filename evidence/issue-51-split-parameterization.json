@@ -1,0 +1,301 @@
+{
+  "records": [
+    {
+      "checkpoint": "runs/split-head/fit-v3/split-initial.pth",
+      "sample_id": "c1-local-train-00",
+      "A_normalized": {
+        "mean": 0.012919238768517971,
+        "quantiles": [
+          1.9550323486328125e-05,
+          0.0004468536376953125,
+          0.00057220458984375,
+          0.00072479248046875,
+          0.002227783203125,
+          0.3436132812499997,
+          0.80078125
+        ],
+        "exact_zero_fraction": 0.0
+      },
+      "Z_norm": {
+        "mean": 0.012932202778756618,
+        "quantiles": [
+          0.0005616597482003272,
+          0.0005773775943089276,
+          0.0006046918861102313,
+          0.0007110830338206142,
+          0.002093974454328419,
+          0.34527189821004817,
+          0.8010965585708618
+        ],
+        "exact_zero_fraction": 0.0
+      },
+      "logits": {
+        "mean": 0.012005585245788097,
+        "quantiles": [
+          -0.00347900390625,
+          -0.0015253448486328126,
+          -0.0008480072021484373,
+          -0.000614166259765625,
+          0.0022125244140625,
+          0.3436132812499997,
+          0.80078125
+        ],
+        "exact_zero_fraction": 0.0
+      },
+      "nonnegative_transform_derivative": {
+        "mean": -0.2405189573764801,
+        "quantiles": [
+          -1.0,
+          -1.0,
+          -1.0,
+          -1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "exact_zero_fraction": 0.0
+      },
+      "amplitude_output_weight_norm": 23.26076316833496,
+      "identity_output_weight_norm": 3.95285701751709,
+      "mean_A_gradient_amplitude_head_norm": 0.027808601036667824
+    },
+    {
+      "checkpoint": "runs/split-head/fit-v3/split/C1/head.pth",
+      "sample_id": "c1-local-train-00",
+      "A_normalized": {
+        "mean": 0.01670154370367527,
+        "quantiles": [
+          3.2782554626464844e-07,
+          3.5064220428466795e-05,
+          0.00025691986083984384,
+          0.002197265625,
+          0.017248535156250022,
+          0.34765625,
+          0.80078125
+        ],
+        "exact_zero_fraction": 0.0
+      },
+      "Z_norm": {
+        "mean": 0.14032043516635895,
+        "quantiles": [
+          0.05139181390404701,
+          0.0695074374973774,
+          0.1060869961977005,
+          0.12170077487826347,
+          0.20366330742835997,
+          0.3298122125864026,
+          0.45728588104248047
+        ],
+        "exact_zero_fraction": 0.0
+      },
+      "logits": {
+        "mean": -0.013189390301704407,
+        "quantiles": [
+          -0.80078125,
+          -0.34765625,
+          -0.013262939453124997,
+          -0.000263214111328125,
+          0.003204345703125,
+          0.03391845703124996,
+          0.07763671875
+        ],
+        "exact_zero_fraction": 0.0
+      },
+      "nonnegative_transform_derivative": {
+        "mean": -0.09381237626075745,
+        "quantiles": [
+          -1.0,
+          -1.0,
+          -1.0,
+          -1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "exact_zero_fraction": 0.0
+      },
+      "amplitude_output_weight_norm": 23.15107536315918,
+      "identity_output_weight_norm": 5.762494087219238,
+      "mean_A_gradient_amplitude_head_norm": 0.02517741359770298
+    },
+    {
+      "checkpoint": "runs/split-head/fit-v3/split/C2-low/head.pth",
+      "sample_id": "c1-local-train-00",
+      "A_normalized": {
+        "mean": 0.01884620264172554,
+        "quantiles": [
+          3.1888484954833984e-06,
+          5.129337310791015e-05,
+          0.00030078887939453134,
+          0.0022735595703125,
+          0.0169677734375,
+          0.41796875,
+          0.97265625
+        ],
+        "exact_zero_fraction": 0.0
+      },
+      "Z_norm": {
+        "mean": 0.20229507982730865,
+        "quantiles": [
+          0.10170663893222809,
+          0.10391565576195717,
+          0.11347824707627298,
+          0.20024113357067108,
+          0.2702331990003586,
+          0.44694489091634726,
+          0.6487641930580139
+        ],
+        "exact_zero_fraction": 0.0
+      },
+      "logits": {
+        "mean": -0.015986626967787743,
+        "quantiles": [
+          -0.97265625,
+          -0.41796875,
+          -0.0167236328125,
+          0.00023794174194335938,
+          0.0034027099609375,
+          0.01116088867187498,
+          0.0888671875
+        ],
+        "exact_zero_fraction": 0.0
+      },
+      "nonnegative_transform_derivative": {
+        "mean": 0.13123752176761627,
+        "quantiles": [
+          -1.0,
+          -1.0,
+          -1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "exact_zero_fraction": 0.0
+      },
+      "amplitude_output_weight_norm": 22.947633743286133,
+      "identity_output_weight_norm": 7.099691867828369,
+      "mean_A_gradient_amplitude_head_norm": 0.0287411417812109
+    },
+    {
+      "checkpoint": "runs/split-head/fit-v3/split/C2-high/head.pth",
+      "sample_id": "c1-local-train-00",
+      "A_normalized": {
+        "mean": 0.016216851770877838,
+        "quantiles": [
+          2.339482307434082e-06,
+          0.00023276329040527343,
+          0.000530242919921875,
+          0.0038604736328125,
+          0.0101318359375,
+          0.33761718749999936,
+          0.78125
+        ],
+        "exact_zero_fraction": 0.0
+      },
+      "Z_norm": {
+        "mean": 0.33919593691825867,
+        "quantiles": [
+          0.09630641341209412,
+          0.09941058792173862,
+          0.10776948779821396,
+          0.37608502805233,
+          0.48300293982028963,
+          0.6520198988914486,
+          0.7459118962287903
+        ],
+        "exact_zero_fraction": 0.0
+      },
+      "logits": {
+        "mean": -0.010366140864789486,
+        "quantiles": [
+          -0.78125,
+          -0.3376171875,
+          -0.007394409179687499,
+          0.0009098052978515625,
+          0.00909423828125,
+          0.02269653320312498,
+          0.057861328125
+        ],
+        "exact_zero_fraction": 0.0
+      },
+      "nonnegative_transform_derivative": {
+        "mean": 0.08083832263946533,
+        "quantiles": [
+          -1.0,
+          -1.0,
+          -1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "exact_zero_fraction": 0.0
+      },
+      "amplitude_output_weight_norm": 22.408588409423828,
+      "identity_output_weight_norm": 8.469847679138184,
+      "mean_A_gradient_amplitude_head_norm": 0.02753574214875698
+    },
+    {
+      "checkpoint": "runs/split-head/fit-v3/split/C3/head.pth",
+      "sample_id": "c1-local-train-00",
+      "A_normalized": {
+        "mean": 0.02156173810362816,
+        "quantiles": [
+          7.867813110351562e-06,
+          0.00020965576171875,
+          0.0011749267578125,
+          0.007232666015625,
+          0.044921875,
+          0.32785156249999936,
+          0.83203125
+        ],
+        "exact_zero_fraction": 0.0
+      },
+      "Z_norm": {
+        "mean": 0.36617058515548706,
+        "quantiles": [
+          0.09156349301338196,
+          0.0930554711073637,
+          0.10170523077249527,
+          0.4251279681921005,
+          0.5438458859920502,
+          0.6755418974161147,
+          0.8319476246833801
+        ],
+        "exact_zero_fraction": 0.0
+      },
+      "logits": {
+        "mean": -0.0163178239017725,
+        "quantiles": [
+          -0.83203125,
+          -0.3278515625,
+          -0.044921875,
+          -0.000919342041015625,
+          0.01116943359375,
+          0.01416015625,
+          0.062255859375
+        ],
+        "exact_zero_fraction": 0.0
+      },
+      "nonnegative_transform_derivative": {
+        "mean": -0.08083832263946533,
+        "quantiles": [
+          -1.0,
+          -1.0,
+          -1.0,
+          -1.0,
+          1.0,
+          1.0,
+          1.0
+        ],
+        "exact_zero_fraction": 0.0
+      },
+      "amplitude_output_weight_norm": 22.080717086791992,
+      "identity_output_weight_norm": 9.392251968383789,
+      "mean_A_gradient_amplitude_head_norm": 0.028108183294534683
+    }
+  ],
+  "amplitude_transform": "abs",
+  "interpretation": "train-only parameterization witness, not an intervention or explanation of all causal effects; no checkpoint/threshold tuning"
+}
