@@ -31,7 +31,10 @@ class WindowVHead(nn.Module):
         # Same readout at all depths; no learned query, cropped context or CLS.
         mean = h.mean(1)
         deviation = torch.sqrt((h-mean[:,None]).square().mean(1)+1e-8)
-        v = self.output(torch.cat((center,mean,deviation),-1)).float().reshape(-1,self.k,self.e_dim)
+        features = torch.cat((center,mean,deviation),-1)
+        v = self.output(features).float().reshape(-1,self.k,self.e_dim)
+        if hasattr(self, 'amplitude_output'):
+            return v, torch.nn.functional.softplus(self.amplitude_output(features).float())
         return v, torch.linalg.vector_norm(v,dim=-1)
 
     def architecture(self):
@@ -45,3 +48,19 @@ class WindowVHead(nn.Module):
             token_center_span_seconds=1.96,
             readout='center interpolation + full197-token mean and standard deviation',
             depth_comparison='all depths share full-window readout; depth changes capacity and intermediate local mixing')
+
+
+class WindowSplitHead(WindowVHead):
+    """Independent scalar softplus loudness and unchanged 128D identity output."""
+    def __init__(self, depth=4, hidden=128, k=8, e_dim=128):
+        super().__init__(depth, hidden, k, e_dim)
+        self.amplitude_output = nn.Linear(3*hidden, k)
+        nn.init.zeros_(self.amplitude_output.weight)
+        nn.init.constant_(self.amplitude_output.bias, -4.)
+
+    def architecture(self):
+        result = super().architecture()
+        result.update(amplitude='softplus(Linear(384,8)); independent of Z norm',
+                      identity='normalize(Z), original Linear(384,8*128)',
+                      additional_parameters=3080)
+        return result

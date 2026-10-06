@@ -26,11 +26,12 @@ def frozen_confidence(v,y):
 
 
 class Objective:
-    def __init__(self,v,y,pairs=None,block=16,weight=.2):
-        self.v=array(v);self.y=array(y);self.a=np.linalg.norm(self.v,axis=-1)
+    def __init__(self,v,y,pairs=None,block=16,weight=.2,amplitudes=None):
+        self.v=array(v);self.y=array(y);self.a=np.linalg.norm(self.v,axis=-1) if amplitudes is None else array(amplitudes)
         self.n,self.k=self.a.shape;self.s=self.y.shape[1];self.block=block;self.weight=weight
         self.states=states(self.k,self.s);self.b=(self.n+block-1)//block
-        self.unit=self.v/np.maximum(self.a[:,:,None],1e-8)
+        self.direction_norm=np.linalg.norm(self.v,axis=-1)
+        self.unit=self.v/np.maximum(self.direction_norm[:,:,None],1e-8)
         self.p,self.neg=make_pairs(self.y) if pairs is None else pairs
         # GT source names cannot be identified when their entire envelopes agree.
         # Identical candidate directions offer no identity evidence. Continuous,
@@ -80,7 +81,7 @@ class Objective:
         f=selected[:,q[:,0]//self.block,q[:,1]];r=selected[:,q[:,2]//self.block,q[:,3]]
         pc=self.cp[ix][np.arange(len(ix))[None],x,z];fc=self.cf[ix][np.arange(len(ix))[None],x,f]
         rc=self.cr[ix][np.arange(len(ix))[None],r,z]
-        nonzero=(self.a[p[:,0][None],x]>0)&(self.a[p[:,2][None],z]>0)&(self.a[q[:,0][None],f]>0)&(self.a[q[:,2][None],r]>0)
+        nonzero=(self.direction_norm[p[:,0][None],x]>0)&(self.direction_norm[p[:,2][None],z]>0)&(self.direction_norm[q[:,0][None],f]>0)&(self.direction_norm[q[:,2][None],r]>0)
         return (.5*(np.maximum(.2+fc-pc,0)+np.maximum(.2+rc-pc,0))+.05*(1-pc))*self.pw[ix]*nonzero/self.denom
 
     def cost(self,paths):
@@ -88,8 +89,8 @@ class Objective:
         return amp+self.weight*identity,amp,identity
 
 
-def teacher(v,y,*,pairs=None,block=16,weight=.2,sweeps=1,amplitude_slack=.02,node_slack=.02,exhaustive=False):
-    obj=Objective(v,y,pairs,block,weight)
+def teacher(v,y,*,pairs=None,block=16,weight=.2,sweeps=1,amplitude_slack=.02,node_slack=.02,exhaustive=False,amplitudes=None):
+    obj=Objective(v,y,pairs,block,weight,amplitudes)
     old,_,_=envelope_teacher(obj.a,obj.y,block=block,switch=0.)
     initial=np.array([np.flatnonzero((obj.states==old[j*block,:obj.s]).all(1))[0] for j in range(obj.b)])
     # A global mean bound alone permits sacrificing individual genuine nodes.

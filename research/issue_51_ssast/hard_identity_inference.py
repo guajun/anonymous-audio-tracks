@@ -3,13 +3,14 @@ import numpy as np
 from scipy.optimize import linear_sum_assignment
 
 
-def connect(v,scale, *, diagnostics=True):
-    v=np.asarray(v);a=np.linalg.norm(v,axis=-1);n,k=a.shape
-    e=np.divide(v,a[:,:,None],out=np.zeros_like(v),where=a[:,:,None]>0)
+def connect(v,scale, *, diagnostics=True,amplitudes=None):
+    v=np.asarray(v);norm=np.linalg.norm(v,axis=-1)
+    a=norm if amplitudes is None else np.asarray(amplitudes);n,k=a.shape
+    e=np.divide(v,norm[:,:,None],out=np.zeros_like(v),where=norm[:,:,None]>0)
     reliability=a/(a+.01*scale)
     scores=e[:-1]@np.swapaxes(e[1:],1,2)
     scores*=np.sqrt(reliability[:-1,:,None]*reliability[1:,None,:])
-    defined=(a[:-1,:,None]>0)&(a[1:,None,:]>0)
+    defined=(norm[:-1,:,None]>0)&(norm[1:,None,:]>0)&(a[:-1,:,None]>0)&(a[1:,None,:]>0)
     scores=np.where(defined,scores,0)
     links=[];gaps=[];orders=[np.arange(k)]
     for matrix in scores:

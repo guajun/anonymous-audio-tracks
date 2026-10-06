@@ -9,7 +9,7 @@ import time
 from pathlib import Path
 import numpy as np
 import torch
-from window_head import WindowVHead
+from window_head import WindowVHead, WindowSplitHead
 from train_window_depth import read, seed
 from features import sha256
 from teacher_assignment import teacher as envelope_teacher, amplitude_loss
@@ -20,7 +20,7 @@ def teacher(a,y,*,v=None,pairs=None):
     if TEACHER_MODE=='envelope':
         order,_,meta=envelope_teacher(a,y)
         return order,frozen_confidence(v,y),meta
-    return joint_teacher(v,y,pairs=pairs)
+    return joint_teacher(v,y,pairs=pairs,amplitudes=a)
 
 from identity_supervision import make_pairs, identity_loss
 from hard_identity_inference import connect
@@ -84,7 +84,7 @@ def evaluate(model,rows,scale,out=None,extended=False):
         order,conf,tm=teacher(a,y,v=v,pairs=row['pairs'])
         lid,detail=identity_loss(v,y,order,conf,row['pairs'])
         vv=v.cpu().numpy()*scale;raw=a.cpu().numpy()*scale;b=row['target'].cpu().numpy()
-        actual,pm=connect(vv,scale,diagnostics=extended)
+        actual,pm=connect(vv,scale,diagnostics=extended,amplitudes=raw)
         ta=np.take_along_axis(raw,order,1)
         record=dict(stage=row['stage'],sample_id=row['entry']['sample_id'],
             actual=measure(actual,b,row['times'],scale),raw=measure(raw,b,row['times'],scale),
@@ -125,12 +125,12 @@ def evaluate(model,rows,scale,out=None,extended=False):
             record['teacher_gated']=measure(np.where(ta>.001,ta,0),b,row['times'],scale,order_override=np.arange(b.shape[1]))
             record['output_gain_diagnostic']={}
             for gain in (.5,1.,2.):
-                gain_a,_=connect(vv*gain,scale,diagnostics=False)
+                gain_a,_=connect(vv*gain,scale,diagnostics=False,amplitudes=raw*gain)
                 record['output_gain_diagnostic'][str(gain)]=measure(gain_a,b*gain,row['times'],scale)
             generator=np.random.default_rng(5151)
             shuffle=np.array([generator.permutation(8) for _ in range(len(vv))])
             shuffled=vv[np.arange(len(vv))[:,None],shuffle]
-            sh,_=connect(shuffled,scale,diagnostics=False)
+            sh,_=connect(shuffled,scale,diagnostics=False,amplitudes=raw[np.arange(len(raw))[:,None],shuffle])
             record['candidate_shuffle_normalized_mae_delta']=measure(sh,b,row['times'],scale)['normalized_mae']-record['actual']['normalized_mae']
         if out is not None:
             np.savez_compressed(out/(row['stage']+'-'+row['entry']['sample_id']+'.npz'),
@@ -146,7 +146,8 @@ def score(records):
 
 
 def gradients(model,v,amp,identity):
-    av=torch.autograd.grad(amp,v,retain_graph=True)[0]
+    av=torch.autograd.grad(amp,v,retain_graph=True,allow_unused=True)[0]
+    if av is None:av=torch.zeros_like(v)
     iv=torch.autograd.grad(identity,v,retain_graph=True)[0]
     unit=v.detach()/v.detach().norm(dim=-1,keepdim=True).clamp_min(1e-8)
     def split(g):
@@ -198,7 +199,8 @@ def fit(model,rows,current,scale,weight,steps,seconds,out):
     torch.save(model.state_dict(),out/'last-head.pth')
     if best_state is not None:model.load_state_dict(best_state)
     torch.save(model.state_dict(),out/'head.pth')
-    validation=evaluate(model,val,scale,extended=True)
+    val_out=out/'validation';val_out.mkdir(exist_ok=True)
+    validation=evaluate(model,val,scale,out=val_out,extended=True)
     test=evaluate(model,[r for r in rows if r['entry']['split']=='test'],scale,out=out,extended=True)
     report=dict(stage=current,identity_weight=weight,updates=update,selected_update=best_step,stop_reason=reason,
         plateau_condition_at_stop=bool(update>=1000 and stale>=10),seconds=time.monotonic()-start,
@@ -213,14 +215,14 @@ def main():
     p=argparse.ArgumentParser();p.add_argument('--teacher-mode',choices=('joint','envelope'),default='joint');p.add_argument('--cache',type=Path,required=True);p.add_argument('--c0-cache',type=Path,required=True)
     p.add_argument('--initial',type=Path,required=True);p.add_argument('--out',type=Path,required=True)
     p.add_argument('--identity-weight',type=float,choices=(0.,.2),required=True);p.add_argument('--steps',type=int,default=1000)
-    p.add_argument('--seconds',type=int,default=7200);p.add_argument('--pilot',action='store_true');args=p.parse_args()
+    p.add_argument('--head-mode',choices=('coupled','split'),default='coupled');p.add_argument('--seconds',type=int,default=7200);p.add_argument('--pilot',action='store_true');args=p.parse_args()
     global TEACHER_MODE;TEACHER_MODE=args.teacher_mode
     torch.set_num_threads(4);torch.backends.cuda.matmul.allow_tf32=True;torch.backends.cudnn.allow_tf32=True;seed(46)
     args.out.mkdir(parents=True,exist_ok=True);rows,manifest=read(args.c0_cache,'C0');prepare(rows)
     active=torch.cat([r['target'][r['target']>.001] for r in rows if r['entry']['split']=='train']);scale=float(torch.quantile(active,.95))
-    model=WindowVHead(4).cuda();model.load_state_dict(torch.load(args.initial,weights_only=True))
+    model=(WindowSplitHead(4) if args.head_mode=='split' else WindowVHead(4)).cuda();model.load_state_dict(torch.load(args.initial,weights_only=True))
     metadata=dict(architecture=model.architecture(),initial=str(args.initial),initial_sha256=sha256(args.initial),
-        teacher_mode=args.teacher_mode,identity_weight=args.identity_weight,scale_r=scale,seed=46,pilot=args.pilot,
+        head_mode=args.head_mode,teacher_mode=args.teacher_mode,identity_weight=args.identity_weight,scale_r=scale,seed=46,pilot=args.pilot,
         initial_description='same historical selected depth4 raw C1 head; full frozen SSAST197-token caches',c0_manifest_sha256=sha256(args.c0_cache/'manifest.json'))
     (args.out/'architecture.json').write_text(json.dumps(metadata,indent=2)+'\n')
     summary=[]
